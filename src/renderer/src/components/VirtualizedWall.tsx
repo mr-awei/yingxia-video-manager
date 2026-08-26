@@ -1,0 +1,146 @@
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { DisplayEntry, Video } from '../../../shared/types'
+import EntryCard from './EntryCard'
+
+export interface WallSection {
+  title: string
+  entries: DisplayEntry[]
+}
+
+interface Props {
+  sections: WallSection[]
+  onOpen: (entry: DisplayEntry) => void
+  onEdit: (v: Video) => void
+  onOpenMissing: (entry: DisplayEntry) => void
+  onToggleFlag?: (id: string, key: 'favorite') => void
+  /** 点击标签 → 一键筛选该标签全部影片 */
+  onPickTag?: (tag: string) => void
+}
+
+const GAP = 16
+/** 海报宽高比（aspect-[2/3]） */
+const RATIO = 3 / 2
+/** 视口上下各多渲染的行数 */
+const OVERSCAN = 3
+/** 分类标题行高（标题 + 下方留白） */
+const TITLE_H = 48
+
+type Row =
+  | { kind: 'title'; key: string; title: string; count: number }
+  | { kind: 'cards'; key: string; items: DisplayEntry[] }
+
+/**
+ * 全库虚拟滚动墙：把「分类标题 + 卡片行」平铺成单一虚拟列表，
+ * 只渲染可见行 ± OVERSCAN。整个应用只有这一个滚动容器，
+ * 大库（几百上千部）DOM 数量恒定为一屏几十张，滚动性能与库大小无关。
+ */
+function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  const [height, setHeight] = useState(0)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [minPosterW, setMinPosterW] = useState(150)
+  const rafRef = useRef(0)
+
+  // 容器尺寸 + 海报最小列宽（--poster-min，随主题/密度变化）
+  useLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const readMinW = () => parseInt(getComputedStyle(el).getPropertyValue('--poster-min')) || 150
+    const measure = () => {
+      setWidth(el.clientWidth)
+      setHeight(el.clientHeight)
+      setMinPosterW(readMinW())
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    // theme-* / density-* 是 class 切换，不会触发 ResizeObserver —— 用 MutationObserver 兜底
+    const mo = new MutationObserver(measure)
+    let node: HTMLElement | null = el
+    while (node && node !== document.body) {
+      mo.observe(node, { attributes: true, attributeFilter: ['class'] })
+      node = node.parentElement
+    }
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+      cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  // 滚动 rAF 节流
+  const onScroll = () => {
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      setScrollTop(wrapRef.current?.scrollTop ?? 0)
+    })
+  }
+
+  // 平铺行 + 每行 y 坐标 + 总高度
+  const { rows, offsets, totalH, colW } = useMemo(() => {
+    if (width <= 0) return { rows: [] as Row[], offsets: [] as number[], totalH: 0, colW: 0 }
+    const cols = Math.max(1, Math.floor((width + GAP) / (minPosterW + GAP)))
+    const cw = (width - (cols - 1) * GAP) / cols
+    const rowH = cw * RATIO + GAP
+    const rows: Row[] = []
+    const offsets: number[] = []
+    let y = 0
+    for (const s of sections) {
+      rows.push({ kind: 'title', key: `t-${s.title}`, title: s.title, count: s.entries.length })
+      offsets.push(y)
+      y += TITLE_H
+      for (let i = 0; i < s.entries.length; i += cols) {
+        rows.push({ kind: 'cards', key: `c-${s.title}-${i}`, items: s.entries.slice(i, i + cols) })
+        offsets.push(y)
+        y += rowH
+      }
+    }
+    return { rows, offsets, totalH: y, colW: cw }
+  }, [width, sections, minPosterW])
+
+  const visible: React.ReactNode[] = []
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    const y = offsets[i]
+    const isTitle = row.kind === 'title'
+    const rowH = isTitle ? TITLE_H : colW * RATIO + GAP
+    // 快速剔除：整行在视口外则跳过
+    if (y + rowH < scrollTop - OVERSCAN * rowH) continue
+    if (y > scrollTop + height + OVERSCAN * rowH) continue
+    if (isTitle) {
+      visible.push(
+        // min-w-0 + truncate：超长分类名（如「大规模群P / 哈雷姆 / 大乱交（核心推荐）」）截断，不撑爆视图
+        <div key={row.key} className="absolute inset-x-0 flex items-baseline gap-2 px-1 min-w-0" style={{ top: y, height: TITLE_H }}>
+          <h2 className="section-title text-white font-semibold text-lg leading-none truncate min-w-0">{row.title}</h2>
+          <span className="text-white/40 text-xs shrink-0 tabular-nums">{row.count} 部</span>
+        </div>
+      )
+    } else {
+      visible.push(
+        <div
+          key={row.key}
+          className="absolute flex gap-4"
+          style={{ top: y, left: 0, right: 0, height: colW * RATIO }}
+        >
+          {row.items.map((e, ci) => (
+            <div key={`${e.code}-${ci}`} style={{ width: colW, height: colW * RATIO }} className="shrink-0">
+              <EntryCard entry={e} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onPickTag={onPickTag} />
+            </div>
+          ))}
+        </div>
+      )
+    }
+  }
+
+  return (
+    <div ref={wrapRef} onScroll={onScroll} className="h-full overflow-auto thin-scroll pr-1">
+      {/* paddingBottom 让最底部一行卡片下方留 80px 缓冲，确保滚到底时最后一行完整可见（不被滚动容器底部裁切） */}
+      <div style={{ position: 'relative', height: Math.max(totalH, height), minWidth: 0, paddingBottom: 80 }}>
+        {visible}
+      </div>
+    </div>
+  )
+}
+
+export default memo(VirtualizedWall)

@@ -1,0 +1,25 @@
+# 依赖
+node_modules
+dist
+out
+.vite
+
+# 发布安装包（体积大，可自行构建或到 Releases 下载）
+release
+
+# 自签名证书私钥（绝不可提交到公开仓库）
+*.pfx
+*.key
+
+# 打包用的 ffmpeg 二进制（体积大，按需自带）
+build/ffmpeg/
+
+# 临时 / 调试脚本（可能含个人 cookie / token）
+.tmp-*.mjs
+
+# 项目内部数据
+.workbuddy
+
+# 系统 / 日志
+.DS_Store
+*.log

@@ -1,0 +1,69 @@
+/** lm:// URL 结果缓存（同一路径只编码一次，大库滚动时避免重复 base64） */
+const posterUrlCache = new Map<string, string>()
+
+/** 把本地绝对路径构造成 lm:// 协议 URL（主进程 lm:// 协议处理器返回图片）；远程 URL 直接透传 */
+export function posterUrl(posterPath?: string): string | null {
+  if (!posterPath) return null
+  if (/^https?:\/\//.test(posterPath)) return posterPath
+  const cached = posterUrlCache.get(posterPath)
+  if (cached) return cached
+  const bytes = new TextEncoder().encode(posterPath)
+  let bin = ''
+  bytes.forEach((b) => (bin += String.fromCharCode(b)))
+  const b64 = btoa(bin)
+  const url = `lm://poster/${encodeURIComponent(b64)}`
+  if (posterUrlCache.size > 5000) posterUrlCache.clear() // 防无限增长
+  posterUrlCache.set(posterPath, url)
+  return url
+}
+
+export function formatSize(bytes?: number): string {
+  if (!bytes) return ''
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = bytes
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`
+}
+
+export function formatDuration(sec?: number): string {
+  if (!sec) return ''
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (h > 0) return `${h}小时${m}分`
+  return `${m}分钟`
+}
+
+/** 取标题首字符作为占位图大字符 */
+export function titleInitial(title: string): string {
+  return (title ?? '').trim().charAt(0).toUpperCase() || '?'
+}
+
+/** 取番号次要文本（去连字符/下划线，前 10 字符）用于占位图小字 */
+export function titleSecondary(code: string): string {
+  const c = (code ?? '').trim().toUpperCase().replace(/[-_.\s]/g, '')
+  return c.slice(0, 10) || '?'
+}
+
+/**
+ * 大厂风格多层渐变占位背景（参考 Netflix/Disney+/Apple TV 卡片占位）。
+ * 三层叠加：左上径向高光 + 右下径向阴影 + 主对角渐变，立体感强。
+ */
+export function placeholderGradient(code: string): string {
+  let h = 0
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360
+  // 邻近色相家族：主色 h、微移 h2（+40°）做自然过渡、补色 h3（+220°）做暗角
+  const h2 = (h + 40) % 360
+  const h3 = (h + 220) % 360
+  // 大厂风格（参考 Netflix/TMDB/Disney+ 卡片占位）：
+  // 甜点区 = 色相清晰（饱和度 40-48%）+ 中低亮度（15-36%）→ 不刺眼、不显脏
+  // 主渐变同家族邻近色（h → h2），自然不生硬；左上高光亮于主色、右下暗角压场
+  return (
+    `radial-gradient(ellipse 90% 70% at 30% 18%, hsla(${h2},48%,36%,0.6), transparent 62%),` +
+    `radial-gradient(ellipse 110% 90% at 80% 95%, hsla(${h3},42%,12%,0.65), transparent 60%),` +
+    `linear-gradient(150deg, hsl(${h},44%,22%), hsl(${h2},46%,15%))`
+  )
+}

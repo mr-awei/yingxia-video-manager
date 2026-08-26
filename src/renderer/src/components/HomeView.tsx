@@ -1,0 +1,263 @@
+import { useMemo, useState } from 'react'
+import type { DisplayEntry, Video } from '../../../shared/types'
+import { posterUrl, placeholderGradient, titleInitial, titleSecondary } from '../lib/util'
+import { api } from '../lib/api'
+import EntryCard from './EntryCard'
+import Icon from './Icon'
+import type { SmartFilter } from './Sidebar'
+
+interface Props {
+  entries: DisplayEntry[]
+  onOpen: (e: DisplayEntry) => void
+  onEdit: (v: Video) => void
+  onOpenMissing: (e: DisplayEntry) => void
+  onToggleFlag?: (id: string, key: 'favorite') => void
+  onBrowse: (smart: SmartFilter) => void
+  /** 随机推荐（每日刷新 + 手动刷新） */
+  recommend: DisplayEntry[]
+  onRefreshRecommend: () => void
+  /** 点击标签 → 一键筛选该标签全部影片 */
+  onPickTag?: (tag: string) => void
+}
+
+function Row({
+  title,
+  icon,
+  entries,
+  onOpen,
+  onEdit,
+  onOpenMissing,
+  onToggleFlag,
+  onMore,
+  onRefresh,
+  onPickTag
+}: {
+  title: string
+  icon: Parameters<typeof Icon>[0]['name']
+  entries: DisplayEntry[]
+  onOpen: (e: DisplayEntry) => void
+  onEdit: (v: Video) => void
+  onOpenMissing: (e: DisplayEntry) => void
+  onToggleFlag?: (id: string, key: 'favorite') => void
+  onMore?: () => void
+  onRefresh?: () => void
+  onPickTag?: (tag: string) => void
+}) {
+  if (entries.length === 0) return null
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-2.5 px-0.5">
+        <h2 className="flex items-center gap-2 text-white font-semibold text-[15px]">
+          <Icon name={icon} size={15} className="text-brand" />
+          {title}
+          <span className="text-white/35 text-xs font-normal">{entries.length}</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {onRefresh ? (
+            <button
+              className="text-white/45 hover:text-brand text-xs flex items-center gap-1 transition-colors"
+              onClick={onRefresh}
+              title="换一批（手动刷新）"
+            >
+              <Icon name="refresh" size={13} />
+              换一批
+            </button>
+          ) : null}
+          {onMore ? (
+            <button
+              className="text-white/45 hover:text-white text-xs flex items-center gap-0.5 transition-colors"
+              onClick={onMore}
+            >
+              查看全部 <Icon name="chevronRight" size={13} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex gap-3 overflow-x-auto thin-scroll pb-2 -mx-1 px-1">
+        {entries.map((e) => (
+          <div key={e.code} className="w-36 shrink-0">
+            <EntryCard
+              entry={e}
+              onOpen={onOpen}
+              onEdit={onEdit}
+              onOpenMissing={onOpenMissing}
+              onToggleFlag={onToggleFlag}
+              onPickTag={onPickTag}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, onPickTag }: Props) {
+  // hero 刷新按钮的旋转反馈（点击后转 600ms，让用户明确感知已触发刷新）
+  const [heroSpin, setHeroSpin] = useState(false)
+  const heroRefresh = () => {
+    setHeroSpin(true)
+    onRefreshRecommend()
+    window.setTimeout(() => setHeroSpin(false), 600)
+  }
+  const { hero, recent, topRated, recentPlayed, favorite } = useMemo(() => {
+    const withVideo = entries.filter((e) => e.video)
+    const scoreOf = (e: DisplayEntry) => e.score ?? e.video?.rating ?? 0
+    const sortBy = (key: (e: DisplayEntry) => number, dir: 1 | -1 = -1) =>
+      [...withVideo].sort((a, b) => (key(a) - key(b)) * dir)
+
+    const topRatedAll = sortBy(scoreOf).filter((e) => scoreOf(e) > 0)
+    // Hero：复用随机推荐的第一部（与下方「随机推荐」同源，随日期+手动刷新变化）
+    const heroSrc = recommend[0] ?? withVideo[0]
+
+    return {
+      hero: heroSrc,
+      recent: sortBy((e) => e.video?.addedAt ?? 0).slice(0, 14),
+      topRated: topRatedAll.slice(0, 14),
+      recentPlayed: sortBy((e) => e.video?.lastPlayedAt ?? 0)
+        .filter((e) => (e.video?.lastPlayedAt ?? 0) > 0)
+        .slice(0, 14),
+      favorite: withVideo.filter((e) => e.video?.favorite).slice(0, 14)
+    }
+  }, [entries, recommend])
+
+  if (entries.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center animate-fadeIn">
+        <div className="w-16 h-16 rounded-2xl bg-brand/10 ring-1 ring-brand/30 flex items-center justify-center mb-5">
+          <Icon name="home" size={30} className="text-brand" />
+        </div>
+        <div className="text-2xl font-semibold mb-2">首页</div>
+        <div className="text-white/50 text-sm max-w-md leading-relaxed">
+          选择一个媒体库后，这里会展示「随机推荐 / 最近添加 / 评分最高 / 最近播放 / 收藏」的精选墙。
+        </div>
+      </div>
+    )
+  }
+
+  const heroV = hero?.video
+  const heroSrc = heroV?.posterPath ? posterUrl(heroV.posterPath) : null
+
+  return (
+    <div className="h-full overflow-auto thin-scroll p-5 animate-fadeIn">
+      {/* Hero 推荐位 - 整张点击播放；海报氛围充满 300px，左下紧凑布局，背景用真实海报图（非纯模糊），右上 chip+刷新 */}
+      {heroV ? (
+        <div
+          className="relative rounded-2xl overflow-hidden mb-7 h-[300px] ring-1 ring-white/10 shadow-2xl shadow-black/40 group cursor-pointer"
+          onClick={() => void api.videoOpen(heroV.id)}
+        >
+          {/* 背景大图：直接展示（去一点饱和度让左下文字清楚），不再 blur */}
+          <div className="absolute inset-0">
+            {heroSrc ? (
+              <img
+                src={heroSrc}
+                alt=""
+                className="h-full w-full object-cover object-[center_top] scale-105 poster-img hero-bg-img"
+                style={{ filter: 'saturate(0.85) brightness(0.85)' }}
+              />
+            ) : (
+              <div className="h-full w-full" style={{ background: placeholderGradient(heroV.title) }} />
+            )}
+            {/* 左深右浅，保证文字可读 */}
+            <div className="absolute inset-0 bg-gradient-to-r from-ink-900 via-ink-900/70 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-ink-900/85" />
+          </div>
+
+          {/* 右上 chip + 换一批 - 高对比（背景不固定时也不能变全黑死条） */}
+          <div className="absolute top-5 right-5 flex items-center gap-2 z-10">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 text-slate-900 text-[11px] font-bold tracking-wider shadow-lg shadow-black/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+              为你推荐
+            </span>
+            <button
+              className={`w-9 h-9 rounded-full bg-white/95 text-slate-700 flex items-center justify-center hover:bg-brand hover:text-white shadow-lg shadow-black/30 transition-all ${heroSpin ? 'animate-spin' : ''}`}
+              onClick={(e) => { e.stopPropagation(); heroRefresh() }}
+              title="换一批（手动刷新随机推荐）"
+            >
+              <Icon name="refresh" size={14} />
+            </button>
+          </div>
+
+          {/* 内容：左下，标题字号大，行高紧凑 */}
+          <div className="relative h-full flex items-end p-7 gap-6">
+            <div className="w-36 h-52 shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02]">
+              {heroSrc ? (
+                <img src={heroSrc} alt={heroV.title} className="h-full w-full object-cover poster-img" />
+              ) : (
+                <div className="h-full w-full flex flex-col items-center justify-center gap-2" style={{ background: placeholderGradient(heroV.title) }}>
+                <div className="w-16 h-16 rounded-2xl bg-white/25 ring-1 ring-white/40 backdrop-blur-md flex items-center justify-center text-2xl font-bold text-white leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] shadow-xl shadow-black/40"
+                  style={{ textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}
+                >
+                  {titleInitial(heroV.title)}
+                </div>
+                <div className="text-[10px] font-semibold text-white tracking-[0.12em] uppercase truncate max-w-[85%] px-2 text-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                  {titleSecondary(heroV.title)}
+                </div>
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1 pb-1">
+              <div className="text-3xl sm:text-4xl font-bold text-white mb-2 truncate drop-shadow-lg">
+                {heroV.title}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-white/80 text-sm mb-5">
+                {heroV.year ? <span className="font-semibold">{heroV.year}</span> : null}
+                {(hero?.score ?? heroV.rating) != null ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand/20 text-brand font-bold text-[13px] backdrop-blur-sm">
+                    <Icon name="star" size={12} className="fill-brand" />
+                    {(hero?.score ?? heroV.rating)!.toFixed(2)}
+                  </span>
+                ) : null}
+                {heroV.javdbDetail?.studio ? (
+                  <span className="text-white/70">{heroV.javdbDetail.studio}</span>
+                ) : null}
+                {heroV.javdbDetail?.actresses?.[0] ? (
+                  <span className="text-white/70 truncate max-w-[200px]">
+                    {heroV.javdbDetail.actresses.slice(0, 2).join(' · ')}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  className="h-11 px-6 rounded-xl flex items-center gap-2.5 bg-brand hover:brightness-110 text-white text-sm font-semibold shadow-lg shadow-brand/40 transition-all"
+                  onClick={(e) => { e.stopPropagation(); void api.videoOpen(heroV.id) }}
+                >
+                  <Icon name="play" size={16} className="fill-current" />
+                  播放
+                </button>
+                {onToggleFlag ? (
+                  <button
+                    className={`h-11 w-11 rounded-xl flex items-center justify-center backdrop-blur-md ring-1 transition-all ${
+                      heroV.favorite
+                        ? 'bg-brand text-white ring-brand/40'
+                        : 'bg-black/40 hover:bg-brand/20 ring-white/15 text-white'
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); onToggleFlag(heroV.id, 'favorite') }}
+                    title={heroV.favorite ? '取消收藏' : '收藏'}
+                  >
+                    <Icon name="heart" size={17} className={heroV.favorite ? 'fill-current' : ''} />
+                  </button>
+                ) : null}
+                <button
+                  className="h-11 px-5 rounded-xl flex items-center gap-2 bg-black/40 backdrop-blur-md hover:bg-black/60 ring-1 ring-white/15 text-white text-sm font-semibold transition-all"
+                  onClick={(e) => { e.stopPropagation(); onOpen(hero) }}
+                  title="查看详情"
+                >
+                  <Icon name="info" size={14} />
+                  详情
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 精选 rows */}
+      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshRecommend} onPickTag={onPickTag} />
+      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
+      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
+      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} />
+      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} />
+    </div>
+  )
+}

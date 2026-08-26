@@ -1,0 +1,51 @@
+import { clipboard, contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '../shared/ipc'
+import type { AppApi } from '../shared/api-types'
+
+console.log('[videomanger preload] loaded, exposing window.api')
+
+const api: AppApi = {
+  copyText: (text: string) => clipboard.writeText(text),
+  libraryList: () => ipcRenderer.invoke(IPC.libraryList),
+  libraryAdd: (input) => ipcRenderer.invoke(IPC.libraryAdd, input),
+  libraryRemove: (id) => ipcRenderer.invoke(IPC.libraryRemove, id),
+  libraryUpdate: (id, patch) => ipcRenderer.invoke(IPC.libraryUpdate, id, patch),
+  libraryReconcile: (libraryId) => ipcRenderer.invoke(IPC.libraryReconcile, libraryId),
+  videoList: (filter) => ipcRenderer.invoke(IPC.videoList, filter),
+  videoGet: (id) => ipcRenderer.invoke(IPC.videoGet, id),
+  videoUpdate: (id, patch) => ipcRenderer.invoke(IPC.videoUpdate, id, patch),
+  videoScan: (libraryId) => ipcRenderer.invoke(IPC.videoScan, libraryId),
+  videoOpen: (id) => ipcRenderer.invoke(IPC.videoOpen, id),
+  videoRegeneratePoster: (id) => ipcRenderer.invoke(IPC.videoRegeneratePoster, id),
+  videoFetchJavdbPoster: (id) => ipcRenderer.invoke(IPC.videoFetchJavdbPoster, id),
+  libraryFetchJavdbAll: (libraryId, force) => ipcRenderer.invoke(IPC.libraryFetchJavdbAll, libraryId, force),
+  videoFetchJavdbDetail: (id) => ipcRenderer.invoke(IPC.videoFetchJavdbDetail, id),
+  videoProbe: (id) => ipcRenderer.invoke(IPC.videoProbe, id),
+  videoShareTorrents: (id) => ipcRenderer.invoke(IPC.videoShareTorrents, id),
+  libraryPreviewRenames: (libraryId) => ipcRenderer.invoke(IPC.libraryPreviewRenames, libraryId),
+  libraryApplyRenames: (libraryId, items) =>
+    ipcRenderer.invoke(IPC.libraryApplyRenames, libraryId, items),
+  proxyTest: (settings) => ipcRenderer.invoke(IPC.proxyTest, settings),
+  cacheClear: () => ipcRenderer.invoke(IPC.cacheClear),
+  ffmpegStatus: () => ipcRenderer.invoke(IPC.ffmpegStatus),
+  appUninstall: () => ipcRenderer.invoke(IPC.appUninstall),
+  onJavdbFetched: (cb) => {
+    ipcRenderer.on(IPC.javdbFetched, (_e, payload) => cb(payload))
+  },
+  shellRevealInFolder: (p) => ipcRenderer.invoke(IPC.shellRevealInFolder, p),
+  settingsGet: () => ipcRenderer.invoke(IPC.settingsGet),
+  settingsSet: (patch) => ipcRenderer.invoke(IPC.settingsSet, patch),
+  dialogSelectFolder: () => ipcRenderer.invoke(IPC.dialogSelectFolder),
+  dialogSelectFile: () => ipcRenderer.invoke(IPC.dialogSelectFile),
+  openPath: (p) => ipcRenderer.invoke(IPC.openPath, p),
+  openExternal: (u) => ipcRenderer.invoke(IPC.openExternal, u),
+  appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  onScanProgress: (cb) => {
+    ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
+  },
+  onMdChanged: (cb) => {
+    ipcRenderer.on(IPC.mdChanged, (_e, libraryId) => cb(libraryId))
+  }
+}
+
+contextBridge.exposeInMainWorld('api', api)

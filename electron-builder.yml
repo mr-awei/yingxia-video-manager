@@ -1,0 +1,43 @@
+appId: com.local.videomanager
+productName: 影匣
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+# 额外资源：关于模块会读取 CHANGELOG.md 顶部更新日志
+extraResources:
+  - CHANGELOG.md
+  # 系统托盘图标（最小化到托盘功能需要）
+  - from: build/icon.png
+    to: icon.png
+  # ffmpeg 套件（视频封面截帧 + 技术信息探测）：直接捆绑进安装包，新电脑零下载即可用
+  - from: build/ffmpeg
+    to: ffmpeg
+    filter:
+      - "**/*"
+
+# electron 二进制与打包工具走国内镜像（避免下载失败/超时）
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 影匣
+  deleteAppDataOnUninstall: false
+  # 不生成差分更新包（.7z）——避免打包收尾清理临时文件时触发沙箱 safe-delete 拦截
+  differentialPackage: false

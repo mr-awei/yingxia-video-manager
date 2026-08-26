@@ -1,0 +1,386 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   皮肤系统：CSS 变量驱动（cinema / light / magazine / glass）
+   --ink-* 存 RGB 分量（数字），tailwind.config 用
+   rgb(var(--ink-x) / <alpha-value>) 引用 → bg-ink-x/95 透明度修饰符依然有效。
+   换肤只需切换 <html> 的 theme-* class，组件类名完全不动。
+   ============================================================ */
+
+:root,
+.theme-cinema {
+  color-scheme: dark;
+  --ink-900: 9 11 17;
+  --ink-850: 16 19 27;
+  --ink-800: 23 27 38;
+  --ink-700: 31 36 50;
+  --ink-600: 43 50 68;
+  --ink-500: 66 76 102;
+  --app-bg: radial-gradient(1100px 700px at 18% -8%, #1b2336 0%, #0b0d12 55%);
+  --poster-min: 150px;
+  --font-display: inherit;
+}
+
+.theme-light {
+  color-scheme: light;
+  --ink-900: 244 245 248;
+  --ink-850: 255 255 255;
+  --ink-800: 255 255 255;
+  --ink-700: 236 238 242;
+  --ink-600: 216 220 226;
+  --ink-500: 180 186 196;
+  --app-bg: radial-gradient(1100px 700px at 18% -8%, #ffffff 0%, #eef0f4 60%);
+  --poster-min: 150px;
+  --font-display: inherit;
+}
+
+.theme-magazine {
+  color-scheme: dark;
+  --ink-900: 8 8 10;
+  --ink-850: 13 13 16;
+  --ink-800: 18 18 22;
+  --ink-700: 26 26 32;
+  --ink-600: 38 38 46;
+  --ink-500: 60 60 72;
+  --app-bg: radial-gradient(1000px 600px at 80% -10%, #331426 0%, #08080a 55%);
+  --poster-min: 160px;
+  --font-display: 'Georgia', 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif;
+}
+
+.theme-glass {
+  color-scheme: dark;
+  --ink-900: 12 14 20;
+  --ink-850: 22 24 34;
+  --ink-800: 26 28 40;
+  --ink-700: 34 36 50;
+  --ink-600: 46 49 66;
+  --ink-500: 70 74 96;
+  --app-bg: radial-gradient(1200px 800px at 30% -10%, #312a4a 0%, #14121f 50%, #0c0e14 100%);
+  --poster-min: 150px;
+  --font-display: inherit;
+}
+
+/* 海报密度：大图沉浸 / 标准 / 高密度（控制 EntryGrid 的最小列宽） */
+.density-large {
+  --poster-min: 195px;
+}
+.density-compact {
+  --poster-min: 122px;
+}
+
+/* ===== 基础 ===== */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg, #0b0d12);
+  background-attachment: fixed;
+  color: #e8ecf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* 让 App 根容器的实色背景透明，露出 body 的主题渐变 */
+#root > div {
+  background: transparent !important;
+}
+
+/* ===== 浅色皮肤文本/边框/蒙层覆盖（深色皮肤保持白字） ===== */
+.theme-light { color-scheme: light; }
+.theme-light body { background: var(--app-bg); color: #1a1a1a; }
+
+.theme-light .text-white { color: #1a1a1a !important; }
+.theme-light .text-white\/100 { color: #1a1a1a !important; }
+.theme-light .text-white\/95 { color: rgba(26, 26, 26, 0.95) !important; }
+.theme-light .text-white\/90 { color: rgba(26, 26, 26, 0.9) !important; }
+.theme-light .text-white\/85 { color: rgba(26, 26, 26, 0.85) !important; }
+.theme-light .text-white\/80 { color: rgba(26, 26, 26, 0.8) !important; }
+.theme-light .text-white\/75 { color: rgba(26, 26, 26, 0.75) !important; }
+.theme-light .text-white\/70 { color: rgba(26, 26, 26, 0.7) !important; }
+.theme-light .text-white\/65 { color: rgba(26, 26, 26, 0.65) !important; }
+.theme-light .text-white\/60 { color: rgba(26, 26, 26, 0.6) !important; }
+.theme-light .text-white\/55 { color: rgba(26, 26, 26, 0.55) !important; }
+.theme-light .text-white\/50 { color: rgba(26, 26, 26, 0.5) !important; }
+.theme-light .text-white\/45 { color: rgba(26, 26, 26, 0.45) !important; }
+.theme-light .text-white\/40 { color: rgba(26, 26, 26, 0.4) !important; }
+.theme-light .text-white\/35 { color: rgba(26, 26, 26, 0.35) !important; }
+.theme-light .text-white\/30 { color: rgba(26, 26, 26, 0.3) !important; }
+.theme-light .text-white\/25 { color: rgba(26, 26, 26, 0.25) !important; }
+.theme-light .text-white\/20 { color: rgba(26, 26, 26, 0.2) !important; }
+.theme-light .text-white\/15 { color: rgba(26, 26, 26, 0.15) !important; }
+.theme-light .text-white\/10 { color: rgba(26, 26, 26, 0.1) !important; }
+.theme-light .text-white\/5 { color: rgba(26, 26, 26, 0.05) !important; }
+
+.theme-light .border-white\/5 { border-color: rgba(0, 0, 0, 0.08) !important; }
+.theme-light .border-white\/10 { border-color: rgba(0, 0, 0, 0.12) !important; }
+.theme-light .ring-white\/5 { --tw-ring-color: rgba(0, 0, 0, 0.08) !important; }
+.theme-light .ring-white\/10 { --tw-ring-color: rgba(0, 0, 0, 0.12) !important; }
+
+.theme-light .bg-white\/5 { background-color: rgba(0, 0, 0, 0.04) !important; }
+.theme-light .bg-white\/8 { background-color: rgba(0, 0, 0, 0.05) !important; }
+.theme-light .bg-white\/10 { background-color: rgba(0, 0, 0, 0.06) !important; }
+.theme-light .bg-white\/15 { background-color: rgba(0, 0, 0, 0.08) !important; }
+.theme-light .bg-white\/20 { background-color: rgba(0, 0, 0, 0.1) !important; }
+.theme-light .bg-white\/25 { background-color: rgba(0, 0, 0, 0.12) !important; }
+.theme-light .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.06) !important; }
+.theme-light .hover\:bg-white\/15:hover { background-color: rgba(0, 0, 0, 0.08) !important; }
+
+/* 半透明蒙层（详情页/弹窗）—— 浅色下变白半透 */
+.theme-light .bg-ink-900\/95 { background-color: rgba(255, 255, 255, 0.95) !important; }
+.theme-light .bg-ink-900\/90 { background-color: rgba(255, 255, 255, 0.9) !important; }
+.theme-light .bg-ink-900\/80 { background-color: rgba(255, 255, 255, 0.85) !important; }
+
+/* 黑底（卡片底部渐变标题、悬停蒙层）—— 全皮肤保留深色保证白字可读 */
+.theme-light .bg-black\/60 { background-color: rgba(0, 0, 0, 0.5) !important; }
+.theme-light .bg-black\/85 { background-color: rgba(0, 0, 0, 0.7) !important; }
+.theme-light .bg-black\/95 { background-color: rgba(0, 0, 0, 0.8) !important; }
+
+/* 亮色下 amber 系（隐私护盾按钮、⚠ 徽标等）—— 换成深琥珀保对比度 */
+.theme-light .text-amber-300 { color: #b45309 !important; }
+.theme-light .text-amber-400 { color: #92400e !important; }
+.theme-light .bg-amber-500\/20 { background-color: rgba(180, 83, 9, 0.12) !important; }
+.theme-light .ring-amber-500\/40 { --tw-ring-color: rgba(180, 83, 9, 0.45) !important; }
+.theme-light .text-red-300 { color: #b91c1c !important; }
+.theme-light .text-red-400 { color: #991b1b !important; }
+
+/* 浅色皮肤下，卡片图片上方的文字强制白字（底永远是深色渐变蒙层，深字会看不见） */
+.theme-light .card-title { color: #fff !important; }
+.theme-light .card-hover,
+.theme-light .card-hover .text-white,
+.theme-light .card-hover .text-white\/90,
+.theme-light .card-hover .text-white\/80,
+.theme-light .card-hover .text-white\/70,
+.theme-light .card-hover .text-white\/60,
+.theme-light .card-hover .text-white\/50,
+.theme-light .card-hover .text-white\/40 { color: #fff !important; }
+
+/* ===== 玻璃拟态：面板半透明 + 毛玻璃 ===== */
+.theme-glass .bg-ink-850,
+.theme-glass .bg-ink-800,
+.theme-glass .bg-ink-700 {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+}
+.theme-glass .entry-card {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ===== 卡片悬停升效 ===== */
+.entry-card {
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.28s ease,
+    border-color 0.28s ease;
+  will-change: transform;
+  /* 大库性能：浏览器自动跳过视口外卡片的渲染与布局 */
+  content-visibility: auto;
+  contain-intrinsic-size: 320px;
+}
+.entry-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(251, 114, 153, 0.35),
+    0 0 30px rgba(251, 114, 153, 0.1);
+}
+.theme-light .entry-card:hover {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(251, 114, 153, 0.4),
+    0 0 24px rgba(251, 114, 153, 0.12);
+}
+
+/* ===== 分类标题：杂志皮肤衬线大字 + 粉色竖条 ===== */
+.section-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+.theme-magazine .section-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  position: relative;
+  padding-left: 14px;
+  margin-bottom: 2px;
+}
+.theme-magazine .section-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #fb7299, #ff8aab);
+}
+
+/* ===== 滚动条 ===== */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #2a3242;
+  border-radius: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.theme-light .thin-scroll::-webkit-scrollbar-thumb {
+  background: #c9cdd6;
+}
+
+/* ===== 拖拽窗口区域 ===== */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ===== 隐私护盾：只模糊真实海报图 ===== */
+.privacy-on .poster-img {
+  filter: blur(32px) saturate(0.4) brightness(0.7);
+  transform: scale(1.1);
+}
+/* Hero 大图（300px 高）模糊半径更大 + scale 更强，避免大图模糊不够 */
+.privacy-on .hero-bg-img {
+  filter: blur(48px) saturate(0.3) brightness(0.55) !important;
+  transform: scale(1.2) !important;
+}
+/* 浅色皮肤下海报更深，避免与白底"融为一体" */
+.theme-light .privacy-on .poster-img {
+  filter: blur(36px) saturate(0.3) brightness(0.5);
+}
+.theme-light .privacy-on .hero-bg-img {
+  filter: blur(56px) saturate(0.25) brightness(0.4) !important;
+}
+
+/* ============================================================
+   设计系统 v2：按钮 / 动画 / 阴影 / 滚动条 / 细节
+   ============================================================ */
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  height: 34px;
+  padding: 0 14px;
+  transition: all 0.18s ease;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-brand {
+  background: linear-gradient(135deg, #fb7299, #ff8aab);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(251, 114, 153, 0.35);
+}
+.btn-brand:hover {
+  box-shadow: 0 6px 22px rgba(251, 114, 153, 0.45);
+  filter: brightness(1.06);
+}
+.btn-ghost {
+  background: var(--btn-ghost-bg, rgba(255, 255, 255, 0.06));
+  color: var(--btn-ghost-fg, rgba(255, 255, 255, 0.8));
+}
+.btn-ghost:hover {
+  background: var(--btn-ghost-bg-hover, rgba(255, 255, 255, 0.12));
+  color: #fff;
+}
+.theme-light .btn-ghost {
+  --btn-ghost-bg: rgba(0, 0, 0, 0.05);
+  --btn-ghost-bg-hover: rgba(0, 0, 0, 0.1);
+  --btn-ghost-fg: rgba(0, 0, 0, 0.75);
+}
+
+/* ---------- 动画 ---------- */
+@keyframes vm-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fadeIn {
+  animation: vm-fade-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes vm-fade-in-fast {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fadeIn-fast {
+  animation: vm-fade-in-fast 0.15s ease-out both;
+}
+
+/* ---------- 阴影 ---------- */
+.shadow-glow-sm {
+  box-shadow: 0 2px 12px rgba(251, 114, 153, 0.35);
+}
+
+/* ---------- 主题切换过渡 ---------- */
+body {
+  transition: background 0.35s ease, color 0.35s ease;
+}
+
+/* ---------- 滚动条：更精致 + hover 反馈 ---------- */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #2a3242;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background 0.2s ease;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: #3d4760;
+  background-clip: content-box;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.theme-light .thin-scroll::-webkit-scrollbar-thumb {
+  background: #c9cdd6;
+  background-clip: content-box;
+}
+.theme-light .thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: #aeb4c0;
+  background-clip: content-box;
+}
+
+/* ---------- 浅色补充覆盖（新组件用到的透明层） ---------- */
+.theme-light .bg-white\/6 { background-color: rgba(0, 0, 0, 0.045) !important; }
+.theme-light .bg-white\/12 { background-color: rgba(0, 0, 0, 0.075) !important; }
+.theme-light .hover\:bg-white\/12:hover { background-color: rgba(0, 0, 0, 0.075) !important; }
+
+/* ---------- 玻璃皮肤：工具条 / 侧栏半透明 + 毛玻璃 ---------- */
+.theme-glass .bg-ink-850\/90,
+.theme-glass .bg-ink-850\/80 {
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+}

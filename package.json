@@ -1,0 +1,37 @@
+{
+  "name": "local-video-manager",
+  "version": "1.4.8",
+  "description": "本地视频管理工具 - 海报墙式影库，悬停看简介，点击看详情，本地播放器打开",
+  "type": "module",
+  "main": "out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "preview": "electron-vite preview",
+    "pack": "node scripts/clean.mjs && npm run build && electron-builder"
+  },
+  "dependencies": {
+    "socks": "^2.8.9",
+    "undici": "^6.28.0"
+  },
+  "devDependencies": {
+    "@esbuild/win32-x64": "^0.28.2",
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.40",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}
