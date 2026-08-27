@@ -1256,6 +1256,7 @@ export default function App() {
     <ToastProvider>
     <div
       className={`h-full flex flex-col text-white ${privacy ? 'privacy-on' : ''} density-${settings.posterDensity}`}
+      style={{ contain: 'layout' }}
     >
       <Toolbar
         search={searchInput}

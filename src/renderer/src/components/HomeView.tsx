@@ -150,11 +150,12 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
   const heroSrc = heroV?.posterPath ? posterUrl(heroV.posterPath) : null
 
   return (
-    <div className="h-full overflow-auto thin-scroll p-5 animate-fadeIn">
+    <div className="h-full overflow-auto thin-scroll p-5 animate-fadeIn" style={{ contain: 'layout' }}>
       {/* Hero 推荐位 - 整张点击播放；海报氛围充满 300px，左下紧凑布局，背景用真实海报图（非纯模糊），右上 chip+刷新 */}
       {heroV ? (
         <div
           className="relative rounded-2xl overflow-hidden mb-7 h-[300px] ring-1 ring-white/10 shadow-2xl shadow-black/40 group cursor-pointer"
+          style={{ contain: 'layout paint', willChange: 'transform' }}
           onClick={() => void api.videoOpen(heroV.id)}
         >
           {/* 背景大图：直接展示（去一点饱和度让左下文字清楚），不再 blur */}

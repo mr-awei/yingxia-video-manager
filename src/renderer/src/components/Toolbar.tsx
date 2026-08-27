@@ -24,7 +24,7 @@ export default function Toolbar(props: Props) {
   const [batchMenuOpen, setBatchMenuOpen] = useState(false)
 
   return (
-    <header className="drag-region relative z-50 flex items-center gap-3 px-4 py-2.5 border-b border-white/5 bg-ink-850/90 backdrop-blur-sm shrink-0">
+    <header className="drag-region relative z-50 flex items-center gap-3 px-4 py-2.5 border-b border-white/5 bg-ink-850/90 backdrop-blur-sm shrink-0" style={{ contain: 'layout' }}>
       {/* Logo → 首页 */}
       <button
         className="no-drag flex items-center gap-2 mr-1 select-none group"

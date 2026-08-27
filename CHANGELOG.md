@@ -1,5 +1,15 @@
 # 更新日志（Changelog）
 
+## v1.8.5（2026-08-28）
+
+**修复**
+- **修复窗口缩放过程中「严重重影」**：v1.8.2 已修过一次（移除 `.entry-card` 的 `content-visibility` 占位），但仍残留：拖动窗口缩放时右侧能看到 Hero 大海报、播放按钮、"为你推荐"chip、换一批按钮、视图切换按钮、随机推荐行卡片等内容被复制了一份（Chromium 渲染管线与 Windows 窗口管理器在 resize 期间不同步，导致 WebContents 短暂两帧叠加）。通过 CSS containment 隔离各层 reflow 缓解：
+  - `App` 根容器 `contain: layout` —— 整页视为独立 layout 单元
+  - `Toolbar` header `contain: layout` —— drag-region 不影响下方 reflow
+  - `HomeView` 根容器 `contain: layout`
+  - Hero 区域 `contain: layout paint` + `will-change: transform` —— 强制独立合成层，paint 不溢出自身 box
+  - `.entry-card` `contain: layout style` —— 每张卡片独立 layout/style（**最重要的修复**：每张 EntryCard 在 flex/grid 容器里都可能引发全局 reflow）
+
 ## v1.8.4（2026-08-28）
 
 **修复**
