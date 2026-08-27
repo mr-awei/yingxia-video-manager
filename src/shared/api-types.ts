@@ -193,6 +193,8 @@ export interface AppApi {
     dirPath?: string
     /** 一并清理的关联缓存文件数（封面/预览图/ffmpeg 截图/javdb-javbus 信息图） */
     removedCache?: number
+    /** 是否已删除 data.json 中的视频记录（含 javdbDetail 全部文本元数据：演员/时长/导演/片商/女演员等） */
+    removedRecord?: boolean
     error?: string
   }>
   /** 预检 video 所在目录（不删除任何文件），供删除前确认"会删什么" */

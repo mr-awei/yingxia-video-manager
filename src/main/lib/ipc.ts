@@ -949,15 +949,26 @@ export function registerIpc(): void {
         '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.m2ts', '.mpg', '.mpeg'
       ])
 
+      // 无论最终删到什么，都先清理关联缓存图片 + 删除 data.json 里的记录
+      //（记录含 javdbDetail 全部文本元数据：演员/时长/导演/片商/女演员/评分等，一并消失）
+      const cleanAll = async () => {
+        const c = await cleanVideoCacheFiles(v)
+        try {
+          await repo.removeVideo(id)
+        } catch {
+          /* 记录删除失败不阻塞主流程 */
+        }
+        return c
+      }
+
       let entries: import('node:fs').Dirent[]
       try {
         entries = await fs.readdir(dir, { withFileTypes: true })
       } catch (e) {
         // 目录不存在 / 权限不足 → 仍尝试只挪视频文件到回收站
         await shell.trashItem(filePath).catch(() => {})
-        // 一并清理该视频的封面/截图/javdb 信息缓存
-        const c = await cleanVideoCacheFiles(v)
-        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅把视频文件挪到回收站` }
+        const c = await cleanAll()
+        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed, removedRecord: true, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅把视频文件挪到回收站` }
       }
 
       const otherVideoFiles: string[] = []
@@ -975,17 +986,16 @@ export function registerIpc(): void {
       // 整目录挪回收站的条件：同目录无其他视频 + 有 .torrent + 无其他非视频非种子文件
       const canDeleteDir = otherVideoFiles.length === 0 && torrentFiles.length > 0 && otherFiles.length === 0
 
-      // 无论哪种方式，先清理该视频的关联缓存（封面/预览图/ffmpeg 截图/javdb-javbus 信息图）
-      const c = await cleanVideoCacheFiles(v)
+      const c = await cleanAll()
 
       if (canDeleteDir) {
         // 整目录挪回收站（shell.trashItem 支持目录）
         await shell.trashItem(dir)
-        return { ok: true, path: filePath, deletedDir: true, dirPath: dir, removedCache: c.removed }
+        return { ok: true, path: filePath, deletedDir: true, dirPath: dir, removedCache: c.removed, removedRecord: true }
       } else {
         // 只挪视频文件本身
         await shell.trashItem(filePath)
-        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed }
+        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed, removedRecord: true }
       }
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? '删除失败' }

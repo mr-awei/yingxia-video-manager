@@ -10,7 +10,7 @@ import type {
   Video
 } from '../../shared/types'
 import { parseIntroMd } from './parser'
-import { applyVideoChanges, findVideoByPath, type VideoChange } from './repo'
+import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
 import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic } from '../../shared/code'
@@ -177,6 +177,27 @@ export async function reconcileLibrary(
   let matched = 0
   let missing = 0
 
+  // 已删除标记：用户主动删除过（文件挪回收站 + data.json 记录被删）的番号集合。
+  // md 里有条目但文件缺失时，若该番号在 data.json 中已无任何记录，说明用户主动删除过，
+  // 跳过该条目不标 missing（否则删除后对账又会把它标成"缺失"挂回来）。
+  let activeCodeSet: Set<string> | null = null
+  const getActiveCodeSet = async (): Promise<Set<string>> => {
+    if (activeCodeSet) return activeCodeSet
+    const s = new Set<string>()
+    try {
+      const all = await listVideos({})
+      for (const v of all) {
+        if (v.javdbDetail?.code) s.add(v.javdbDetail.code.toUpperCase())
+        else if (v.title) s.add(String(v.title).toUpperCase())
+        else if (v.fileName) s.add(path.basename(v.fileName, path.extname(v.fileName)).toUpperCase())
+      }
+    } catch {
+      /* 拿不到记录列表时保守处理：不跳过（维持原 missing 行为） */
+    }
+    activeCodeSet = s
+    return s
+  }
+
   if (doc) {
     const total = doc.totalCount + allFiles.length
     for (const cat of doc.categories) {
@@ -205,6 +226,13 @@ export async function reconcileLibrary(
           })
           matched++
         } else {
+          // 文件缺失：若该番号在 data.json 中已无任何记录（用户主动删除过视频 + 记录），
+          // 跳过该条目不标 missing，避免"删了又挂回来"。
+          const activeCodes = await getActiveCodeSet()
+          const upperCode = String(item.code).toUpperCase()
+          if (activeCodes.size > 0 && !activeCodes.has(upperCode)) {
+            continue
+          }
           entries.push({
             kind: 'missing',
             category: cat.name,

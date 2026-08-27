@@ -833,7 +833,8 @@ export default function App() {
         ? `已把整个目录挪到回收站（含视频和种子）：${r.dirPath}`
         : `已把文件挪到回收站：${fileName}`
       const cacheDesc = r.removedCache ? `\n已清理 ${r.removedCache} 个关联缓存（封面/截图/javdb 信息）` : ''
-      toast({ title: '已挪到回收站', text: desc + cacheDesc + '\n（可从回收站恢复）', tone: 'ok', duration: 4500 })
+      const recordDesc = r.removedRecord ? `\n已清除该视频的 javdb 元数据（演员/时长/导演/片商等）` : ''
+      toast({ title: '已挪到回收站', text: desc + cacheDesc + recordDesc + '\n（可从回收站恢复）', tone: 'ok', duration: 5000 })
       // 删除/挪到回收站后关闭详情页（用户已无该视频的打开需求）
       setDetail(null)
       setDeletePreview(null)
