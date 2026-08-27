@@ -95,6 +95,28 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
           </div>
         ) : null}
 
+        {/* 点亮 Star 引导 */}
+        {ABOUT.github ? (
+          <div className="mt-4 rounded-xl bg-gradient-to-r from-brand/15 via-brand/10 to-transparent border border-brand/25 p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-brand/20 flex items-center justify-center shrink-0">
+              <Icon name="star" size={18} className="text-brand" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white text-sm font-medium">喜欢影匣吗？欢迎点亮 Star 支持</div>
+              <div className="text-white/45 text-[11px] mt-0.5 truncate">
+                开源不易，去 GitHub 点个 Star，让这个项目被更多人看到
+              </div>
+            </div>
+            <button
+              className="shrink-0 h-8 px-3 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              onClick={() => onOpenExternal(ABOUT.github)}
+            >
+              <Icon name="star" size={13} />
+              点亮 Star
+            </button>
+          </div>
+        ) : null}
+
         {/* 简介 */}
         <p className="text-white/60 text-sm leading-relaxed mt-4">{ABOUT.description}</p>
 

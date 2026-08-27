@@ -1,5 +1,10 @@
 # 更新日志（Changelog）
 
+## v1.7.6（2026-08-27）
+
+- About 弹窗接入开源仓库地址 https://github.com/awei10/yingxia-video-manager：外部链接区新增 GitHub 按钮。
+- About 弹窗新增「点亮 Star」引导卡片：品牌色渐变卡片 + 一键跳转仓库按钮，引导用户给项目点 Star。
+
 ## v1.7.5（2026-08-27）
 
 - 向导打开即自动扫描番号。新增 IPC library:getCodes，只返回数据，不弹保存对话框、不写文件。打开向导时并行加载番号和规范路径，不用先点第 1 步。
