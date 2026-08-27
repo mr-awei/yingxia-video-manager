@@ -49,8 +49,8 @@ export interface AppInfo {
 
 /** 渲染进程通过 window.api 调用的类型化接口（主进程实现） */
 export interface AppApi {
-  /** 复制文本到剪贴板 */
-  copyText(text: string): void
+  /** 复制文本到剪贴板（主进程执行） */
+  copyText(text: string): Promise<void>
   libraryList(): Promise<Library[]>
   libraryAdd(input: Omit<Library, 'id' | 'createdAt'>): Promise<Library>
   libraryRemove(id: string): Promise<void>
@@ -118,4 +118,16 @@ export interface AppApi {
   onScanProgress(cb: (p: ScanProgress) => void): void
   /** 监听：简介 md 文件变化（需自动重新对账） */
   onMdChanged(cb: (libraryId: string) => void): void
+  /** 读取内置《通用评分与简介规范》全文（新建 md 向导）；返回内容与磁盘路径 */
+  specGet(): Promise<{ content: string; path: string }>
+  /** 批量导出媒体库番号清单为 txt（弹出保存对话框，并复制剪贴板）；返回内容供预览 */
+  libraryExportCodes(libraryId: string): Promise<{
+    ok: boolean
+    path?: string
+    count: number
+    codes: string[]
+    error?: string
+  }>
+  /** 仅扫描媒体库番号清单（不弹保存对话框、不写文件），供向导打开时自动加载 */
+  libraryGetCodes(libraryId: string): Promise<{ count: number; codes: string[] }>
 }

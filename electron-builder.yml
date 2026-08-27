@@ -13,6 +13,9 @@ files:
 # 额外资源：关于模块会读取 CHANGELOG.md 顶部更新日志
 extraResources:
   - CHANGELOG.md
+  # 通用评分与简介规范（新建 md 文件向导的内置参考文档，运行时通过 process.resourcesPath 读取）
+  - from: src/main/assets/通用评分与简介规范.md
+    to: 通用评分与简介规范.md
   # 系统托盘图标（最小化到托盘功能需要）
   - from: build/icon.png
     to: icon.png

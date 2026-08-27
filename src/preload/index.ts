@@ -1,11 +1,11 @@
-import { clipboard, contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { AppApi } from '../shared/api-types'
 
 console.log('[videomanger preload] loaded, exposing window.api')
 
 const api: AppApi = {
-  copyText: (text: string) => clipboard.writeText(text),
+  copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
   libraryList: () => ipcRenderer.invoke(IPC.libraryList),
   libraryAdd: (input) => ipcRenderer.invoke(IPC.libraryAdd, input),
   libraryRemove: (id) => ipcRenderer.invoke(IPC.libraryRemove, id),
@@ -45,7 +45,10 @@ const api: AppApi = {
   },
   onMdChanged: (cb) => {
     ipcRenderer.on(IPC.mdChanged, (_e, libraryId) => cb(libraryId))
-  }
+  },
+  specGet: () => ipcRenderer.invoke(IPC.specGet),
+  libraryExportCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryExportCodes, libraryId),
+  libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId)
 }
 
 contextBridge.exposeInMainWorld('api', api)

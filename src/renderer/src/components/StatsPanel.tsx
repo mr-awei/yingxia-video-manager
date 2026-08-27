@@ -54,6 +54,39 @@ function fmtBytes(bytes?: number): string {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+/** 分辨率分桶（与首页筛选一致）：基于视频高/宽像素 */
+function resolutionBucket(v?: { techInfo?: { width?: number; height?: number } }): string {
+  const h = v?.techInfo?.height ?? 0
+  const w = v?.techInfo?.width ?? 0
+  const px = Math.max(h, w)
+  if (px >= 3840) return '4K'
+  if (px >= 2560) return '2K'
+  if (px >= 1920) return '1080p'
+  if (px >= 1280) return '720p'
+  if (px >= 640) return '480p'
+  if (px > 0) return 'SD'
+  return '未知'
+}
+
+/** 字节条形（宽度 ∝ 字节，右侧显示可读大小） */
+function ByteBar({ label, bytes, max }: { label: string; bytes: number; max: number }) {
+  const pct = max > 0 ? Math.round((bytes / max) * 100) : 0
+  return (
+    <div className="flex items-center gap-2 text-xs py-0.5">
+      <span className="w-24 shrink-0 text-white/55 truncate text-right" title={label}>
+        {label}
+      </span>
+      <div className="flex-1 h-2.5 rounded-full bg-white/5 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-brand to-[#ff9db6]"
+          style={{ width: `${Math.max(2, pct)}%` }}
+        />
+      </div>
+      <span className="w-16 shrink-0 text-white/80 tabular-nums text-right">{fmtBytes(bytes)}</span>
+    </div>
+  )
+}
+
 const RATING_BUCKETS = [
   { label: '0-5', min: 0, max: 5 },
   { label: '5-6', min: 5, max: 6 },
@@ -186,6 +219,27 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
       .slice(0, 10)
       .map((e) => ({ entry: e, size: e.video!.fileSize ?? 0 }))
 
+    // 磁盘占用：按分类 / 年份 聚合字节
+    const diskByCatMap = new Map<string, number>()
+    const diskByYearMap = new Map<string, number>()
+    const resCountMap = new Map<string, number>()
+    for (const e of withVideo) {
+      const sz = e.video!.fileSize ?? 0
+      if (sz > 0) {
+        diskByCatMap.set(e.category, (diskByCatMap.get(e.category) ?? 0) + sz)
+        const y = e.video!.year
+        if (y) diskByYearMap.set(String(y), (diskByYearMap.get(String(y)) ?? 0) + sz)
+      }
+      const rb = resolutionBucket(e.video)
+      resCountMap.set(rb, (resCountMap.get(rb) ?? 0) + 1)
+    }
+    const diskByCat = [...diskByCatMap.entries()].sort((a, b) => b[1] - a[1])
+    const diskByYear = [...diskByYearMap.entries()]
+      .sort((a, b) => (a[0] === '未知' ? 1 : b[0] === '未知' ? -1 : Number(b[0]) - Number(a[0])))
+    const resCount = ['4K', '2K', '1080p', '720p', '480p', 'SD', '未知']
+      .filter((k) => (resCountMap.get(k) ?? 0) > 0)
+      .map((k) => ({ label: k, count: resCountMap.get(k)! }))
+
     return {
       total,
       totalSec,
@@ -198,7 +252,10 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
       topTags,
       totalBytes,
       sizedCount: sized.length,
-      topFiles
+      topFiles,
+      diskByCat,
+      diskByYear,
+      resCount
     }
   }, [result])
 
@@ -209,6 +266,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
   const maxYear = Math.max(1, ...stats.years.map((x) => x[1]))
   const maxCat = Math.max(1, ...stats.cats.map((x) => x[1]))
   const maxTag = Math.max(1, ...stats.topTags.map((x) => x[1]))
+  const maxDiskCat = Math.max(1, ...stats.diskByCat.map((x) => x[1]))
+  const maxDiskYear = Math.max(1, ...stats.diskByYear.map((x) => x[1]))
+  const maxRes = Math.max(1, ...stats.resCount.map((x) => x.count))
 
   return (
     <div
@@ -334,6 +394,36 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               ) : (
                 stats.years.map(([y, c]) => (
                   <Bar key={y} label={String(y)} count={c} max={maxYear} />
+                ))
+              )}
+            </Section>
+
+            <Section title="磁盘占用（按分类）" hint={stats.sizedCount ? `共 ${stats.sizedCount} 部已探测大小` : 'ffprobe 未探测到文件大小'}>
+              {stats.diskByCat.length === 0 ? (
+                <div className="text-white/35 text-xs">暂无文件大小数据（需 ffprobe 探测）</div>
+              ) : (
+                stats.diskByCat.map(([name, bytes]) => (
+                  <ByteBar key={name} label={name} bytes={bytes} max={maxDiskCat} />
+                ))
+              )}
+            </Section>
+
+            <Section title="磁盘占用（按年份）">
+              {stats.diskByYear.length === 0 ? (
+                <div className="text-white/35 text-xs">暂无年份/文件大小数据</div>
+              ) : (
+                stats.diskByYear.map(([y, bytes]) => (
+                  <ByteBar key={y} label={y} bytes={bytes} max={maxDiskYear} />
+                ))
+              )}
+            </Section>
+
+            <Section title="分辨率分布（按数量）" hint="需 ffprobe 探测到分辨率">
+              {stats.resCount.length === 0 ? (
+                <div className="text-white/35 text-xs">暂无分辨率数据</div>
+              ) : (
+                stats.resCount.map((r) => (
+                  <Bar key={r.label} label={r.label} count={r.count} max={maxRes} />
                 ))
               )}
             </Section>

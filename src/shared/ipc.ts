@@ -46,6 +46,8 @@ export const IPC = {
   dialogSelectFile: 'dialog:selectFile',
   // 用系统默认程序打开路径（文件或文件夹）
   openPath: 'system:openPath',
+  // 复制文本到剪贴板（主进程执行，sandbox preload 无法直接访问 clipboard 模块）
+  copyText: 'system:copyText',
   // 用默认浏览器打开外部链接（官网 / 仓库 / issue）
   openExternal: 'system:openExternal',
   // 应用信息（版本号等）
@@ -55,7 +57,13 @@ export const IPC = {
   // 事件（主进程 -> 渲染进程）
   scanProgress: 'scan:progress',
   // 简介 md 文件变化（自动重新对账）
-  mdChanged: 'md:changed'
+  mdChanged: 'md:changed',
+  // 内置规范文档（新建 md 文件向导）：读取打包资源中的规范全文
+  specGet: 'spec:get',
+  // 批量导出媒体库番号清单（新建 md 文件向导第一步，写入 txt 文件）
+  libraryExportCodes: 'library:exportCodes',
+  // 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载）
+  libraryGetCodes: 'library:getCodes'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

@@ -47,6 +47,13 @@ export type IconName =
   | 'chart'
   | 'building'
   | 'bookmark'
+  | 'globe'
+  | 'cookie'
+  | 'database'
+  | 'palette'
+  | 'shield'
+  | 'zap'
+  | 'save'
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (
@@ -333,6 +340,56 @@ const PATHS: Record<IconName, ReactNode> = {
   bookmark: (
     <>
       <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </>
+  ),
+  cookie: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+      <circle cx="9" cy="13" r="1.5" fill="currentColor" />
+      <circle cx="13" cy="16" r="1.5" fill="currentColor" />
+      <path d="m4.5 8.5 3 1.5" />
+      <path d="m19.5 8.5-3 1.5" />
+    </>
+  ),
+  database: (
+    <>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </>
+  ),
+  palette: (
+    <>
+      <path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z" />
+      <circle cx="12" cy="7" r="1.5" fill="currentColor" />
+      <circle cx="17" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="17" r="1.5" fill="currentColor" />
+      <circle cx="7" cy="12" r="1.5" fill="currentColor" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </>
+  ),
+  zap: (
+    <>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
     </>
   )
 }

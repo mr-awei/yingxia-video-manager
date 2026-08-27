@@ -16,6 +16,9 @@ interface Props {
   /** 随机推荐（每日刷新 + 手动刷新） */
   recommend: DisplayEntry[]
   onRefreshRecommend: () => void
+  /** 顶栏 Hero：独立洗牌队列驱动，整库参与、不重复、点一次换一次 */
+  hero?: DisplayEntry
+  onHeroNext: () => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
 }
@@ -91,28 +94,28 @@ function Row({
   )
 }
 
-export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, onPickTag }: Props) {
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag }: Props) {
+  // 合并刷新：点 Hero 刷新或随机推荐行刷新，两者一起换一批
+  const refreshAll = () => {
+    onHeroNext()
+    onRefreshRecommend()
+  }
   // hero 刷新按钮的旋转反馈（点击后转 600ms，让用户明确感知已触发刷新）
   const [heroSpin, setHeroSpin] = useState(false)
   const heroRefresh = () => {
     setHeroSpin(true)
-    onRefreshRecommend()
+    refreshAll()
     window.setTimeout(() => setHeroSpin(false), 600)
   }
-  const { hero, recent, topRated, recentPlayed, favorite } = useMemo(() => {
+  const { recent, topRated, recentPlayed, favorite } = useMemo(() => {
     const withVideo = entries.filter((e) => e.video)
     const scoreOf = (e: DisplayEntry) => e.score ?? e.video?.rating ?? 0
     const sortBy = (key: (e: DisplayEntry) => number, dir: 1 | -1 = -1) =>
       [...withVideo].sort((a, b) => (key(a) - key(b)) * dir)
 
-    const topRatedAll = sortBy(scoreOf).filter((e) => scoreOf(e) > 0)
-    // Hero：复用随机推荐的第一部（与下方「随机推荐」同源，随日期+手动刷新变化）
-    const heroSrc = recommend[0] ?? withVideo[0]
-
     return {
-      hero: heroSrc,
       recent: sortBy((e) => e.video?.addedAt ?? 0).slice(0, 14),
-      topRated: topRatedAll.slice(0, 14),
+      topRated: sortBy(scoreOf).filter((e) => scoreOf(e) > 0).slice(0, 14),
       recentPlayed: sortBy((e) => e.video?.lastPlayedAt ?? 0)
         .filter((e) => (e.video?.lastPlayedAt ?? 0) > 0)
         .slice(0, 14),
@@ -253,7 +256,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
-      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshRecommend} onPickTag={onPickTag} />
+      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} />
       <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
       <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
       <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} />

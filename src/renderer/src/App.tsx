@@ -26,6 +26,7 @@ import HomeView from './components/HomeView'
 import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
+import OnboardMdModal from './components/OnboardMdModal'
 import type { AppInfo } from '../../shared/api-types'
 
 interface FilterState {
@@ -38,15 +39,49 @@ interface FilterState {
   category: string | null
 }
 
-/** FNV-1a 字符串哈希 → 32 位无符号整数（确定性，用于随机推荐的种子洗牌） */
-function hashStr(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
+/** Fisher-Yates 洗牌（默认用 Math.random，保证每次重建队列都不同；可传入 rand 做可复现） */
+function shuffleEntries<T>(arr: T[], rand: () => number = Math.random): T[] {
+  const a = arr.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
   }
-  return h >>> 0
+  return a
 }
+
+// ---- 多维筛选：连续维度离散化（分辨率 / 时长 / 评分） ----
+function resolutionBucket(v?: Video): string {
+  const h = v?.techInfo?.height ?? 0
+  const w = v?.techInfo?.width ?? 0
+  const px = Math.max(h, w)
+  if (px >= 3840) return '4K'
+  if (px >= 2560) return '2K'
+  if (px >= 1920) return '1080p'
+  if (px >= 1280) return '720p'
+  if (px >= 640) return '480p'
+  if (px > 0) return 'SD'
+  return '未知'
+}
+function durationBucket(sec?: number): string {
+  if (!sec || sec <= 0) return '未知'
+  if (sec < 1800) return '30分钟内'
+  if (sec < 3600) return '30-60分'
+  if (sec < 7200) return '1-2小时'
+  if (sec < 10800) return '2-3小时'
+  return '3小时以上'
+}
+function scoreBucketOf(e: DisplayEntry): string {
+  const s = e.score ?? e.video?.rating
+  if (s == null) return '未评分'
+  if (s >= 9) return '9-10'
+  if (s >= 8) return '8-9'
+  if (s >= 7) return '7-8'
+  if (s >= 6) return '6-7'
+  return '6以下'
+}
+const RES_ORDER = ['4K', '2K', '1080p', '720p', '480p', 'SD', '未知']
+const DUR_ORDER = ['30分钟内', '30-60分', '1-2小时', '2-3小时', '3小时以上', '未知']
+const SCORE_ORDER = ['9-10', '8-9', '7-8', '6-7', '6以下', '未评分']
 
 export default function App() {
   const [libraries, setLibraries] = useState<Library[]>([])
@@ -68,12 +103,19 @@ export default function App() {
   const [selectedActors, setSelectedActors] = useState<Set<string>>(new Set())
   const [selectedStudios, setSelectedStudios] = useState<Set<string>>(new Set())
   const [selectedSeries, setSelectedSeries] = useState<Set<string>>(new Set())
+  /** 技术规格 / 时间 维度筛选（分辨率 / 时长 / 评分 / 年份），各维度内 OR、跨维度 AND */
+  const [selectedResolutions, setSelectedResolutions] = useState<Set<string>>(new Set())
+  const [selectedDurations, setSelectedDurations] = useState<Set<string>>(new Set())
+  const [selectedScores, setSelectedScores] = useState<Set<string>>(new Set())
+  const [selectedYears, setSelectedYears] = useState<Set<string>>(new Set())
   const [statsOpen, setStatsOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  /** 新建 md 文件向导（添加媒体库无 md / 库设置「按规范新建」时弹出） */
+  const [onboard, setOnboard] = useState<Library | null>(null)
   const [editing, setEditing] = useState<Video | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [detail, setDetail] = useState<Video | null>(null)
@@ -94,6 +136,14 @@ export default function App() {
   /** 命令面板 ⌘K */
   /** 随机推荐：手动刷新 nonce（每日刷新由种子里的日期自动驱动） */
   const [recommendNonce, setRecommendNonce] = useState(0)
+
+  // ---- Hero 独立洗牌队列：整库全部影片入队，点一次取下一个，走完一轮自动重新洗牌 ----
+  const [heroQueue, setHeroQueue] = useState<DisplayEntry[]>([])
+  const [heroIdx, setHeroIdx] = useState(0)
+  const heroQueueRef = useRef<DisplayEntry[]>([])
+  const heroIdxRef = useRef(0)
+  heroQueueRef.current = heroQueue
+  heroIdxRef.current = heroIdx
 
   useEffect(() => {
     localStorage.setItem('vm-viewmode', viewMode)
@@ -348,6 +398,39 @@ export default function App() {
     return { actors: sort(actors), studios: sort(studios), series: sort(series) }
   }, [applyTagsOnly])
 
+  // 技术规格 facet：分辨率 / 时长 / 评分 / 年份（基于 applyTagsOnly，计数随搜索+tag 联动）
+  const specFacets = useMemo(() => {
+    const res = new Map<string, number>()
+    const dur = new Map<string, number>()
+    const score = new Map<string, number>()
+    const year = new Map<string, number>()
+    for (const e of applyTagsOnly) {
+      const r = resolutionBucket(e.video); res.set(r, (res.get(r) ?? 0) + 1)
+      const sec = e.video?.durationSec ?? e.video?.techInfo?.durationSec
+      const d = durationBucket(sec); dur.set(d, (dur.get(d) ?? 0) + 1)
+      const s = scoreBucketOf(e); score.set(s, (score.get(s) ?? 0) + 1)
+      const y = e.video?.year
+      const yk = y ? String(y) : '未知'
+      year.set(yk, (year.get(yk) ?? 0) + 1)
+    }
+    const fromOrder = (m: Map<string, number>, order: string[]): MetaFacet[] => {
+      const out: MetaFacet[] = []
+      for (const k of order) if ((m.get(k) ?? 0) > 0) out.push({ name: k, count: m.get(k)! })
+      for (const [k, c] of m) if (!order.includes(k) && c > 0) out.push({ name: k, count: c })
+      return out
+    }
+    const years = [...year.entries()]
+      .filter(([, c]) => c > 0)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => (a.name === '未知' ? 1 : b.name === '未知' ? -1 : Number(b.name) - Number(a.name)))
+    return {
+      resolutions: fromOrder(res, RES_ORDER),
+      durations: fromOrder(dur, DUR_ORDER),
+      scores: fromOrder(score, SCORE_ORDER),
+      years
+    }
+  }, [applyTagsOnly])
+
   // 第二层：在 applyTagsOnly 基础上再应用 演员/片商/系列 维度筛选（各维度内 OR，跨维度 AND）
   const applyMetaFilters = useMemo(() => {
     let list = applyTagsOnly
@@ -368,8 +451,26 @@ export default function App() {
         (e) => !!e.video?.javdbDetail?.series && selectedSeries.has(e.video.javdbDetail.series)
       )
     }
+    if (selectedResolutions.size > 0) {
+      list = list.filter((e) => selectedResolutions.has(resolutionBucket(e.video)))
+    }
+    if (selectedDurations.size > 0) {
+      list = list.filter((e) => {
+        const sec = e.video?.durationSec ?? e.video?.techInfo?.durationSec
+        return selectedDurations.has(durationBucket(sec))
+      })
+    }
+    if (selectedScores.size > 0) {
+      list = list.filter((e) => selectedScores.has(scoreBucketOf(e)))
+    }
+    if (selectedYears.size > 0) {
+      list = list.filter((e) => {
+        const y = e.video?.year
+        return !!y && selectedYears.has(String(y))
+      })
+    }
     return list
-  }, [applyTagsOnly, selectedActors, selectedStudios, selectedSeries])
+  }, [applyTagsOnly, selectedActors, selectedStudios, selectedSeries, selectedResolutions, selectedDurations, selectedScores, selectedYears])
 
   // 第三层：应用 智能筛选（我的清单 / 快捷过滤）
   const applySmart = useMemo(() => {
@@ -442,24 +543,55 @@ export default function App() {
     return { fav, recent }
   }, [reconcile])
 
-  // 随机推荐（确定性洗牌：种子 = 当天日期 + 手动刷新 nonce → 每日自动换一批，手动刷新换一批）
+  // 随机推荐：整库真随机洗牌（每次点击 nonce 变化即重新 Fisher-Yates 洗牌整页）。
+  // 改用 Math.random 而非确定性 hash 洗牌，保证「点一次必换一次、绝不原地不动」，
+  // 且整库所有影片都参与循环（无海报影片也会以占位符形式出现）。
   const recommend = useMemo<DisplayEntry[]>(() => {
     const list = (reconcile?.entries ?? []).filter((e) => e.video)
     if (list.length === 0) return []
-    const now = new Date()
-    const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
-    const seed = `${day}#${recommendNonce}`
-    const hasPoster = (e: DisplayEntry) =>
-      !!(e.video?.posterPath && e.video.posterSource !== 'placeholder')
-    // **所有有 video 的影片都进 14 名**（含没海报的，用占位符显示）；
-    // **有海报的优先排前面**（让 hero 默认展示有海报的片）——分两阶段排序避免互相挤掉
-    return list
-      .map((e) => ({ e, h: hashStr(`${e.code}|${seed}`) }))
-      .sort((a, b) => a.h - b.h) // 先按 hash 洗牌保证多样性
-      .sort((a, b) => Number(hasPoster(b.e)) - Number(hasPoster(a.e))) // 再按有海报排序
-      .slice(0, 14)
-      .map((s) => s.e)
+    return shuffleEntries(list).slice(0, 14)
   }, [reconcile, recommendNonce])
+
+  // 库内容变化（扫描 / 切换库 / 补齐信息）→ 用整库全部影片重建 hero 洗牌队列（Fisher-Yates 乱序）
+  useEffect(() => {
+    const all = (reconcile?.entries ?? []).filter((e) => e.video)
+    if (all.length === 0) {
+      setHeroQueue([])
+      heroQueueRef.current = []
+      setHeroIdx(0)
+      return
+    }
+    const q = shuffleEntries(all)
+    setHeroQueue(q)
+    heroQueueRef.current = q
+    setHeroIdx(0)
+  }, [reconcile])
+
+  // Hero：从独立队列取当前项（整库参与、不重复、点一次换一次）；队列未就绪时回退到随机推荐首条 / 首个影片
+  const hero =
+    heroQueue[heroIdx] ??
+    recommend[0] ??
+    (reconcile?.entries ?? []).filter((e) => e.video)[0] ??
+    undefined
+
+  // 点一次 → 取下一项；走到队尾自动重新洗牌（并避免与上一轮尾项重复）
+  const onHeroNext = useCallback(() => {
+    const q = heroQueueRef.current
+    if (q.length <= 1) return
+    const next = heroIdxRef.current + 1
+    if (next < q.length) {
+      setHeroIdx(next)
+      return
+    }
+    const all = (reconcile?.entries ?? []).filter((e) => e.video)
+    if (all.length <= 1) return
+    const nq = shuffleEntries(all)
+    const lastCode = q[q.length - 1]?.code
+    if (nq[0]?.code === lastCode && nq.length > 1) nq.push(nq.shift()!)
+    setHeroQueue(nq)
+    heroQueueRef.current = nq
+    setHeroIdx(0)
+  }, [reconcile])
 
   // 详情页相关推荐（同片商 / 系列 / 女演员）
   /**
@@ -558,7 +690,8 @@ export default function App() {
 
   const totalSelected = selectedTags.size
   const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size
-  const hasActiveFilters = totalSelected + metaSelectedCount + (filter.category ? 1 : 0) > 0 || smart !== 'all'
+  const techSelectedCount = selectedResolutions.size + selectedDurations.size + selectedScores.size + selectedYears.size
+  const hasActiveFilters = totalSelected + metaSelectedCount + techSelectedCount + (filter.category ? 1 : 0) > 0 || smart !== 'all'
 
   // ---------- 回调 ----------
 
@@ -588,6 +721,8 @@ export default function App() {
     })
     setLibraries((prev) => [...prev, lib])
     setLibraryId(lib.id)
+    // 未选择 md 文件：自动弹出「新建简介文件向导」，引导用户按内置规范生成 md
+    if (!md) setOnboard(lib)
   }, [])
 
   const handleScan = useCallback(() => {
@@ -815,6 +950,7 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    clearTechFilters()
   }, [])
 
   const onNav = useCallback((v: ViewName, s?: SmartFilter) => {
@@ -826,6 +962,7 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    clearTechFilters()
     if (s === 'recent') setFilter((f) => ({ ...f, sort: 'lastPlayed', desc: true }))
   }, [])
 
@@ -838,6 +975,7 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    clearTechFilters()
   }, [])
 
 
@@ -882,11 +1020,56 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    clearTechFilters()
   }, [])
 
   const clearActors = useCallback(() => setSelectedActors(new Set()), [])
   const clearStudios = useCallback(() => setSelectedStudios(new Set()), [])
   const clearSeries = useCallback(() => setSelectedSeries(new Set()), [])
+
+  // ---------- 技术规格 / 时间 维度筛选 ----------
+  const toggleResolution = useCallback((v: string) => {
+    setSelectedResolutions((prev) => {
+      const n = new Set(prev)
+      if (n.has(v)) n.delete(v)
+      else n.add(v)
+      return n
+    })
+  }, [])
+  const toggleDuration = useCallback((v: string) => {
+    setSelectedDurations((prev) => {
+      const n = new Set(prev)
+      if (n.has(v)) n.delete(v)
+      else n.add(v)
+      return n
+    })
+  }, [])
+  const toggleScore = useCallback((v: string) => {
+    setSelectedScores((prev) => {
+      const n = new Set(prev)
+      if (n.has(v)) n.delete(v)
+      else n.add(v)
+      return n
+    })
+  }, [])
+  const toggleYear = useCallback((v: string) => {
+    setSelectedYears((prev) => {
+      const n = new Set(prev)
+      if (n.has(v)) n.delete(v)
+      else n.add(v)
+      return n
+    })
+  }, [])
+  const clearResolutions = useCallback(() => setSelectedResolutions(new Set()), [])
+  const clearDurations = useCallback(() => setSelectedDurations(new Set()), [])
+  const clearScores = useCallback(() => setSelectedScores(new Set()), [])
+  const clearYears = useCallback(() => setSelectedYears(new Set()), [])
+  const clearTechFilters = useCallback(() => {
+    setSelectedResolutions(new Set())
+    setSelectedDurations(new Set())
+    setSelectedScores(new Set())
+    setSelectedYears(new Set())
+  }, [])
 
   const handlePickFilter = useCallback((f: { type: 'actor' | 'studio' | 'series'; value: string }) => {
     setDetail(null)
@@ -1040,6 +1223,23 @@ export default function App() {
           onClearStudios={clearStudios}
           onClearSeries={clearSeries}
           onClearMetaFilters={clearMetaFilters}
+          resolutionFacets={specFacets.resolutions}
+          durationFacets={specFacets.durations}
+          scoreFacets={specFacets.scores}
+          yearFacets={specFacets.years}
+          selectedResolutions={selectedResolutions}
+          selectedDurations={selectedDurations}
+          selectedScores={selectedScores}
+          selectedYears={selectedYears}
+          onToggleResolution={toggleResolution}
+          onToggleDuration={toggleDuration}
+          onToggleScore={toggleScore}
+          onToggleYear={toggleYear}
+          onClearResolutions={clearResolutions}
+          onClearDurations={clearDurations}
+          onClearScores={clearScores}
+          onClearYears={clearYears}
+          onClearTechFilters={clearTechFilters}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={toggleSidebar}
           onOpenStats={() => setStatsOpen(true)}
@@ -1077,6 +1277,8 @@ export default function App() {
               onBrowse={(s) => onNav('browse', s)}
               recommend={recommend}
               onRefreshRecommend={() => setRecommendNonce((n) => n + 1)}
+              hero={hero}
+              onHeroNext={onHeroNext}
               onPickTag={handlePickTag}
             />
           ) : filtered.length === 0 ? (
@@ -1108,8 +1310,8 @@ export default function App() {
                 onShowReconcile={() => setReconcileOpen(true)}
               />
 
-              {/* 活跃筛选条：演员/片商/系列 维度筛选可视化，可单独移除 */}
-              {metaSelectedCount > 0 ? (
+              {/* 活跃筛选条：多维筛选可视化，可单独移除 */}
+              {(metaSelectedCount + techSelectedCount) > 0 ? (
                 <div className="mb-3 flex flex-wrap items-center gap-2 animate-fadeIn-fast">
                   <span className="text-white/40 text-xs">筛选：</span>
                   {[...selectedActors].map((a) => (
@@ -1142,8 +1344,48 @@ export default function App() {
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
+                  {[...selectedResolutions].map((r) => (
+                    <button
+                      key={`r-${r}`}
+                      onClick={() => toggleResolution(r)}
+                      className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+                    >
+                      分辨率：{r}
+                      <Icon name="x" size={11} className="opacity-70" />
+                    </button>
+                  ))}
+                  {[...selectedDurations].map((d) => (
+                    <button
+                      key={`d-${d}`}
+                      onClick={() => toggleDuration(d)}
+                      className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+                    >
+                      时长：{d}
+                      <Icon name="x" size={11} className="opacity-70" />
+                    </button>
+                  ))}
+                  {[...selectedScores].map((s) => (
+                    <button
+                      key={`sc-${s}`}
+                      onClick={() => toggleScore(s)}
+                      className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+                    >
+                      评分：{s}
+                      <Icon name="x" size={11} className="opacity-70" />
+                    </button>
+                  ))}
+                  {[...selectedYears].map((y) => (
+                    <button
+                      key={`y-${y}`}
+                      onClick={() => toggleYear(y)}
+                      className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+                    >
+                      年份：{y}
+                      <Icon name="x" size={11} className="opacity-70" />
+                    </button>
+                  ))}
                   <button
-                    onClick={clearMetaFilters}
+                    onClick={clearAllFilters}
                     className="h-6 px-2 rounded-md text-[11px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors"
                   >
                     清除全部
@@ -1193,6 +1435,10 @@ export default function App() {
         onClose={() => setLibraryOpen(false)}
         onSave={handleSaveLibrary}
         onRemove={handleRemoveLibrary}
+        onOnboard={() => {
+          setLibraryOpen(false)
+          setOnboard(currentLibrary)
+        }}
       />
 
       <SettingsModal
@@ -1331,6 +1577,18 @@ export default function App() {
           }}
         />
       ) : null}
+
+      <OnboardMdModal
+        open={!!onboard}
+        library={onboard}
+        onClose={() => setOnboard(null)}
+        onOpenExternal={(u) => void api.openExternal(u)}
+        onOpenSpec={(p) => void api.openPath(p)}
+        onOpenLibrarySettings={() => {
+          setOnboard(null)
+          setLibraryOpen(true)
+        }}
+      />
 
     </div>
   )

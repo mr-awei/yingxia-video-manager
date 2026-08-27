@@ -65,6 +65,25 @@ interface Props {
   onClearSeries: () => void
   onClearMetaFilters: () => void
 
+  /** 筛选：技术规格 / 时间 */
+  resolutionFacets: MetaFacet[]
+  durationFacets: MetaFacet[]
+  scoreFacets: MetaFacet[]
+  yearFacets: MetaFacet[]
+  selectedResolutions: Set<string>
+  selectedDurations: Set<string>
+  selectedScores: Set<string>
+  selectedYears: Set<string>
+  onToggleResolution: (v: string) => void
+  onToggleDuration: (v: string) => void
+  onToggleScore: (v: string) => void
+  onToggleYear: (v: string) => void
+  onClearResolutions: () => void
+  onClearDurations: () => void
+  onClearScores: () => void
+  onClearYears: () => void
+  onClearTechFilters: () => void
+
   collapsed: boolean
   onToggleCollapsed: () => void
 
@@ -259,6 +278,10 @@ function SidebarInner(props: Props) {
     selectedActors, selectedStudios, selectedSeries,
     onToggleActor, onToggleStudio, onToggleSeries,
     onClearActors, onClearStudios, onClearSeries, onClearMetaFilters,
+    resolutionFacets, durationFacets, scoreFacets, yearFacets,
+    selectedResolutions, selectedDurations, selectedScores, selectedYears,
+    onToggleResolution, onToggleDuration, onToggleScore, onToggleYear,
+    onClearResolutions, onClearDurations, onClearScores, onClearYears, onClearTechFilters,
     collapsed, onToggleCollapsed,
     onOpenStats, onOpenAbout, onOpenSettings
   } = props
@@ -280,6 +303,7 @@ function SidebarInner(props: Props) {
 
   const totalSelected = selected.size
   const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size
+  const techSelectedCount = selectedResolutions.size + selectedDurations.size + selectedScores.size + selectedYears.size
 
   if (collapsed) {
     return (
@@ -496,6 +520,18 @@ function SidebarInner(props: Props) {
           <FacetGroup title="女演员" icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
           <FacetGroup title="片商" icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
           <FacetGroup title="系列" icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
+        </Section>
+
+        {/* 技术规格：分辨率 / 时长 / 评分 */}
+        <Section title="技术规格" icon="monitor" count={techSelectedCount} onClear={onClearTechFilters} active={techSelectedCount > 0}>
+          <FacetGroup title="分辨率" icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
+          <FacetGroup title="时长" icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
+          <FacetGroup title="评分" icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />
+        </Section>
+
+        {/* 年份 */}
+        <Section title="年份" icon="calendar" count={selectedYears.size} onClear={onClearYears} active={selectedYears.size > 0}>
+          <FacetGroup title="年份" icon="calendar" facets={yearFacets} selected={selectedYears} onToggle={onToggleYear} onClear={onClearYears} />
         </Section>
       </div>
 

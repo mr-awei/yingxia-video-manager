@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { IPC } from '../../shared/ipc'
 import * as repo from './repo'
-import { scanLibrary } from './scanner'
+import { scanLibrary, walk } from './scanner'
 import path from 'node:path'
 import { readFileSync, promises as fs } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -462,6 +462,82 @@ export function registerIpc(): void {
     }
   })
 
+  // ---------- 内置规范文档（新建 md 文件向导）：读取打包资源中的规范全文 ----------
+  ipcMain.handle(IPC.specGet, () => {
+    const candidates = [
+      path.join(process.resourcesPath, '通用评分与简介规范.md'),
+      path.join(app.getAppPath(), 'src/main/assets/通用评分与简介规范.md'),
+      path.join(app.getAppPath(), '..', 'src/main/assets/通用评分与简介规范.md')
+    ]
+    for (const c of candidates) {
+      try {
+        const content = readFileSync(c, 'utf-8')
+        return { content, path: c }
+      } catch {
+        // 尝试下一个候选路径
+      }
+    }
+    return { content: '', path: '' }
+  })
+
+  // ---------- 批量导出番号清单（新建 md 文件向导第一步） ----------
+  ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string) => {
+    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
+    if (!lib) return { ok: false, count: 0, codes: [], error: '媒体库不存在' }
+    // 扫描文件夹，收集所有视频文件的「番号」（文件名去扩展名，去重 + 排序）
+    const files: string[] = []
+    for await (const f of walk(lib.folderPath)) files.push(f)
+    const seen = new Set<string>()
+    const codes: string[] = []
+    for (const f of files) {
+      const base = path.basename(f)
+      const ext = path.extname(f)
+      const name = base.slice(0, base.length - ext.length)
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      codes.push(name)
+    }
+    codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    const res = await dialog.showSaveDialog({
+      title: '导出番号清单',
+      defaultPath: `${lib.name}-番号清单.txt`,
+      filters: [{ name: '文本文件', extensions: ['txt'] }]
+    })
+    if (res.canceled || !res.filePath) return { ok: false, count: codes.length, codes, error: '已取消' }
+    await fs.writeFile(res.filePath, codes.join('，') + '\n', 'utf-8')
+    // 同时复制到剪贴板，方便直接粘贴给 AI
+    try {
+      clipboard.writeText(codes.join('，'))
+    } catch {
+      // 复制失败不影响文件导出
+    }
+    return { ok: true, path: res.filePath, count: codes.length, codes }
+  })
+
+  // ---------- 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载） ----------
+  ipcMain.handle(IPC.libraryGetCodes, async (_e, libraryId: string) => {
+    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
+    if (!lib) return { count: 0, codes: [] }
+    const files: string[] = []
+    for await (const f of walk(lib.folderPath)) files.push(f)
+    const seen = new Set<string>()
+    const codes: string[] = []
+    for (const f of files) {
+      const base = path.basename(f)
+      const ext = path.extname(f)
+      const name = base.slice(0, base.length - ext.length)
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      codes.push(name)
+    }
+    codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    return { count: codes.length, codes }
+  })
+
   // ---------- 分享：扫描 .torrent → 磁链 → 复制 ----------
   ipcMain.handle(IPC.videoShareTorrents, async (_e, id: string) => {
     const v = await repo.getVideo(id)
@@ -526,6 +602,16 @@ export function registerIpc(): void {
       // 忽略打开失败
     }
   })
+
+  // 复制文本到剪贴板（sandbox preload 无法访问 clipboard 模块，必须在主进程做）
+  ipcMain.handle(IPC.copyText, async (_e, text: string) => {
+    try {
+      clipboard.writeText(text)
+    } catch {
+      // 忽略复制失败
+    }
+  })
+
   ipcMain.handle(IPC.shellRevealInFolder, async (_e, p: string) => {
     try {
       shell.showItemInFolder(p)

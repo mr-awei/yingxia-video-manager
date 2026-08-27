@@ -8,9 +8,11 @@ interface Props {
   onClose: () => void
   onSave: (patch: Partial<Library>) => void
   onRemove: () => void
+  /** 打开「新建简介文件向导」（按内置规范生成 md） */
+  onOnboard?: () => void
 }
 
-export default function LibraryModal({ open, library, onClose, onSave, onRemove }: Props) {
+export default function LibraryModal({ open, library, onClose, onSave, onRemove, onOnboard }: Props) {
   const [name, setName] = useState('')
   const [folderPath, setFolderPath] = useState('')
   const [introMdPath, setIntroMdPath] = useState('')
@@ -82,6 +84,14 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
           <div className="text-white/40 text-xs mt-1">
             海报墙按该 md 的分类展示；对账差异会弹窗提醒。
           </div>
+          {onOnboard ? (
+            <button
+              className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-brand hover:text-brand-hover"
+              onClick={onOnboard}
+            >
+              还没有 md？按内置规范让 AI 帮你生成 →
+            </button>
+          ) : null}
         </label>
 
         <div className="flex justify-between items-center">
