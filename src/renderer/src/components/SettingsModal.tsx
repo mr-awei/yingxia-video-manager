@@ -499,7 +499,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
       setUpdateRes(r)
     } catch {
       setUpdateRes({
-        source: draft.updateSource ?? 'github',
+        source: draft.updateSource ?? 'gitee',
         currentVersion: '',
         latestVersion: '',
         hasUpdate: false,
@@ -509,6 +509,18 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
     } finally {
       setChecking(false)
     }
+  }
+
+  /** 切换检查更新源并立即重试（源切换立即保存，主进程按已保存的源检查） */
+  const switchSourceAndRetry = async () => {
+    const next: 'github' | 'gitee' = (draft.updateSource ?? 'gitee') === 'gitee' ? 'github' : 'gitee'
+    setDraft({ ...draft, updateSource: next })
+    try {
+      await api.settingsSet({ updateSource: next })
+    } catch {
+      /* 保存失败也照常重试 */
+    }
+    await checkUpdate()
   }
 
   return (
@@ -1102,8 +1114,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </button>
                     {updateRes && !updateRes.hasUpdate && !updateRes.error ? (
                       <span className="text-xs text-emerald-400">已是最新版本</span>
-                    ) : null}
-                  </div>
+                    ) : null}                  </div>
                   {updateRes ? (
                     (() => {
                       const meta = urgencyMeta(updateRes.urgency)
@@ -1174,7 +1185,26 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                               </div>
                             </div>
                           ) : null}
-                          {updateRes.error ? <div className="text-red-400/90 text-xs mt-1">{updateRes.error}</div> : null}
+                          {updateRes.error ? (
+                            <div className="mt-2 space-y-1.5">
+                              <div className="text-red-400/90 text-xs break-all">{updateRes.error}</div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  className="px-2 py-1 rounded-md bg-brand/15 hover:bg-brand/30 text-brand text-[11px] font-medium ring-1 ring-brand/30 transition-colors cursor-pointer flex items-center gap-1"
+                                  onClick={switchSourceAndRetry}
+                                  disabled={checking}
+                                >
+                                  <Icon name="globe" size={11} />
+                                  切换至 {(draft.updateSource ?? 'gitee') === 'gitee' ? 'GitHub' : 'Gitee'} 重试
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {updateRes.fallback && !updateRes.error ? (
+                            <div className="text-amber-400/80 text-xs mt-1">
+                              首选源不可用，已自动回退到 {updateRes.source === 'gitee' ? 'Gitee' : 'GitHub'} 检查
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })()
@@ -1209,9 +1239,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name="globe" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">检查更新源</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">选择「检查更新」时使用的软件源（GitHub / Gitee）。</div>
+                  <div className="text-white/40 text-xs mb-3">选择「检查更新」时使用的软件源（GitHub / Gitee）。首选源失败时自动回退到另一源重试；大陆网络建议 Gitee。</div>
                   <SegmentedControl
-                    value={draft.updateSource ?? 'github'}
+                    value={draft.updateSource ?? 'gitee'}
                     options={[
                       { value: 'github', label: 'GitHub' },
                       { value: 'gitee', label: 'Gitee' }

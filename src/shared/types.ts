@@ -213,7 +213,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultSort: 'title',
   privacyDefaultOn: false,
   scanConcurrency: 4,
-  updateSource: 'github',
+  updateSource: 'gitee',
   autoUpdateFrequency: 'off',
   pendingUpdate: null,
   ignoredUnlistedPaths: []

@@ -21,7 +21,7 @@ import { findAndParseTorrents } from './torrent'
 import { probeVideo } from './ffprobe'
 import { previewRenames, applyRenames } from './rename'
 import { watchLibraryMd, unwatchLibraryMd, syncMdWatchers } from './mdWatcher'
-import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource } from '../../shared/types'
+import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 
 /**
@@ -319,16 +319,18 @@ function defaultLibrary(): Library {
  * - 草稿版本：不会标记为 hasUpdate，但会在结果里说明
  * - 无更新 / 出错：清空 pendingUpdate（避免陈旧提示）
  * - 始终更新 lastUpdateCheck 时间戳，供自动更新频率调度判定
+ * 容错：首选源（updateSource）请求失败时自动回退到另一源重试；
+ * 返回的 source 为实际成功的源，fallback=true 表示发生过回退。
  * 返回完整结果供 UI 即时展示。
  */
 export async function runUpdateCheck(): Promise<UpdateCheckResult> {
   const s = await repo.getSettings()
-  const source = s.updateSource ?? 'github'
+  const preferred = s.updateSource ?? 'gitee'
   const current = app.getVersion()
-  const repoPath = 'awei10/yingxia-video-manager'
+  const repoPath = 'mr-awei/yingxia-video-manager'
 
   const baseResult: UpdateCheckResult = {
-    source,
+    source: preferred,
     currentVersion: current,
     latestVersion: '',
     hasUpdate: false,
@@ -336,102 +338,120 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
     confidence: 'none'
   }
 
-  try {
-    const r = await fetch(
-      source === 'gitee'
-        ? `https://gitee.com/api/v5/repos/${repoPath}/releases/latest`
-        : `https://api.github.com/repos/${repoPath}/releases/latest`,
-      {
-        headers: {
-          'User-Agent': 'yingxia',
-          ...(source === 'github' ? { Accept: 'application/vnd.github+json' } : {})
+  // 按首选源优先，失败后回退到另一源（GitHub 在大陆网络可能不稳定）
+  const order: UpdateSource[] = preferred === 'gitee' ? ['gitee', 'github'] : ['github', 'gitee']
+  const errors: string[] = []
+  let usedFallback = false
+
+  for (const source of order) {
+    try {
+      const r = await fetch(
+        source === 'gitee'
+          ? `https://gitee.com/api/v5/repos/${repoPath}/releases/latest`
+          : `https://api.github.com/repos/${repoPath}/releases/latest`,
+        {
+          headers: {
+            'User-Agent': 'yingxia',
+            ...(source === 'github' ? { Accept: 'application/vnd.github+json' } : {})
+          }
         }
+      )
+      if (!r.ok) throw new Error(`${source === 'gitee' ? 'Gitee' : 'GitHub'} API ${r.status}`)
+
+      const j = (await r.json()) as {
+        tag_name?: string
+        name?: string
+        html_url?: string
+        body?: string
+        published_at?: string
+        prerelease?: boolean
+        draft?: boolean
+        assets?: unknown[]
       }
-    )
-    if (!r.ok) throw new Error(`${source === 'gitee' ? 'Gitee' : 'GitHub'} API ${r.status}`)
 
-    const j = (await r.json()) as {
-      tag_name?: string
-      name?: string
-      html_url?: string
-      body?: string
-      published_at?: string
-      prerelease?: boolean
-      draft?: boolean
-      assets?: unknown[]
+      const tagName = String(j.tag_name ?? '')
+      const releaseName = String(j.name ?? '')
+      const latest = (tagName || releaseName).replace(/^v/i, '')
+      const url =
+        j.html_url ??
+        (source === 'gitee'
+          ? `https://gitee.com/${repoPath}/releases`
+          : `https://github.com/${repoPath}/releases`)
+      const notes = typeof j.body === 'string' ? j.body : ''
+      const publishedAt = typeof j.published_at === 'string' ? j.published_at : undefined
+      const isPrerelease = !!j.prerelease
+      const isDraft = !!j.draft
+
+      const minimumVersion = extractMinimumVersion(notes)
+      const urgency = detectUrgency(notes, minimumVersion, current)
+
+      const assets = Array.isArray(j.assets) ? j.assets : []
+      const { installer, checksum } = matchWindowsAsset(assets)
+      const assetMatched = !!installer
+
+      const versionNewer = latest ? cmpVer(latest, current) > 0 : false
+      // 草稿不应向用户推送；pre-release 仍视为有更新，但会标记
+      const hasUpdate = versionNewer && !isDraft
+      const confidence = hasUpdate ? (assetMatched ? 'full' : 'partial') : latest ? 'none' : 'none'
+
+      const result: UpdateCheckResult = {
+        ...baseResult,
+        source,
+        fallback: usedFallback,
+        latestVersion: latest,
+        hasUpdate,
+        releaseUrl: url,
+        notes: notes.slice(0, 1000) || undefined,
+        publishedAt,
+        isPrerelease,
+        isDraft,
+        assetMatched,
+        asset: installer,
+        checksumAsset: checksum,
+        urgency,
+        minimumVersion,
+        confidence,
+        error: !latest ? '无法解析版本号' : undefined
+      }
+
+      try {
+        await repo.saveSettings({
+          lastUpdateCheck: Date.now(),
+          pendingUpdate: result.hasUpdate && result.releaseUrl
+            ? {
+                version: result.latestVersion,
+                url: result.releaseUrl,
+                urgency: result.urgency,
+                publishedAt: result.publishedAt,
+                assetName: result.asset?.name,
+                assetSize: result.asset?.size
+              }
+            : null
+        })
+      } catch {
+        /* 持久化失败不影响本次返回 */
+      }
+
+      return result
+    } catch (e) {
+      const cause = (e as { cause?: { code?: string; message?: string } })?.cause
+      const err =
+        (cause && (cause.code || cause.message)
+          ? `${cause.code ?? '网络错误'}${cause.message ? ` ${cause.message}` : ''}`
+          : (e as Error)?.message) || '请求失败'
+      errors.push(`${source === 'gitee' ? 'Gitee' : 'GitHub'}：${err}`)
+      usedFallback = true
+      // 继续尝试另一源
     }
-
-    const tagName = String(j.tag_name ?? '')
-    const releaseName = String(j.name ?? '')
-    const latest = (tagName || releaseName).replace(/^v/i, '')
-    const url =
-      j.html_url ??
-      (source === 'gitee'
-        ? `https://gitee.com/${repoPath}/releases`
-        : `https://github.com/${repoPath}/releases`)
-    const notes = typeof j.body === 'string' ? j.body : ''
-    const publishedAt = typeof j.published_at === 'string' ? j.published_at : undefined
-    const isPrerelease = !!j.prerelease
-    const isDraft = !!j.draft
-
-    const minimumVersion = extractMinimumVersion(notes)
-    const urgency = detectUrgency(notes, minimumVersion, current)
-
-    const assets = Array.isArray(j.assets) ? j.assets : []
-    const { installer, checksum } = matchWindowsAsset(assets)
-    const assetMatched = !!installer
-
-    const versionNewer = latest ? cmpVer(latest, current) > 0 : false
-    // 草稿不应向用户推送；pre-release 仍视为有更新，但会标记
-    const hasUpdate = versionNewer && !isDraft
-    const confidence = hasUpdate ? (assetMatched ? 'full' : 'partial') : latest ? 'none' : 'none'
-
-    const result: UpdateCheckResult = {
-      ...baseResult,
-      latestVersion: latest,
-      hasUpdate,
-      releaseUrl: url,
-      notes: notes.slice(0, 1000) || undefined,
-      publishedAt,
-      isPrerelease,
-      isDraft,
-      assetMatched,
-      asset: installer,
-      checksumAsset: checksum,
-      urgency,
-      minimumVersion,
-      confidence,
-      error: !latest ? '无法解析版本号' : undefined
-    }
-
-    try {
-      await repo.saveSettings({
-        lastUpdateCheck: Date.now(),
-        pendingUpdate: result.hasUpdate && result.releaseUrl
-          ? {
-              version: result.latestVersion,
-              url: result.releaseUrl,
-              urgency: result.urgency,
-              publishedAt: result.publishedAt,
-              assetName: result.asset?.name,
-              assetSize: result.asset?.size
-            }
-          : null
-      })
-    } catch {
-      /* 持久化失败不影响本次返回 */
-    }
-
-    return result
-  } catch (e) {
-    const err = (e as Error)?.message ?? '检查更新失败'
-    try {
-      await repo.saveSettings({ lastUpdateCheck: Date.now(), pendingUpdate: null })
-    } catch {
-      /* 持久化失败不影响本次返回 */
-    }
-    return { ...baseResult, error: err }
   }
+
+  // 两个源都失败
+  try {
+    await repo.saveSettings({ lastUpdateCheck: Date.now(), pendingUpdate: null })
+  } catch {
+    /* 持久化失败不影响本次返回 */
+  }
+  return { ...baseResult, fallback: true, error: errors.join('；') }
 }
 
 export function registerIpc(): void {

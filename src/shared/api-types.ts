@@ -93,6 +93,8 @@ export interface UpdateCheckResult {
   confidence?: 'full' | 'partial' | 'none'
   /** 出错信息（网络/解析失败） */
   error?: string
+  /** 是否发生了源回退（首选源失败自动切换另一源） */
+  fallback?: boolean
 }
 
 /** 渲染进程通过 window.api 调用的类型化接口（主进程实现） */
