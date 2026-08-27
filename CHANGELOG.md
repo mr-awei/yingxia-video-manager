@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v1.8.3（2026-08-28）
+
+**修复**
+- **修复「关于」弹窗检查更新一直转圈圈**：`runUpdateCheck` 的 `fetch` 调用没配超时，大陆网络下 GitHub API TCP/TLS 能通但 HTTP 层不响应时，undici 默认 fetch 会无限挂死 → 整个 checkUpdate 永远不 resolve → UI 检查按钮永远 `animate-spin`。已为 fetch 加 `AbortSignal.timeout(20000)`（每个源 20s），两源各自独立超时（fallback 后第二个源也最多 20s），最迟 40s 完成；超时异常的 cause.code（如 `UND_ERR_HEADERS_TIMEOUT`）会通过现有错误诊断自动显示。
+- **修复设置界面「判定置信度：无法判定」误显示**：`confidence='none'` 时也显示该行（即"已是最新"状态下也会显示「无法判定」），让用户误以为是错误状态。改为只在 `hasUpdate=true` 时显示。
+- **稳定 AboutModal checkUpdate**：从 `const async` 改为 `useCallback`（移到 `if (!open) return null` 之前，遵守 Hooks 规则），闭包引用稳定、不再每次 render 重建。
+
 ## v1.8.2（2026-08-28）
 
 **修复**

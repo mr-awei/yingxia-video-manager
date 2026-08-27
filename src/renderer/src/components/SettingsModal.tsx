@@ -1128,7 +1128,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                             ) : (
                               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">已是最新</span>
                             )}
-                            {!updateRes.error && updateRes.confidence ? (
+                            {!updateRes.error && updateRes.hasUpdate && updateRes.confidence ? (
                               <span className="text-white/35 text-[11px]">
                                 判定置信度：
                                 {updateRes.confidence === 'full'

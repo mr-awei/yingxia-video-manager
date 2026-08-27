@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppInfo, UpdateCheckResult } from '../../../shared/api-types'
 import { ABOUT } from '../../../shared/about'
 import { api } from '../lib/api'
@@ -35,9 +35,9 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
   const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
 
-  if (!open) return null
-
-  const checkUpdate = async () => {
+  // useCallback 稳定引用，避免每次 render 都重建 onClick 闭包（不影响功能，仅性能）
+  // 主进程 fetch 已有 20s 超时（ipc.ts runUpdateCheck），checkUpdate 最迟 20s + fallback 第二个源最迟 40s 完成
+  const checkUpdate = useCallback(async () => {
     setChecking(true)
     try {
       const r = await api.updateCheck()
@@ -47,7 +47,9 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
     } finally {
       setChecking(false)
     }
-  }
+  }, [info?.version])
+
+  if (!open) return null
 
   const copyDataDir = async () => {
     if (!info?.dataDir) return

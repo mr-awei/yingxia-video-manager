@@ -353,7 +353,10 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
           headers: {
             'User-Agent': 'yingxia',
             ...(source === 'github' ? { Accept: 'application/vnd.github+json' } : {})
-          }
+          },
+          // 大陆网络下 GitHub API TCP/TLS 能通但 HTTP 层不响应，
+          // 无超时则 undici 默认 fetch 会一直挂死导致 UI 永远转圈。
+          signal: AbortSignal.timeout(20000)
         }
       )
       if (!r.ok) throw new Error(`${source === 'gitee' ? 'Gitee' : 'GitHub'} API ${r.status}`)
