@@ -15,11 +15,11 @@ interface Props {
   onToggleFlag?: (id: string, key: 'favorite') => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
+  /** 卡片宽高比：portrait 竖屏(2:3) / landscape 横屏(16:9) */
+  aspect?: 'portrait' | 'landscape'
 }
 
 const GAP = 16
-/** 海报宽高比（aspect-[2/3]） */
-const RATIO = 3 / 2
 /** 视口上下各多渲染的行数 */
 const OVERSCAN = 3
 /** 分类标题行高（标题 + 下方留白） */
@@ -34,7 +34,8 @@ type Row =
  * 只渲染可见行 ± OVERSCAN。整个应用只有这一个滚动容器，
  * 大库（几百上千部）DOM 数量恒定为一屏几十张，滚动性能与库大小无关。
  */
-function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag }: Props) {
+function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag, aspect = 'portrait' }: Props) {
+  const RATIO = aspect === 'landscape' ? 9 / 16 : 3 / 2
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [height, setHeight] = useState(0)
@@ -91,13 +92,13 @@ function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag
       offsets.push(y)
       y += TITLE_H
       for (let i = 0; i < s.entries.length; i += cols) {
-        rows.push({ kind: 'cards', key: `c-${s.title}-${i}`, items: s.entries.slice(i, i + cols) })
+        rows.push({ kind: 'cards', key: `c-${s.title}-${i}-${aspect}`, items: s.entries.slice(i, i + cols) })
         offsets.push(y)
         y += rowH
       }
     }
     return { rows, offsets, totalH: y, colW: cw }
-  }, [width, sections, minPosterW])
+  }, [width, sections, minPosterW, aspect, RATIO])
 
   const visible: React.ReactNode[] = []
   for (let i = 0; i < rows.length; i++) {
@@ -125,7 +126,7 @@ function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag
         >
           {row.items.map((e, ci) => (
             <div key={`${e.code}-${ci}`} style={{ width: colW, height: colW * RATIO }} className="shrink-0">
-              <EntryCard entry={e} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onPickTag={onPickTag} />
+              <EntryCard entry={e} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onPickTag={onPickTag} aspect={aspect} />
             </div>
           ))}
         </div>

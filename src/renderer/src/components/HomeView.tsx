@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import EntryCard from './EntryCard'
 import Icon from './Icon'
 import type { SmartFilter } from './Sidebar'
+import type { ViewMode } from '../../../shared/types'
 
 interface Props {
   entries: DisplayEntry[]
@@ -21,6 +22,9 @@ interface Props {
   onHeroNext: () => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
+  /** 首页视图模式：竖屏/横屏卡片（不含文件名列表） */
+  viewMode: ViewMode
+  onSetView: (m: ViewMode) => void
 }
 
 function Row({
@@ -33,7 +37,8 @@ function Row({
   onToggleFlag,
   onMore,
   onRefresh,
-  onPickTag
+  onPickTag,
+  aspect
 }: {
   title: string
   icon: Parameters<typeof Icon>[0]['name']
@@ -45,6 +50,7 @@ function Row({
   onMore?: () => void
   onRefresh?: () => void
   onPickTag?: (tag: string) => void
+  aspect: 'portrait' | 'landscape'
 }) {
   if (entries.length === 0) return null
   return (
@@ -78,7 +84,7 @@ function Row({
       </div>
       <div className="flex gap-3 overflow-x-auto thin-scroll pb-2 -mx-1 px-1">
         {entries.map((e) => (
-          <div key={e.code} className="w-36 shrink-0">
+          <div key={e.code} className={`${aspect === 'landscape' ? 'w-56' : 'w-36'} shrink-0`}>
             <EntryCard
               entry={e}
               onOpen={onOpen}
@@ -86,6 +92,7 @@ function Row({
               onOpenMissing={onOpenMissing}
               onToggleFlag={onToggleFlag}
               onPickTag={onPickTag}
+              aspect={aspect}
             />
           </div>
         ))}
@@ -94,7 +101,9 @@ function Row({
   )
 }
 
-export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag }: Props) {
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag, viewMode, onSetView }: Props) {
+  // 首页只支持竖屏 / 横屏两种卡片，文件名模式自动回退到横屏
+  const aspect = viewMode === 'grid-portrait' ? 'portrait' : 'landscape'
   // 合并刷新：点 Hero 刷新或随机推荐行刷新，两者一起换一批
   const refreshAll = () => {
     onHeroNext()
@@ -121,7 +130,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
         .slice(0, 14),
       favorite: withVideo.filter((e) => e.video?.favorite).slice(0, 14)
     }
-  }, [entries, recommend])
+  }, [entries])
 
   if (entries.length === 0) {
     return (
@@ -165,10 +174,10 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
             <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-ink-900/85" />
           </div>
 
-          {/* 右上 chip + 换一批 - 高对比（背景不固定时也不能变全黑死条） */}
+          {/* 右上 chip + 换一批 + 视图切换 - 高对比（背景不固定时也不能变全黑死条） */}
           <div className="absolute top-5 right-5 flex items-center gap-2 z-10">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 text-slate-900 text-[11px] font-bold tracking-wider shadow-lg shadow-black/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-brand" />
               为你推荐
             </span>
             <button
@@ -178,11 +187,28 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
             >
               <Icon name="refresh" size={14} />
             </button>
+            {/* 首页视图切换：仅竖屏 / 横屏（无文件名列表） */}
+            <div className="inline-flex p-0.5 bg-ink-900/50 border border-white/10 rounded-lg backdrop-blur-md">
+              <button
+                className={`h-7 px-2 rounded-md flex items-center gap-1 text-xs font-medium transition-colors ${aspect === 'portrait' ? 'bg-brand text-white' : 'text-white/70 hover:text-white hover:bg-white/5'}`}
+                onClick={(e) => { e.stopPropagation(); onSetView('grid-portrait') }}
+                title="竖屏卡片"
+              >
+                <Icon name="grid" size={13} />
+              </button>
+              <button
+                className={`h-7 px-2 rounded-md flex items-center gap-1 text-xs font-medium transition-colors ${aspect === 'landscape' ? 'bg-brand text-white' : 'text-white/70 hover:text-white hover:bg-white/5'}`}
+                onClick={(e) => { e.stopPropagation(); onSetView('grid-landscape') }}
+                title="横屏卡片"
+              >
+                <Icon name="film" size={13} />
+              </button>
+            </div>
           </div>
 
           {/* 内容：左下，标题字号大，行高紧凑 */}
           <div className="relative h-full flex items-end p-7 gap-6">
-            <div className="w-36 h-52 shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02]">
+            <div className={`${aspect === 'landscape' ? 'w-52 h-36' : 'w-36 h-52'} shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02]`}>
               {heroSrc ? (
                 <img src={heroSrc} alt={heroV.title} className="h-full w-full object-cover poster-img" />
               ) : (
@@ -256,11 +282,11 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
-      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} />
-      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
-      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} />
-      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} />
-      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} />
+      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} aspect={aspect} />
+      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} aspect={aspect} />
+      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} aspect={aspect} />
+      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} aspect={aspect} />
+      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} aspect={aspect} />
     </div>
   )
 }

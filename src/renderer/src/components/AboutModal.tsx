@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { AppInfo } from '../../../shared/api-types'
+import type { AppInfo, UpdateCheckResult } from '../../../shared/api-types'
 import { ABOUT } from '../../../shared/about'
+import { api } from '../lib/api'
 import Icon from './Icon'
 
 interface Props {
@@ -31,8 +32,22 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export default function AboutModal({ open, info, onClose, onOpenExternal }: Props) {
   const [copied, setCopied] = useState(false)
+  const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
+  const [checking, setChecking] = useState(false)
 
   if (!open) return null
+
+  const checkUpdate = async () => {
+    setChecking(true)
+    try {
+      const r = await api.updateCheck()
+      setUpdateRes(r)
+    } catch {
+      setUpdateRes({ source: 'github', currentVersion: info?.version || '', latestVersion: '', hasUpdate: false, releaseUrl: '', error: '检查更新失败' })
+    } finally {
+      setChecking(false)
+    }
+  }
 
   const copyDataDir = async () => {
     if (!info?.dataDir) return
@@ -113,6 +128,43 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
             >
               <Icon name="star" size={13} />
               点亮 Star
+            </button>
+          </div>
+        ) : null}
+
+        {/* 检查更新 */}
+        <div className="mt-4 rounded-xl bg-ink-900/50 border border-white/5 p-3.5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-brand/15 flex items-center justify-center shrink-0">
+            <Icon name="refresh" size={18} className="text-brand" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white text-sm font-medium">检查更新</div>
+            <div className="text-white/45 text-[11px] truncate">
+              {updateRes
+                ? updateRes.error
+                  ? `检查失败：${updateRes.error}`
+                  : updateRes.hasUpdate
+                    ? `发现新版本 v${updateRes.latestVersion}（当前 v${updateRes.currentVersion}）`
+                    : `已是最新（v${updateRes.currentVersion}）`
+                : `当前 v${info?.version || '1.0.0'} · 按所选源检查更新`}
+            </div>
+          </div>
+          <button
+            className="shrink-0 h-8 px-3 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            onClick={checkUpdate}
+            disabled={checking}
+          >
+            <Icon name="refresh" size={13} className={checking ? 'animate-spin' : ''} />
+            {checking ? '检查中…' : '检查更新'}
+          </button>
+        </div>
+        {updateRes?.hasUpdate && updateRes.releaseUrl ? (
+          <div className="mt-2">
+            <button
+              className="text-brand hover:underline text-xs"
+              onClick={() => onOpenExternal(updateRes.releaseUrl)}
+            >
+              前往下载 / 查看发布页 →
             </button>
           </div>
         ) : null}

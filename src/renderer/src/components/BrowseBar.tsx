@@ -1,4 +1,4 @@
-import type { SortKey } from '../../../shared/types'
+import type { SortKey, ViewMode } from '../../../shared/types'
 import Icon from './Icon'
 import type { SmartFilter } from './Sidebar'
 
@@ -14,8 +14,8 @@ interface Props {
   onToggleDesc: () => void
   groupMode: 'grouped' | 'flat'
   onToggleGroup: () => void
-  viewMode: 'grid' | 'list'
-  onToggleView: () => void
+  viewMode: ViewMode
+  onSetView: (m: ViewMode) => void
   onClearAll: () => void
   hasActiveFilters: boolean
   mismatch?: { missing: number; unlisted: number } | null
@@ -36,14 +36,15 @@ const SMARTS: { key: SmartFilter; label: string; icon: Parameters<typeof Icon>[0
   { key: 'favorite', label: '收藏', icon: 'heart' },
   { key: 'recent', label: '最近播放', icon: 'clock' },
   { key: 'unrated', label: '未评分', icon: 'alert' },
-  { key: 'nocover', label: '缺封面', icon: 'image' }
+  { key: 'nocover', label: '缺封面', icon: 'image' },
+  { key: 'unlisted', label: '未收录', icon: 'alert' }
 ]
 
 export default function BrowseBar(props: Props) {
   const {
     libraryName, categoryLabel, smart, onSmart, resultCount,
     sort, onSort, desc, onToggleDesc, groupMode, onToggleGroup,
-    viewMode, onToggleView, onClearAll, hasActiveFilters, mismatch, onShowReconcile
+    viewMode, onSetView, onClearAll, hasActiveFilters, mismatch, onShowReconcile
   } = props
 
   const crumbs: string[] = []
@@ -95,7 +96,9 @@ export default function BrowseBar(props: Props) {
                 active
                   ? s.key === 'favorite'
                     ? 'bg-brand text-white'
-                    : 'bg-ink-700 text-white ring-1 ring-white/15'
+                    : s.key === 'unlisted'
+                      ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
+                      : 'bg-ink-700 text-white ring-1 ring-white/15'
                   : 'bg-ink-800/60 hover:bg-ink-700 text-white/70'
               }`}
               title={s.label}
@@ -141,15 +144,28 @@ export default function BrowseBar(props: Props) {
         <Icon name={groupMode === 'flat' ? 'list' : 'layers'} size={13} />
         {groupMode === 'flat' ? '全库' : '分组'}
       </button>
-      <button
-        className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors ${
-          viewMode === 'list' ? 'bg-brand/20 text-brand' : 'bg-ink-700 hover:bg-ink-600 text-white/70'
-        }`}
-        onClick={onToggleView}
-        title={viewMode === 'list' ? '列表视图' : '网格视图'}
-      >
-        <Icon name={viewMode === 'list' ? 'list' : 'grid'} size={14} />
-      </button>
+      {/* 视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */}
+      <div className="inline-flex p-0.5 bg-ink-900/50 border border-white/10 rounded-lg">
+        {(
+          [
+            { value: 'grid-portrait' as ViewMode, icon: 'grid' as Parameters<typeof Icon>[0]['name'], label: '竖屏' },
+            { value: 'grid-landscape' as ViewMode, icon: 'film' as Parameters<typeof Icon>[0]['name'], label: '横屏' },
+            { value: 'list-filename' as ViewMode, icon: 'list' as Parameters<typeof Icon>[0]['name'], label: '文件名' }
+          ]
+        ).map((o) => (
+          <button
+            key={o.value}
+            className={`h-7 px-2 rounded-md flex items-center gap-1 text-xs font-medium transition-colors ${
+              viewMode === o.value ? 'bg-brand text-white' : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+            onClick={() => onSetView(o.value)}
+            title={o.label}
+          >
+            <Icon name={o.icon} size={13} />
+            <span className="hidden sm:inline">{o.label}</span>
+          </button>
+        ))}
+      </div>
 
       {hasActiveFilters ? (
         <button

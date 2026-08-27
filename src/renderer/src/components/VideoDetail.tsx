@@ -3,6 +3,7 @@ import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
 import { api } from '../lib/api'
 import Icon from './Icon'
+import { toast } from './Toast'
 
 interface Props {
   video: Video
@@ -10,6 +11,8 @@ interface Props {
   onPlay: (v: Video) => void
   /** 抓取成功回调（用于回写 App 展示数据，下次直接命中本地缓存） */
   onDetailFetched?: (videoId: string, detail: JavdbDetail) => void
+  /** 截帧/封面更新回调（用于回写 App 列表态，立即刷新封面） */
+  onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[]) => void
   /** ffprobe 技术参数读取成功回调（回写持久化） */
   onTechInfoFetched?: (videoId: string, tech: Video['techInfo']) => void
   /** 点击演员/片商/系列 → 请求按该维度筛选并回到首页 */
@@ -59,18 +62,16 @@ function formatTech(t?: Video['techInfo']): string | undefined {
   return p.length ? p.join(' · ') : undefined
 }
 
-export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, onTechInfoFetched, onPickFilter, onPickTag, onToggleFlag, related, onOpenRelated, seriesBase, seriesMembers }: Props) {
+export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, onPosterFetched, onTechInfoFetched, onPickFilter, onPickTag, onToggleFlag, related, onOpenRelated, seriesBase, seriesMembers }: Props) {
   const [detail, setDetail] = useState<Video['javdbDetail']>(video.javdbDetail)
+  /** 本地 video 副本：截帧/封面更新后立即反映，不必等父组件重新拉取 */
+  const [localVideo, setLocalVideo] = useState<Video>(video)
+  useEffect(() => {
+    setLocalVideo(video)
+    setDetail(video.javdbDetail)
+  }, [video.id])
   /** 手动「补齐信息」进行中 */
   const [fetching, setFetching] = useState(false)
-  /** 补齐结果弹窗：成功（含来源）/ 失败（含原因） */
-  const [fetchToast, setFetchToast] = useState<{ text: string; tone: 'ok' | 'err' } | null>(null)
-  const fetchToastTimer = useRef<number | null>(null)
-  const showFetchToast = (text: string, tone: 'ok' | 'err') => {
-    if (fetchToastTimer.current) window.clearTimeout(fetchToastTimer.current)
-    setFetchToast({ text, tone })
-    fetchToastTimer.current = window.setTimeout(() => setFetchToast(null), 5000)
-  }
   /** 手动补齐：无视缓存强制重抓当前作品（多源 JavDB → JavBus）。
    * 无论数据是否与旧缓存一致，只要拿到新数据就弹窗提示已更新 + 来源；失败弹窗说明原因。 */
   const forceFetch = useCallback(async () => {
@@ -78,22 +79,34 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     setFetching(true)
     setError(null)
     try {
+      if (localVideo.domestic) {
+        // 国产片：不抓 JavDB/JavBus，仅用 ffmpeg 重新截帧（封面 + 预览）
+        const updated = await api.videoGeneratePreviews(localVideo.id)
+        if (updated?.posterPath) {
+          setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath, posterSource: updated.posterSource ?? 'ffmpeg', previewPaths: updated.previewPaths }))
+          onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths)
+          toast({ text: '已用 ffmpeg 重新截帧（封面 + 预览）', tone: 'ok' })
+        } else {
+          toast({ text: '截帧失败：未检测到 ffmpeg 或无视频流', tone: 'err' })
+        }
+        return
+      }
       const res = await api.videoFetchJavdbDetail(video.id)
       if (res?.ok && res.detail) {
         setDetail(res.detail)
         onDetailFetched?.(video.id, res.detail)
         const src = res.source === 'javbus' ? 'JavBus' : 'JavDB'
-        showFetchToast(`信息已更新（来源：${src}）`, 'ok')
+        toast({ text: `信息已更新（来源：${src}）`, tone: 'ok' })
       } else {
         const reason = res && !res.ok ? res.error : '未知原因'
-        showFetchToast(`补齐失败：${reason ?? '未知原因'}`, 'err')
+        toast({ text: `补齐失败：${reason ?? '未知原因'}`, tone: 'err' })
       }
     } catch (e) {
-      showFetchToast(`补齐失败：${(e as Error)?.message ?? e}`, 'err')
+      toast({ text: `补齐失败：${(e as Error)?.message ?? e}`, tone: 'err' })
     } finally {
       setFetching(false)
     }
-  }, [video.id, fetching, onDetailFetched])
+  }, [localVideo.id, localVideo.domestic, fetching, onDetailFetched, onPosterFetched])
   /** ffprobe 技术参数：本地持有，避免依赖父组件回写延迟；首次打开无则自动探测 */
   const [tech, setTech] = useState<Video['techInfo']>(video.techInfo)
   // 若无技术参数，自动用 ffprobe 读取（一次），成功则本地展示 + 回写父组件持久化
@@ -119,9 +132,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   }, [video.id])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** 分享：扫描种子→复制磁链→结果展示 */
-  const [shareToast, setShareToast] = useState<string | null>(null)
-  const shareTimer = useRef<number | null>(null)
   /** hover 样本图时显示原尺寸大图 */
   const [zoomUrl, setZoomUrl] = useState<string | null>(null)
   /** ESC：放大图打开时先关放大图，否则关闭详情页（非组合键，用户要求保留） */
@@ -174,19 +184,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     try {
       const r = await api.videoShareTorrents(video.id)
       if (r.items.length === 0) {
-        setShareToast(`视频文件夹下未找到 .torrent 种子文件\n${r.dir}`)
+        toast({ text: `视频文件夹下未找到 .torrent 种子文件 ${r.dir}`, tone: 'info', duration: 6000 })
       } else if (r.copied) {
-        setShareToast(
-          `✓ 已复制磁链（${r.items.length} 个种子中的第 1 个）\n${r.items[0].name}\n${r.items[0].magnet}`
-        )
+        toast({
+          title: '已复制磁链',
+          text: `${r.items[0].name}`,
+          tone: 'ok',
+          action: { label: '复制', onClick: () => void navigator.clipboard?.writeText(r.items[0].magnet) },
+          duration: 6000
+        })
       } else {
-        setShareToast(`找到 ${r.items.length} 个种子，但复制失败`)
+        toast({ text: `找到 ${r.items.length} 个种子，但复制失败`, tone: 'warn', duration: 6000 })
       }
     } catch (e) {
-      setShareToast(`分享失败：${(e as Error).message}`)
+      toast({ text: `分享失败：${(e as Error).message}`, tone: 'err' })
     }
-    if (shareTimer.current) clearTimeout(shareTimer.current)
-    shareTimer.current = window.setTimeout(() => setShareToast(null), 5000)
   }, [video.id])
 
   // 判断缓存的 javdbDetail 是否"陈旧"（含远程 URL，可能是修复前缓存的）—— 这种情况重新抓一次升级成本地路径
@@ -199,6 +211,13 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
 
   // 打开即展示；缓存命中且不陈旧 → 零请求；否则（首次或陈旧）抓一次保存本地，之后直接命中缓存不再请求
   useEffect(() => {
+    if (video.domestic) {
+      // 国产片：不自动抓取元数据，封面/预览均由 ffmpeg 截帧提供
+      setDetail(video.javdbDetail)
+      setLoading(false)
+      setError(null)
+      return
+    }
     if (!isStale(video.javdbDetail)) {
       setDetail(video.javdbDetail)
       setLoading(false)
@@ -236,19 +255,20 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
   const coverSrc = (d?.cover && isLocal(d.cover)
     ? d.cover
-    : video.posterPath) || null
+    : localVideo.posterPath) || null
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex flex-col bg-ink-900/95 overflow-auto thin-scroll"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-auto thin-scroll animate-modal-backdrop"
       onClick={onClose}
     >
       <div
-        className="flex-1 max-w-5xl mx-auto w-full p-5"
+        className="relative w-full max-w-5xl max-h-[92vh] overflow-auto thin-scroll bg-ink-850 rounded-2xl ring-1 ring-white/10 shadow-2xl shadow-black/50 animate-modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="p-5" onClick={(e) => e.stopPropagation()}>
         {/* 顶部工具条 */}
-        <div className="flex items-center justify-between mb-4 sticky top-0 bg-ink-900/95 py-2 z-10 backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-4 sticky top-0 -mx-5 px-5 py-3 bg-ink-850/95 z-10 backdrop-blur-sm border-b border-white/5">
           <button
             className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors"
             onClick={onClose}
@@ -269,10 +289,10 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={forceFetch}
               disabled={fetching}
-              title="强制重新获取当前作品的全部信息（JavDB → JavBus 多源）"
+              title={video.domestic ? '用 ffmpeg 重新截帧（封面 + 预览）' : '强制重新获取当前作品的全部信息（JavDB → JavBus 多源）'}
             >
               <Icon name="refresh" size={13} className={fetching ? 'animate-spin' : ''} />
-              {fetching ? '补齐中…' : '补齐信息'}
+              {fetching ? '截帧中…' : video.domestic ? '重新截帧' : '补齐信息'}
             </button>
             {onToggleFlag ? (
               <>
@@ -301,7 +321,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         <div className="grid grid-cols-[260px_1fr] gap-6 mb-6">
           <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10">
             {coverSrc ? (
-              <img src={posterUrl(coverSrc) ?? ''} alt={video.title} className="h-full w-full object-cover poster-img" />
+              <img
+                src={posterUrl(coverSrc) ?? ''}
+                alt={video.title}
+                className="h-full w-full object-cover poster-img"
+                onError={(e) => {
+                  console.error('[VideoDetail] poster load error', coverSrc, e.currentTarget.src)
+                }}
+              />
             ) : (
               <div
                 className="h-full w-full flex items-center justify-center text-5xl font-bold text-white/80"
@@ -321,6 +348,12 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 }`}
               >
                 数据来源 {d.source === 'javbus' ? 'JavBus' : 'JavDB'}
+              </span>
+            ) : null}
+            {/* 国产片徽章：纯中文文件夹，不抓元数据，仅 ffmpeg 截帧 */}
+            {video.domestic ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 bg-green-500/15 text-green-400 ring-1 ring-green-500/30">
+                🀄 国产片（仅 ffmpeg 截帧）
               </span>
             ) : null}
             {/* 系列徽章：同 base code 多分集共享元数据 */}
@@ -506,6 +539,37 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           </div>
         ) : null}
 
+        {/* ffmpeg 截帧预览帧（封面外的多张预览，本地 previewPaths）；国产片也走这里 */}
+        {localVideo.previewPaths && localVideo.previewPaths.length > 0 ? (
+          <div className="mb-6">
+            <div className="text-white/80 font-medium mb-2 flex items-center gap-1.5">
+              <Icon name="film" size={13} className="text-white/40" />
+              预览帧（{localVideo.previewPaths.length}）
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {localVideo.previewPaths.map((url, i) => (
+                <div
+                  key={url}
+                  className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative"
+                  onMouseEnter={() => {
+                    cancelClose()
+                    scheduleOpen(url)
+                  }}
+                  onMouseLeave={clearOpenTimer}
+                >
+                  <img
+                    src={posterUrl(url) ?? ''}
+                    alt={`preview-${i}`}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover poster-img transition-transform duration-300 hover:scale-105"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {/* 相关推荐（同片商 / 系列 / 女演员） */}
         {related && related.length > 0 ? (
           <div className="mb-6">
@@ -544,6 +608,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         ) : null}
 
       </div>
+      </div>
 
       {/* hover 样本图时显示原尺寸大图（lightbox） */}
       {zoomUrl ? (
@@ -577,33 +642,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             onClick={(e) => e.stopPropagation()}
             className="max-w-[94vw] max-h-[94vh] object-contain rounded-lg shadow-2xl"
           />
-        </div>
-      ) : null}
-
-      {/* 分享结果 toast（详情页底部，5 秒自动消失） */}
-      {shareToast ? (
-        <div
-          className="fixed left-1/2 bottom-8 -translate-x-1/2 z-50 max-w-[640px] w-[92vw] rounded-xl bg-ink-800/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 px-4 py-3 text-white/90 text-[13px] leading-relaxed whitespace-pre-wrap backdrop-blur-sm animate-fadeIn"
-          onClick={() => {
-            if (shareTimer.current) clearTimeout(shareTimer.current)
-            setShareToast(null)
-          }}
-        >
-          {shareToast}
-        </div>
-      ) : null}
-
-      {/* 补齐信息结果 toast：成功绿色（含来源）/ 失败红色（含原因），5 秒自动消失 */}
-      {fetchToast ? (
-        <div
-          className={`fixed left-1/2 bottom-20 -translate-x-1/2 z-50 max-w-[640px] w-[92vw] rounded-xl px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap backdrop-blur-sm animate-fadeIn ring-1 shadow-2xl shadow-black/50 ${
-            fetchToast.tone === 'err'
-              ? 'bg-red-950/95 ring-red-500/40 text-red-200'
-              : 'bg-emerald-950/95 ring-emerald-500/40 text-emerald-200'
-          }`}
-          onClick={() => setFetchToast(null)}
-        >
-          {fetchToast.text}
         </div>
       ) : null}
     </div>

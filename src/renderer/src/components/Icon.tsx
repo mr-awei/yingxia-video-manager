@@ -54,6 +54,8 @@ export type IconName =
   | 'shield'
   | 'zap'
   | 'save'
+  | 'lock'
+  | 'unlock'
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (
@@ -390,6 +392,20 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
       <polyline points="17 21 17 13 7 13 7 21" />
       <polyline points="7 3 7 8 15 8" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect width="14" height="10" x="5" y="11" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      <circle cx="12" cy="16" r="1" fill="currentColor" />
+    </>
+  ),
+  unlock: (
+    <>
+      <rect width="14" height="10" x="5" y="11" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 7.9-1" />
+      <circle cx="12" cy="16" r="1" fill="currentColor" />
     </>
   )
 }

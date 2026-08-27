@@ -13,6 +13,7 @@ import { parseIntroMd } from './parser'
 import { applyVideoChanges, findVideoByPath, type VideoChange } from './repo'
 import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
+import { isDomestic } from '../../shared/code'
 
 async function readIntroDoc(library: Library): Promise<IntroDoc | null> {
   if (!library.introMdPath) return null
@@ -103,20 +104,24 @@ async function ensureVideo(
   meta: { code: string; description: string; tags: string[]; score?: number },
   changes: VideoChange[]
 ): Promise<Video> {
+  const folderName = path.basename(path.dirname(filePath))
+  const domestic = isDomestic(folderName, path.basename(filePath))
   const existing = await findVideoByPath(filePath)
   if (existing) {
     // md 为权威来源：简介/标签/评分以 md 为准（仅在变化时记录一次 update，不逐条写盘）
     if (
       existing.description !== meta.description ||
       JSON.stringify(existing.tags) !== JSON.stringify(meta.tags) ||
-      existing.rating !== meta.score
+      existing.rating !== meta.score ||
+      !!existing.domestic !== domestic
     ) {
       const updated: Video = {
         ...existing,
         description: meta.description,
         tags: [...meta.tags],
         descriptionSource: 'manual',
-        rating: meta.score ?? existing.rating
+        rating: meta.score ?? existing.rating,
+        domestic
       }
       changes.push({ type: 'update', video: updated })
       return updated
@@ -130,6 +135,7 @@ async function ensureVideo(
     path: filePath,
     fileName: path.basename(filePath),
     folderName: path.basename(path.dirname(filePath)),
+    domestic,
     title: meta.code,
     description: meta.description,
     descriptionSource: 'manual',
@@ -238,9 +244,41 @@ export async function reconcileLibrary(
     }
   }
 
-  const unlisted: UnlistedFile[] = allFiles
+  const ignoredSet = new Set(settings.ignoredUnlistedPaths ?? [])
+
+  // 所有未 used 的文件都生成「未收录」条目，保证忽略后仍可在主列表/「未收录」分类找到
+  const unlistedAll: UnlistedFile[] = allFiles
     .filter((f) => !used.has(f))
     .map((f) => ({ fileName: path.basename(f), path: f }))
+
+  // 对账弹窗/统计里过滤已忽略项，避免重复打扰
+  const unlisted: UnlistedFile[] = unlistedAll.filter((u) => !ignoredSet.has(u.path))
+
+  // 把未收录文件也展示出来（否则导入后列表/首页找不到），统一放到「未收录」分类
+  const UNLISTED_ORDER = 9999
+  for (const u of unlistedAll) {
+    const existing = await findVideoByPath(u.path)
+    const video =
+      existing ??
+      (await ensureVideo(
+        u.path,
+        library,
+        settings,
+        { code: u.fileName, description: '', tags: [] },
+        changes
+      ))
+    const titleNoExt = path.basename(u.fileName, path.extname(u.fileName))
+    entries.push({
+      kind: 'matched',
+      category: '未收录',
+      order: UNLISTED_ORDER,
+      code: titleNoExt,
+      title: titleNoExt,
+      description: '',
+      tags: [],
+      video
+    })
+  }
 
   entries.sort((a, b) => a.order - b.order || a.code.localeCompare(b.code, 'zh'))
 

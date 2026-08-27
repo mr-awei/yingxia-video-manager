@@ -35,10 +35,11 @@ export function cleanVideoFileName(fileName: string): string | null {
   return result === fileName ? null : result
 }
 
-/** 预览：扫描文件夹中可安全改名的文件（只处理无 video 记录的文件，避免破坏已收录视频） */
+/** 预览：扫描文件夹中可安全改名的文件（只处理无 video 记录、未被用户忽略的文件） */
 export async function previewRenames(
   folderPath: string,
-  isIndexed: (p: string) => Promise<boolean>
+  isIndexed: (p: string) => Promise<boolean>,
+  shouldIgnore?: (p: string) => boolean
 ): Promise<Array<{ path: string; oldName: string; newName: string }>> {
   const files: string[] = []
   for await (const f of walkFiles(folderPath)) files.push(f)
@@ -53,6 +54,8 @@ export async function previewRenames(
     if (newPath === f) continue
     // 跳过已收录（有 video 记录）的文件
     if (await isIndexed(f)) continue
+    // 跳过用户已忽略的对账未收录文件
+    if (shouldIgnore?.(f)) continue
     // 冲突：目标名已存在
     if (seen.has(newName) || (await fileExists(newPath))) continue
     seen.add(newName)

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, type ReactNode } from 'react'
-import type { Library } from '../../../shared/types'
+import type { Library, Settings } from '../../../shared/types'
 import Icon, { type IconName } from './Icon'
 
 export interface TagInfo {
@@ -20,7 +20,7 @@ export interface MetaFacet {
 }
 
 export type ViewName = 'home' | 'browse'
-export type SmartFilter = 'all' | 'favorite' | 'recent' | 'unrated' | 'nocover'
+export type SmartFilter = 'all' | 'favorite' | 'recent' | 'unrated' | 'nocover' | 'unlisted'
 
 interface Props {
   view: ViewName
@@ -33,9 +33,15 @@ interface Props {
   onEditLibrary: () => void
   onAddLibrary: () => void
 
-  /** 我的清单计数 */
+  /** 我的清单 / 待处理 计数 */
   favoriteCount: number
   recentCount: number
+  unlistedCount: number
+  unratedCount: number
+  nocoverCount: number
+
+  /** 待处理（可用）更新；非空时在「设置」入口显示提醒点，颜色随 urgency 变化 */
+  pendingUpdate?: Settings['pendingUpdate']
 
   /** 筛选：分类 */
   sections: SectionInfo[]
@@ -246,24 +252,39 @@ function NavItem({
   label,
   active,
   onClick,
-  badge
+  badge,
+  alert
 }: {
   icon: IconName
   label: string
   active?: boolean
   onClick: () => void
   badge?: number
+  alert?: boolean
 }) {
   return (
     <button
       className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${
-        active ? 'bg-brand/15 text-brand font-medium' : 'text-white/75 hover:bg-ink-700 hover:text-white'
+        active
+          ? 'bg-brand/15 text-brand font-medium'
+          : alert
+            ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+            : 'text-white/75 hover:bg-ink-700 hover:text-white'
       }`}
       onClick={onClick}
     >
-      <Icon name={icon} size={15} className={active ? 'text-brand' : 'text-white/55'} />
+      <Icon name={icon} size={15} className={active ? 'text-brand' : alert ? 'text-amber-400' : 'text-white/55'} />
       <span className="flex-1 text-left truncate">{label}</span>
-      {badge ? <span className="text-[10px] text-white/40 tabular-nums">{badge}</span> : null}
+      {/* 待处理提醒点：无论是否选中都显示，确保「有未处理项」状态不被选中态掩盖 */}
+      {alert ? (
+        <span
+          className={`h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0 ${active ? 'ring-2 ring-brand/15' : ''}`}
+          title="有待处理项"
+        />
+      ) : null}
+      {badge ? (
+        <span className={`text-[10px] tabular-nums ${alert ? 'text-amber-400' : 'text-white/40'}`}>{badge}</span>
+      ) : null}
     </button>
   )
 }
@@ -271,7 +292,7 @@ function NavItem({
 function SidebarInner(props: Props) {
   const {
     view, smart, onNav, libraries, libraryId, onLibrary, onEditLibrary, onAddLibrary,
-    favoriteCount, recentCount,
+    favoriteCount, recentCount, unlistedCount, unratedCount, nocoverCount, pendingUpdate,
     sections, selectedCategory, onToggleCategory, onClearCategory,
     tags, categories, selected, onToggle, onClear,
     actorFacets, studioFacets, seriesFacets,
@@ -301,9 +322,34 @@ function SidebarInner(props: Props) {
     return map
   }, [tags, categories])
 
+  // 未收录 已单独归入「待处理」，不再出现在「分类」列表中
+  const visibleSections = useMemo(
+    () => sections.filter((s) => s.name !== '未收录'),
+    [sections]
+  )
+
   const totalSelected = selected.size
   const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size
   const techSelectedCount = selectedResolutions.size + selectedDurations.size + selectedScores.size + selectedYears.size
+
+  // 筛选：合并为可折叠 Tab 组（分类 / 标签 / 影人 / 规格 / 年份），默认收起
+  const [filterTab, setFilterTab] = useState<'cat' | 'tag' | 'meta' | 'tech' | 'year'>('cat')
+  const filterCount =
+    (selectedCategory ? 1 : 0) + totalSelected + metaSelectedCount + techSelectedCount + selectedYears.size
+  const clearAllFilters = () => {
+    onClearCategory()
+    onClear()
+    onClearMetaFilters()
+    onClearTechFilters()
+    onClearYears()
+  }
+  const FILTER_TABS: { key: 'cat' | 'tag' | 'meta' | 'tech' | 'year'; label: string; icon: IconName; badge: number }[] = [
+    { key: 'cat', label: '分类', icon: 'folder', badge: selectedCategory ? 1 : 0 },
+    { key: 'tag', label: '标签', icon: 'tag', badge: totalSelected },
+    { key: 'meta', label: '影人', icon: 'users', badge: metaSelectedCount },
+    { key: 'tech', label: '规格', icon: 'monitor', badge: techSelectedCount },
+    { key: 'year', label: '年份', icon: 'calendar', badge: selectedYears.size }
+  ]
 
   if (collapsed) {
     return (
@@ -325,6 +371,12 @@ function SidebarInner(props: Props) {
           {favoriteCount > 0 ? (
             <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'favorite' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('browse', 'favorite')} title="收藏">
               <Icon name="heart" size={16} />
+            </button>
+          ) : null}
+          {unlistedCount > 0 ? (
+            <button className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'unlisted' ? 'bg-brand/20 text-brand' : 'text-amber-400/90 hover:text-amber-400 hover:bg-amber-500/15'}`} onClick={() => onNav('browse', 'unlisted')} title="未收录">
+              <Icon name="alert" size={16} />
+              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
             </button>
           ) : null}
         </div>
@@ -421,117 +473,176 @@ function SidebarInner(props: Props) {
           </div>
         </Section>
 
-        {/* 我的清单 */}
+        {/* 我的清单（用户主动创建的视图） */}
         <Section title="我的清单" icon="heart">
           <div className="flex flex-col gap-0.5">
             <NavItem icon="heart" label="收藏" badge={favoriteCount} active={view === 'browse' && smart === 'favorite'} onClick={() => onNav('browse', 'favorite')} />
             <NavItem icon="clock" label="最近播放" badge={recentCount} active={view === 'browse' && smart === 'recent'} onClick={() => onNav('browse', 'recent')} />
-            <NavItem icon="alert" label="未评分" active={view === 'browse' && smart === 'unrated'} onClick={() => onNav('browse', 'unrated')} />
-            <NavItem icon="image" label="缺封面" active={view === 'browse' && smart === 'nocover'} onClick={() => onNav('browse', 'nocover')} />
           </div>
         </Section>
 
-        {/* 筛选：分类 */}
-        <Section title="分类" icon="folder" count={selectedCategory ? 1 : 0} onClear={onClearCategory} active={!!selectedCategory}>
-          {sections.length === 0 ? (
-            <div className="text-white/35 text-[11px] py-1">暂无分类</div>
-          ) : (
-            <div className="flex flex-col gap-0.5 max-h-[180px] overflow-auto thin-scroll -mr-1 pr-1">
-              {sections.map((s) => {
-                const sel = selectedCategory === s.name
-                const empty = s.count === 0
+        {/* 待处理（系统诊断 / 差异视图） */}
+        <Section title="待处理" icon="alert">
+          <div className="flex flex-col gap-0.5">
+            <NavItem
+              icon="alert"
+              label="未收录"
+              badge={unlistedCount}
+              alert={unlistedCount > 0}
+              active={view === 'browse' && smart === 'unlisted'}
+              onClick={() => onNav('browse', 'unlisted')}
+            />
+            <NavItem icon="star" label="未评分" badge={unratedCount} active={view === 'browse' && smart === 'unrated'} onClick={() => onNav('browse', 'unrated')} />
+            <NavItem icon="image" label="缺封面" badge={nocoverCount} active={view === 'browse' && smart === 'nocover'} onClick={() => onNav('browse', 'nocover')} />
+          </div>
+        </Section>
+
+        {/* 筛选：合并为可折叠 Tab 组，默认收起，显著降低首屏高度 */}
+        <Section title="筛选" icon="sliders" count={filterCount} onClear={clearAllFilters} active={filterCount > 0} defaultOpen={false}>
+          <div className="flex flex-wrap gap-1 mb-2">
+            {FILTER_TABS.map((tab) => {
+              const sel = filterTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setFilterTab(tab.key)}
+                  className={`flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium transition-colors ${
+                    sel ? 'bg-brand text-white' : 'bg-white/6 hover:bg-white/12 text-white/70 hover:text-white'
+                  }`}
+                  title={tab.label}
+                >
+                  <Icon name={tab.icon} size={11} />
+                  {tab.label}
+                  {tab.badge > 0 ? (
+                    <span className={`px-1 rounded-full text-[9px] font-bold ${sel ? 'bg-white/25 text-white' : 'bg-brand/20 text-brand'}`}>{tab.badge}</span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 分类 */}
+          {filterTab === 'cat' ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-white/45 text-[11px] font-medium">分类</span>
+                {selectedCategory ? (
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearCategory}>清除</button>
+                ) : null}
+              </div>
+              {visibleSections.length === 0 ? (
+                <div className="text-white/35 text-[11px] py-1">暂无分类</div>
+              ) : (
+                <div className="flex flex-col gap-0.5 max-h-[180px] overflow-auto thin-scroll -mr-1 pr-1">
+                  {visibleSections.map((s) => {
+                    const sel = selectedCategory === s.name
+                    const empty = s.count === 0
+                    return (
+                      <button
+                        key={s.name}
+                        onClick={() => onToggleCategory(s.name)}
+                        disabled={empty && !sel}
+                        className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
+                          sel ? 'bg-brand text-white font-medium' : empty ? 'text-white/30 cursor-not-allowed' : 'hover:bg-ink-700 text-white/80 hover:text-white'
+                        }`}
+                        title={s.name}
+                      >
+                        {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="folder" size={10} className="shrink-0 opacity-50" />}
+                        <span className="flex-1 min-w-0 truncate">{s.name}</span>
+                        <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{s.count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* 标签 */}
+          {filterTab === 'tag' ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-white/45 text-[11px] font-medium">标签</span>
+                {totalSelected > 0 ? (
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClear}>清除</button>
+                ) : null}
+              </div>
+              {tags.length === 0 ? <div className="text-white/35 text-xs py-2 text-center">暂无标签</div> : null}
+              {categories.map((cat) => {
+                const list = grouped.get(cat) ?? []
+                if (list.length === 0) return null
+                const catClosed = !!collapsedTagCats[cat]
+                const isExpanded = !!expanded[cat]
+                const show = isExpanded ? list : list.slice(0, PER_CAT_LIMIT)
                 return (
-                  <button
-                    key={s.name}
-                    onClick={() => onToggleCategory(s.name)}
-                    disabled={empty && !sel}
-                    className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
-                      sel ? 'bg-brand text-white font-medium' : empty ? 'text-white/30 cursor-not-allowed' : 'hover:bg-ink-700 text-white/80 hover:text-white'
-                    }`}
-                    title={s.name}
-                  >
-                    {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="folder" size={10} className="shrink-0 opacity-50" />}
-                    <span className="flex-1 min-w-0 truncate">{s.name}</span>
-                    <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{s.count}</span>
-                  </button>
+                  <div key={cat} className="mb-2.5 last:mb-0 group/cat">
+                    <button
+                      className="w-full flex items-center justify-between py-1 rounded px-0.5 hover:bg-ink-800/60 transition-colors"
+                      onClick={() => setCollapsedTagCats((p) => ({ ...p, [cat]: !p[cat] }))}
+                      title={catClosed ? '展开此分类' : '收起此分类'}
+                    >
+                      <span className="flex items-center gap-1 text-white/55 text-[11px] font-medium tracking-wide">
+                        <Icon name="chevronDown" size={11} className={`transition-transform duration-200 ${catClosed ? '-rotate-90' : ''}`} />
+                        {cat}
+                      </span>
+                      <span className="text-white/35 text-[10px] tabular-nums">{list.length}</span>
+                    </button>
+                    {!catClosed ? (
+                      <div className="flex flex-wrap gap-1 mt-0.5 animate-fadeIn-fast">
+                        {show.map((t) => {
+                          const sel = selected.has(t.tag)
+                          const zero = t.count === 0 && !sel
+                          return (
+                            <button
+                              key={t.tag}
+                              onClick={() => onToggle(t.tag)}
+                              disabled={zero}
+                              className={`h-6 px-1.5 rounded-md text-[11px] flex items-center gap-1 transition-all max-w-full ${
+                                sel ? 'bg-brand text-white shadow-sm shadow-brand/30 font-medium' : zero ? 'bg-white/3 text-white/30 cursor-not-allowed' : 'bg-white/6 hover:bg-white/12 text-white/75 hover:text-white'
+                              }`}
+                              title={t.tag}
+                            >
+                              {sel ? <Icon name="check" size={10} className="shrink-0" /> : null}
+                              <span className="max-w-[100px] truncate">{t.tag}</span>
+                              <span className={sel ? 'opacity-75 text-[10px]' : 'opacity-50 text-[10px]'}>{t.count}</span>
+                            </button>
+                          )
+                        })}
+                        {list.length > PER_CAT_LIMIT ? (
+                          <button onClick={() => setExpanded((p) => ({ ...p, [cat]: !p[cat] }))} className="h-6 px-1.5 rounded-md text-[11px] bg-white/5 hover:bg-white/10 text-white/50">
+                            {isExpanded ? '收起' : `+${list.length - PER_CAT_LIMIT}`}
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 )
               })}
             </div>
-          )}
-        </Section>
+          ) : null}
 
-        {/* 筛选：标签 */}
-        <Section title="标签" icon="tag" count={totalSelected} onClear={onClear} active={totalSelected > 0}>
-          {tags.length === 0 ? <div className="text-white/35 text-xs py-2 text-center">暂无标签</div> : null}
-          {categories.map((cat) => {
-            const list = grouped.get(cat) ?? []
-            if (list.length === 0) return null
-            const catClosed = !!collapsedTagCats[cat]
-            const isExpanded = !!expanded[cat]
-            const show = isExpanded ? list : list.slice(0, PER_CAT_LIMIT)
-            return (
-              <div key={cat} className="mb-2.5 last:mb-0 group/cat">
-                <button
-                  className="w-full flex items-center justify-between py-1 rounded px-0.5 hover:bg-ink-800/60 transition-colors"
-                  onClick={() => setCollapsedTagCats((p) => ({ ...p, [cat]: !p[cat] }))}
-                  title={catClosed ? '展开此分类' : '收起此分类'}
-                >
-                  <span className="flex items-center gap-1 text-white/55 text-[11px] font-medium tracking-wide">
-                    <Icon name="chevronDown" size={11} className={`transition-transform duration-200 ${catClosed ? '-rotate-90' : ''}`} />
-                    {cat}
-                  </span>
-                  <span className="text-white/35 text-[10px] tabular-nums">{list.length}</span>
-                </button>
-                {!catClosed ? (
-                  <div className="flex flex-wrap gap-1 mt-0.5 animate-fadeIn-fast">
-                    {show.map((t) => {
-                      const sel = selected.has(t.tag)
-                      const zero = t.count === 0 && !sel
-                      return (
-                        <button
-                          key={t.tag}
-                          onClick={() => onToggle(t.tag)}
-                          disabled={zero}
-                          className={`h-6 px-1.5 rounded-md text-[11px] flex items-center gap-1 transition-all max-w-full ${
-                            sel ? 'bg-brand text-white shadow-sm shadow-brand/30 font-medium' : zero ? 'bg-white/3 text-white/30 cursor-not-allowed' : 'bg-white/6 hover:bg-white/12 text-white/75 hover:text-white'
-                          }`}
-                          title={t.tag}
-                        >
-                          {sel ? <Icon name="check" size={10} className="shrink-0" /> : null}
-                          <span className="max-w-[100px] truncate">{t.tag}</span>
-                          <span className={sel ? 'opacity-75 text-[10px]' : 'opacity-50 text-[10px]'}>{t.count}</span>
-                        </button>
-                      )
-                    })}
-                    {list.length > PER_CAT_LIMIT ? (
-                      <button onClick={() => setExpanded((p) => ({ ...p, [cat]: !p[cat] }))} className="h-6 px-1.5 rounded-md text-[11px] bg-white/5 hover:bg-white/10 text-white/50">
-                        {isExpanded ? '收起' : `+${list.length - PER_CAT_LIMIT}`}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </Section>
+          {/* 女演员 / 片商 / 系列 */}
+          {filterTab === 'meta' ? (
+            <div className="flex flex-col gap-1">
+              <FacetGroup title="女演员" icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
+              <FacetGroup title="片商" icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
+              <FacetGroup title="系列" icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
+            </div>
+          ) : null}
 
-        {/* 女演员 / 片商 / 系列 */}
-        <Section title="女演员 / 片商 / 系列" icon="users" count={metaSelectedCount} onClear={onClearMetaFilters} active={metaSelectedCount > 0}>
-          <FacetGroup title="女演员" icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
-          <FacetGroup title="片商" icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
-          <FacetGroup title="系列" icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
-        </Section>
+          {/* 技术规格 */}
+          {filterTab === 'tech' ? (
+            <div className="flex flex-col gap-1">
+              <FacetGroup title="分辨率" icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
+              <FacetGroup title="时长" icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
+              <FacetGroup title="评分" icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />
+            </div>
+          ) : null}
 
-        {/* 技术规格：分辨率 / 时长 / 评分 */}
-        <Section title="技术规格" icon="monitor" count={techSelectedCount} onClear={onClearTechFilters} active={techSelectedCount > 0}>
-          <FacetGroup title="分辨率" icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
-          <FacetGroup title="时长" icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
-          <FacetGroup title="评分" icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />
-        </Section>
-
-        {/* 年份 */}
-        <Section title="年份" icon="calendar" count={selectedYears.size} onClear={onClearYears} active={selectedYears.size > 0}>
-          <FacetGroup title="年份" icon="calendar" facets={yearFacets} selected={selectedYears} onToggle={onToggleYear} onClear={onClearYears} />
+          {/* 年份 */}
+          {filterTab === 'year' ? (
+            <FacetGroup title="年份" icon="calendar" facets={yearFacets} selected={selectedYears} onToggle={onToggleYear} onClear={onClearYears} />
+          ) : null}
         </Section>
       </div>
 
@@ -544,8 +655,22 @@ function SidebarInner(props: Props) {
         <button className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenAbout} title="关于">
           <Icon name="info" size={14} />
         </button>
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenSettings} title="设置">
+        <button className="relative w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenSettings} title="设置">
           <Icon name="sliders" size={14} />
+          {pendingUpdate ? (
+            <span
+              className={`absolute top-0.5 right-0.5 h-2 w-2 rounded-full ${
+                pendingUpdate.urgency === 'mandatory'
+                  ? 'bg-red-500'
+                  : pendingUpdate.urgency === 'critical'
+                    ? 'bg-amber-500'
+                    : pendingUpdate.urgency === 'recommended'
+                      ? 'bg-sky-400'
+                      : 'bg-emerald-400'
+              }`}
+              title={`发现新版本 v${pendingUpdate.version}${pendingUpdate.urgency ? ` · ${pendingUpdate.urgency}` : ''}`}
+            />
+          ) : null}
         </button>
       </div>
     </aside>

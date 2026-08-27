@@ -9,9 +9,12 @@ setlocal
 rem ---- 配置（证书 Thumbprint，首次生成后固定）----
 set TP=2818B2F69CAD337604F42DEFC7B5A3C3696F02AC
 
-rem ---- 自动探测 signtool ----
+rem ---- 自动探测 signtool（优先 x64，arm64 在本机无法运行）----
 set SIGTOOL=
-for /f "delims=" %%k in ('dir /b /s "C:\Program Files (x86)\Windows Kits\10\bin\signtool.exe" 2^>nul') do set SIGTOOL=%%k
+for /f "delims=" %%k in ('dir /b /s "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" 2^>nul') do set SIGTOOL=%%k
+if not defined SIGTOOL (
+  for /f "delims=" %%k in ('dir /b /s "C:\Program Files (x86)\Windows Kits\10\bin\signtool.exe" 2^>nul') do set SIGTOOL=%%k
+)
 if not defined SIGTOOL (
   echo [错误] 未找到 signtool.exe（需安装 Windows SDK）
   exit /b 1
@@ -19,13 +22,14 @@ if not defined SIGTOOL (
 echo [signtool] %SIGTOOL%
 
 rem ---- 签名：安装包 + win-unpacked 下所有 exe ----
+rem 时间戳用 Sectigo（DigiCert 时间戳服务器在本机不可达）
 for %%f in ("%~dp0..\release\*.exe") do (
   echo [签名] %%~nxf
-  "%SIGTOOL%" sign /sha1 %TP% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%%f" || echo [警告] 签名失败: %%~nxf
+  "%SIGTOOL%" sign /sha1 %TP% /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 "%%f" || echo [警告] 签名失败: %%~nxf
 )
 for %%f in ("%~dp0..\release\win-unpacked\*.exe") do (
   echo [签名] win-unpacked\%%~nxf
-  "%SIGTOOL%" sign /sha1 %TP% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%%f" || echo [警告] 签名失败: %%~nxf
+  "%SIGTOOL%" sign /sha1 %TP% /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 "%%f" || echo [警告] 签名失败: %%~nxf
 )
 echo [完成] 全部签名完成
 endlocal

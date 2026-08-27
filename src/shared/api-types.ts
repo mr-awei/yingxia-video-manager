@@ -47,6 +47,54 @@ export interface AppInfo {
   changelog: string
 }
 
+/** 匹配到的发布资源信息 */
+export interface UpdateAssetInfo {
+  /** 资源文件名 */
+  name: string
+  /** 文件大小（字节） */
+  size: number
+  /** 直接下载链接 */
+  downloadUrl: string
+  /** 资源 Content-Type */
+  contentType?: string
+}
+
+/** 检查更新结果：基于版本号 + 资源 + 元数据的多维特征判定 */
+export interface UpdateCheckResult {
+  /** 实际查询的源 */
+  source: 'github' | 'gitee'
+  /** 当前安装版本 */
+  currentVersion: string
+  /** 远端最新版本号 */
+  latestVersion: string
+  /** 远端版本是否比当前新 */
+  hasUpdate: boolean
+  /** 最新版本发布页 / 下载页链接 */
+  releaseUrl: string
+  /** 更新说明（release notes，截断） */
+  notes?: string
+  /** 发布时间 ISO 字符串 */
+  publishedAt?: string
+  /** 是否为预发布版本 */
+  isPrerelease?: boolean
+  /** 是否为草稿（通常不应向用户推送） */
+  isDraft?: boolean
+  /** 是否找到了匹配当前平台（Windows x64 Setup）的安装包资源 */
+  assetMatched?: boolean
+  /** 匹配到的安装包信息 */
+  asset?: UpdateAssetInfo
+  /** 校验文件信息（如 .sha256 / .blockmap） */
+  checksumAsset?: UpdateAssetInfo
+  /** 更新紧急程度：normal=普通 recommended=推荐 critical=重要 mandatory=强制（低于 minimumVersion） */
+  urgency?: 'normal' | 'recommended' | 'critical' | 'mandatory'
+  /** 发布页声明的最低要求版本；当前版本低于此值时 urgency 自动升级为 mandatory */
+  minimumVersion?: string
+  /** 判定置信度：full=完整（版本+资源均匹配） partial=仅版本（无对应资源） none=无法判定 */
+  confidence?: 'full' | 'partial' | 'none'
+  /** 出错信息（网络/解析失败） */
+  error?: string
+}
+
 /** 渲染进程通过 window.api 调用的类型化接口（主进程实现） */
 export interface AppApi {
   /** 复制文本到剪贴板（主进程执行） */
@@ -107,6 +155,16 @@ export interface AppApi {
   appInfo(): Promise<AppInfo>
   /** 用默认浏览器打开外部链接（官网 / 仓库 / issue） */
   openExternal(url: string): Promise<void>
+  /** 设置 / 修改 / 清除隐私锁密码（password 为空表示清除锁） */
+  lockSet(password: string): Promise<void>
+  /** 校验隐私锁密码，返回是否正确 */
+  lockVerify(password: string): Promise<boolean>
+  /** 退出应用（密码错误超次 / 锁界面退出用） */
+  appQuit(): Promise<void>
+  /** 按所选源（GitHub / Gitee）检查更新，返回最新版本与发布链接 */
+  updateCheck(): Promise<UpdateCheckResult>
+  /** 用 ffmpeg 随机截帧生成封面 + 预览图（1 封面 + 15 预览），回填视频记录 */
+  videoGeneratePreviews(id: string): Promise<Video | null>
   /**
    * 分享：扫描视频所在文件夹的 .torrent 文件，转换为磁链，并把第一个磁链复制到剪贴板
    */

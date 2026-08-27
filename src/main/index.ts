@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, protocol, Tray, nativeImage, type NativeImage } from 'electron'
 import path from 'node:path'
 import { promises as fs, appendFileSync, mkdirSync } from 'node:fs'
-import { registerIpc } from './lib/ipc'
+import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
 
 const POSTER_MIME: Record<string, string> = {
@@ -33,12 +33,9 @@ function attachRendererLog(win: BrowserWindow): void {
   const write = (label: string, payload: string) => {
     try { appendFileSync(logFile, `[${new Date().toISOString()}] ${label} ${payload}\n`) } catch { /* 忽略 */ }
   }
-  win.webContents.on('console-message', (...args: unknown[]) => {
-    const detail: any = args[0]
-    const message = typeof detail === 'object' && detail !== null
-      ? JSON.stringify({ level: detail.level, message: detail.message, sourceId: detail.sourceId, lineNumber: detail.lineNumber })
-      : args.slice(1).map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
-    write('console', message)
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const payload = JSON.stringify({ level, message, line, sourceId })
+    write('console', payload)
   })
   win.webContents.on('render-process-gone', (_e, details) => write('render-gone', JSON.stringify(details)))
   win.webContents.on('preload-error', (_e, p, err) => write('preload-error', `${p}: ${err?.message}`))
@@ -168,6 +165,32 @@ app.whenReady().then(() => {
   registerLocalMedia()
   registerIpc()
   createWindow()
+
+  // 自动检查更新：按设置里的「频率」在启动时检测一次，之后每 30 分钟复查（仅当距上次检测超过设定间隔才真正联网）
+  void (async () => {
+    const FREQ_MS: Record<string, number> = {
+      daily: 24 * 60 * 60 * 1000,
+      weekly: 7 * 24 * 60 * 60 * 1000,
+      monthly: 30 * 24 * 60 * 60 * 1000
+    }
+    const maybeCheck = async () => {
+      try {
+        const { getSettings } = await import('./lib/repo')
+        const s = await getSettings()
+        const freq = s.autoUpdateFrequency ?? 'off'
+        if (freq === 'off') return
+        const interval = FREQ_MS[freq]
+        if (!interval) return
+        const last = s.lastUpdateCheck ?? 0
+        if (Date.now() - last < interval) return
+        await runUpdateCheck()
+      } catch {
+        /* 静默：网络/解析失败不影响启动 */
+      }
+    }
+    await maybeCheck()
+    setInterval(maybeCheck, 30 * 60 * 1000)
+  })()
 
   // 启动时应用运行时设置（开机自启 / 最小化到托盘）
   void (async () => {

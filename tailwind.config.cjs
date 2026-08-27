@@ -24,15 +24,6 @@ module.exports = {
       boxShadow: {
         card: '0 8px 24px rgba(0,0,0,0.45)',
         glow: '0 0 0 2px rgba(251,114,153,0.55), 0 12px 30px rgba(251,114,153,0.25)'
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(6px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' }
-        }
-      },
-      animation: {
-        fadeIn: 'fadeIn 0.18s ease-out'
       }
     }
   },

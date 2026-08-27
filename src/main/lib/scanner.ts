@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { Library, ScanProgress, Settings, Video } from '../../shared/types'
 import { findVideoByPath, upsertVideo, updateVideo, listLibraries } from './repo'
 import { resolvePoster, postersCacheDir } from './images'
+import { isDomestic } from '../../shared/code'
 
 export const VIDEO_EXTS = new Set([
   '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm', '.flv', '.m4v',
@@ -70,11 +71,14 @@ export async function scanLibrary(
       continue
     }
     const stat = await fs.stat(filePath).catch(() => null)
+    const folderName = path.basename(path.dirname(filePath))
     const video: Video = {
       id: idForPath(filePath),
       libraryId: library.id,
       path: filePath,
       fileName: path.basename(filePath),
+      folderName,
+      domestic: isDomestic(folderName, path.basename(filePath)),
       title: cleanTitle(path.basename(filePath)),
       tags: [],
       addedAt: Date.now(),

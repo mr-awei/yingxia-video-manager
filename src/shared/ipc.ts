@@ -21,6 +21,8 @@ export const IPC = {
   libraryFetchJavdbAll: 'library:fetchJavdbAll',
   // javdb 详情抓取
   videoFetchJavdbDetail: 'video:fetchJavdbDetail',
+  // ffmpeg 兜底截帧：随机截 1 张封面 + 15 张预览图
+  videoGeneratePreviews: 'video:generatePreviews',
   // ffprobe 读取视频技术参数
   videoProbe: 'video:probe',
   // 分享：扫描视频文件夹的 .torrent 并转磁链
@@ -52,6 +54,12 @@ export const IPC = {
   openExternal: 'system:openExternal',
   // 应用信息（版本号等）
   appInfo: 'app:info',
+  // 隐私锁：设置/清除密码、校验密码、退出应用
+  lockSet: 'lock:set',
+  lockVerify: 'lock:verify',
+  appQuit: 'app:quit',
+  // 检查更新：按所选源（GitHub / Gitee）查询最新版本
+  updateCheck: 'update:check',
   // 在文件管理器中显示并选中文件
   shellRevealInFolder: 'system:revealInFolder',
   // 事件（主进程 -> 渲染进程）

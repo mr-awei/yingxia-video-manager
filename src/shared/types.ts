@@ -2,6 +2,10 @@
 
 export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'ffmpeg' | 'placeholder'
 export type SortKey = 'title' | 'year' | 'added' | 'lastPlayed' | 'random' | 'score'
+/** 浏览页视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */
+export type ViewMode = 'grid-portrait' | 'grid-landscape' | 'list-filename'
+/** 更新检查源 */
+export type UpdateSource = 'github' | 'gitee'
 
 /** 媒体库：对应一个被扫描的本地文件夹 + 一个简介 md 文件 */
 export interface Library {
@@ -42,6 +46,12 @@ export interface Video {
   favorite?: boolean
   /** javdb 详情页抓取的元数据（缓存；缺失时点击卡片时再抓） */
   javdbDetail?: JavdbDetail
+  /** 演员名单（从数据源抓取回填，用于检索/展示；演员维度筛选仍优先用 javdbDetail.actresses） */
+  actors?: string[]
+  /** ffmpeg 批量截帧生成的预览图本地路径（横屏预览墙使用），最多 PREVIEW_COUNT 张 */
+  previewPaths?: string[]
+  /** 国产片：纯中文文件夹且无番号，不自动抓取元数据，仅用 ffmpeg 截帧 */
+  domestic?: boolean
 }
 
 /** javdb 视频详情页抓取的元数据 */
@@ -135,6 +145,31 @@ export interface Settings {
   privacyDefaultOn: boolean
   /** 扫描富集并发数（1-8：ffprobe 探测 / 截帧等） */
   scanConcurrency: number
+  /** 隐私锁密码哈希（SHA-256 salt+password）；为空表示未上锁 */
+  lockHash?: string
+  /** 隐私锁随机盐（十六进制），与 lockHash 配套 */
+  lockSalt?: string
+  /** 检查更新时使用的源（GitHub / Gitee） */
+  updateSource?: UpdateSource
+  /** 自动检查更新频率：关闭 / 每天 / 每周 / 每月。按此频率在启动时自动检测更新 */
+  autoUpdateFrequency?: 'off' | 'daily' | 'weekly' | 'monthly'
+  /** 上次自动检查更新的时间戳（ms），用于频率判定 */
+  lastUpdateCheck?: number
+  /** 待处理（可用）更新；为空表示无可用更新或已是最新 */
+  pendingUpdate?: {
+    version: string
+    url: string
+    /** 更新紧急程度 */
+    urgency?: 'normal' | 'recommended' | 'critical' | 'mandatory'
+    /** 发布时间 ISO 字符串 */
+    publishedAt?: string
+    /** 匹配到的安装包文件名 */
+    assetName?: string
+    /** 安装包大小（字节） */
+    assetSize?: number
+  } | null
+  /** 用户已选择忽略的对账未收录文件路径列表（不再弹窗/不再进入「未收录」分类） */
+  ignoredUnlistedPaths: string[]
 }
 
 export interface VideoFilter {
@@ -177,7 +212,11 @@ export const DEFAULT_SETTINGS: Settings = {
   minimizeToTray: false,
   defaultSort: 'title',
   privacyDefaultOn: false,
-  scanConcurrency: 4
+  scanConcurrency: 4,
+  updateSource: 'github',
+  autoUpdateFrequency: 'off',
+  pendingUpdate: null,
+  ignoredUnlistedPaths: []
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javdb > javbus > 截帧 > 占位 */

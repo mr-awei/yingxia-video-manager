@@ -25,6 +25,13 @@
   --shadow-card: 0 10px 32px rgba(0, 0, 0, 0.45);
   --accent: 251 114 153;
   --accent-2: 255 180 190;
+
+  /* ===== 动效令牌：统一时长 / 缓动，组件引用而非散落硬编码 ===== */
+  --dur-fast: 150ms;
+  --dur-med: 220ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .theme-light {
@@ -384,6 +391,68 @@ body {
 }
 .animate-fadeIn-fast {
   animation: vm-fade-in-fast 0.15s ease-out both;
+}
+
+/* ---------- 弹窗进场动画：背景淡入 + 面板缩放位移 ---------- */
+@keyframes vm-modal-backdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vm-modal-panel {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-modal-backdrop {
+  animation: vm-modal-backdrop var(--dur-med) ease-out both;
+}
+.animate-modal-panel {
+  animation: vm-modal-panel var(--dur-slow) var(--ease-out) both;
+}
+
+/* ---------- 统一 Toast：右下角滑入 / 滑出 ---------- */
+@keyframes vm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes vm-toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+}
+.animate-toast-in {
+  animation: vm-toast-in var(--dur-med) var(--ease-out) both;
+}
+.animate-toast-out {
+  animation: vm-toast-out 200ms var(--ease-in-out) both;
+}
+
+/* ---------- 无障碍：尊重用户的「减少动态效果」系统设置 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---------- 阴影 ---------- */

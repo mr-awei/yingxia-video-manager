@@ -5,6 +5,20 @@ import { spawn } from 'node:child_process'
 import type { Library, Settings, Video, ImageSource } from '../../shared/types'
 import { resolveFfmpegExe } from './ffmpegEnv'
 
+/** 截帧诊断日志：写到 userData/logs/ffmpeg-frame.log，便于排查“点了截帧但不出图” */
+function frameLogPath(): string {
+  return path.join(app.getPath('userData'), 'logs', 'ffmpeg-frame.log')
+}
+async function frameLog(msg: string): Promise<void> {
+  try {
+    const p = frameLogPath()
+    await fs.mkdir(path.dirname(p), { recursive: true })
+    await fs.appendFile(p, `[${new Date().toISOString()}] ${msg}\n`, 'utf-8')
+  } catch {
+    /* 日志失败不阻塞业务 */
+  }
+}
+
 const POSTER_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 /** 视频文件夹里常见的通用封面文件名（无需与视频同名） */
 const GENERIC_POSTER_NAMES = [
@@ -143,4 +157,99 @@ export async function resolvePoster(
   return { source: 'placeholder' }
 }
 
-export { postersCacheDir, frameCachePath, generateFrame }
+/** 横屏预览图数量（随机截帧） */
+export const PREVIEW_COUNT = 15
+
+function previewPathFor(video: Video, i: number): string {
+  return path.join(postersCacheDir(), `${video.id}_preview_${i}.jpg`)
+}
+
+/** 单次截帧：在指定秒数处截取一帧 */
+function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
+  const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
+  void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
+  return new Promise<boolean>((resolve) => {
+    const p = spawn(exe, args, { windowsHide: true })
+    let done = false
+    let stderr = ''
+    p.stderr?.on('data', (chunk) => {
+      stderr += String(chunk)
+    })
+    p.on('error', (err) => {
+      if (!done) {
+        done = true
+        void frameLog(`[spawnFrameAt] error exe=${exe} err=${err.message}`)
+        resolve(false)
+      }
+    })
+    p.on('close', async (code) => {
+      if (done) return
+      done = true
+      const errTail = stderr.slice(-400).replace(/\s+/g, ' ')
+      if (code === 0) {
+        try {
+          await fs.access(out)
+          void frameLog(`[spawnFrameAt] ok out=${out}`)
+          resolve(true)
+        } catch {
+          void frameLog(`[spawnFrameAt] missing output file out=${out}`)
+          resolve(false)
+        }
+      } else {
+        void frameLog(`[spawnFrameAt] failed code=${code} err=${errTail}`)
+        resolve(false)
+      }
+    })
+  })
+}
+
+/** 限制并发的 map */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let idx = 0
+  const worker = async () => {
+    while (idx < items.length) {
+      const cur = idx++
+      results[cur] = await fn(items[cur])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+  return results
+}
+
+/**
+ * ffmpeg 兜底截帧：随机时间点截 1 张封面 + PREVIEW_COUNT 张预览图。
+ * 用于实在获取不到封面/截图时（无 JavDB 海报、无侧车图），保证每部视频都有真实画面。
+ * 返回的 coverPath 复用 <id>.jpg（与 generateFrame 一致），previewPaths 为 <id>_preview_<n>.jpg。
+ */
+export async function generatePreviewSet(
+  video: Video,
+  settings: Settings
+): Promise<{ coverPath?: string; previewPaths: string[] } | null> {
+  const exe = await ffmpegAvailable(settings)
+  void frameLog(`[generatePreviewSet] id=${video.id} exe=${exe ?? 'null'} path=${video.path} durationSec=${video.durationSec ?? video.techInfo?.durationSec ?? 'unset'}`)
+  if (!exe) {
+    void frameLog(`[generatePreviewSet] abort: no ffmpeg`)
+    return null
+  }
+  await fs.mkdir(postersCacheDir(), { recursive: true })
+  const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
+  const coverSec = Math.max(5, Math.floor(dur * (0.2 + Math.random() * 0.2)))
+  const coverPath = frameCachePath(video)
+  const previewItems = Array.from({ length: PREVIEW_COUNT }, (_, i) => {
+    const frac = 0.06 + ((i + 0.5) / PREVIEW_COUNT) * 0.88
+    return { i, sec: Math.max(5, Math.floor(dur * frac)) }
+  })
+  const coverOk = await spawnFrameAt(exe, video.path, coverSec, coverPath)
+  const previewsOk = await mapLimit(previewItems, 4, (it) =>
+    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
+  )
+  const previewPaths = previewsOk
+    .map((ok, i) => (ok ? previewPathFor(video, i) : null))
+    .filter((p): p is string => p !== null)
+  const finalCover = coverOk ? coverPath : previewPaths.length > 0 ? previewPaths[0] : undefined
+  void frameLog(`[generatePreviewSet] result id=${video.id} coverOk=${coverOk} previewCount=${previewPaths.length} finalCover=${finalCover ?? 'none'}`)
+  return { coverPath: finalCover, previewPaths }
+}
+
+export { postersCacheDir, frameCachePath, generateFrame, frameLog }

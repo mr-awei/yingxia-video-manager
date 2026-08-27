@@ -42,7 +42,7 @@ export const ABOUT = {
   licenseUrl: 'https://opensource.org/licenses/MIT',
 
   /** 开源仓库地址（About 弹窗用于引导点亮 Star） */
-  github: 'https://github.com/awei10/yingxia-video-manager',
+  github: 'https://github.com/mr-awei/yingxia-video-manager',
 
   /** 外部链接（留空不渲染） */
   links: [
@@ -50,14 +50,13 @@ export const ABOUT = {
       key: 'github',
       label: 'GitHub',
       icon: 'external',
-      url: 'https://github.com/awei10/yingxia-video-manager'
+      url: 'https://github.com/mr-awei/yingxia-video-manager'
     },
     {
       key: 'gitee',
       label: 'Gitee',
       icon: 'external',
-      // TODO: 替换为你的真实仓库地址
-      url: ''
+      url: 'https://gitee.com/mr-awei/yingxia-video-manager'
     },
     {
       key: 'feedback',

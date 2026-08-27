@@ -15,6 +15,8 @@ interface Props {
   onToggleFlag?: (id: string, key: 'favorite') => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
+  /** 卡片宽高比：portrait 竖屏(2:3) / landscape 横屏(16:9) */
+  aspect?: 'portrait' | 'landscape'
 }
 
 /** 把 DisplayEntry 组装成 Video 视图，供 HoverDetail / 预览面板复用 */
@@ -39,7 +41,7 @@ function hoverVideo(entry: DisplayEntry): Video {
 /** Netflix 式悬浮预览面板：宽 360，高度动态；小图 96 宽 */
 const PANEL_W = 360
 
-function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag }: Props) {
+function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag, aspect = 'portrait' }: Props) {
   const [imgError, setImgError] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
@@ -147,7 +149,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
         })
       }}
     >
-      <div className="aspect-[2/3] w-full relative">
+      <div className={`${aspect === 'landscape' ? 'aspect-video' : 'aspect-[2/3]'} w-full relative`}>
         {showPoster ? (
           <img
             src={src}
@@ -234,7 +236,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
         </div>
 
         {/* hover 快速信息蒙层（标题/评分/标签紧凑版） */}
-        <div className="card-hover absolute inset-0 overflow-hidden bg-gradient-to-t from-black/95 via-black/65 to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-250 p-3 flex flex-col justify-end">
+        <div className="card-hover absolute inset-0 overflow-hidden bg-gradient-to-t from-black/95 via-black/65 to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-[250ms] p-3 flex flex-col justify-end">
           <HoverDetail video={v} />
         </div>
 
@@ -269,7 +271,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
             >
               {/* 上：封面 + 标题 + 元信息 + 标签（标签填满右信息区空白） */}
               <div className="flex gap-3 p-3 pb-2.5">
-                <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden bg-ink-700 ring-1 ring-white/5">
+                <div className={`${aspect === 'landscape' ? 'w-32 h-[72px]' : 'w-24 h-36'} shrink-0 rounded-lg overflow-hidden bg-ink-700 ring-1 ring-white/5`}>
                   {src ? (
                     <img src={src} alt={entry.title} className="h-full w-full object-cover poster-img" />
                   ) : (

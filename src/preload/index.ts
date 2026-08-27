@@ -40,6 +40,11 @@ const api: AppApi = {
   openPath: (p) => ipcRenderer.invoke(IPC.openPath, p),
   openExternal: (u) => ipcRenderer.invoke(IPC.openExternal, u),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  lockSet: (password) => ipcRenderer.invoke(IPC.lockSet, password),
+  lockVerify: (password) => ipcRenderer.invoke(IPC.lockVerify, password),
+  appQuit: () => ipcRenderer.invoke(IPC.appQuit),
+  updateCheck: () => ipcRenderer.invoke(IPC.updateCheck),
+  videoGeneratePreviews: (id) => ipcRenderer.invoke(IPC.videoGeneratePreviews, id),
   onScanProgress: (cb) => {
     ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
   },

@@ -6,6 +6,8 @@ interface Props {
   open: boolean
   result: ReconcileResult | null
   mdPath?: string
+  /** 用户已全局忽略的对账未收录路径 */
+  ignoredUnlistedPaths?: string[]
   onClose: () => void
   onOpenFile: (path: string) => void
   /** 在系统文件管理器中显示并选中文件（用于改名） */
@@ -16,22 +18,31 @@ interface Props {
   onApplyRenames: (
     items: { path: string; newName: string }[]
   ) => Promise<{ ok: number; failed: { path: string; reason: string }[] }>
+  /** 忽略某个未收录项（以后不再弹出提醒，但仍保留在左侧「未收录」分类中） */
+  onIgnoreUnlisted?: (path: string) => void | Promise<void>
+  /** 取消忽略 */
+  onUnignoreUnlisted?: (path: string) => void | Promise<void>
 }
 
 export default function ReconcileDialog({
   open,
   result,
   mdPath,
+  ignoredUnlistedPaths = [],
   onClose,
   onOpenFile,
   onRevealInFolder,
   onPreviewRenames,
-  onApplyRenames
+  onApplyRenames,
+  onIgnoreUnlisted,
+  onUnignoreUnlisted
 }: Props) {
   const [previews, setPreviews] = useState<RenamePreviewItem[] | null>(null)
   const [applying, setApplying] = useState(false)
   const [applyResult, setApplyResult] = useState<{ ok: number; failed: number } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [showIgnored, setShowIgnored] = useState(false)
+  const [pendingIgnores, setPendingIgnores] = useState<Set<string>>(new Set())
 
   if (!open || !result) return null
 
@@ -130,14 +141,39 @@ export default function ReconcileDialog({
               </div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {unlisted.map((u) => (
-                  <button
+                  <div
                     key={u.path}
-                    className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-white/90 text-xs"
-                    title={`${u.path}\n点击：在文件管理器中显示并选中`}
-                    onClick={() => onRevealInFolder?.(u.path)}
+                    className="inline-flex items-center rounded bg-amber-500/20 text-white/90 text-xs overflow-hidden"
                   >
-                    {u.fileName}
-                  </button>
+                    <button
+                      className="px-2 py-1 hover:bg-amber-500/40"
+                      title={`${u.path}\n点击：在文件管理器中显示并选中`}
+                      onClick={() => onRevealInFolder?.(u.path)}
+                    >
+                      {u.fileName}
+                    </button>
+                    {onIgnoreUnlisted ? (
+                      <button
+                        className="px-1.5 py-1 hover:bg-amber-500/40 text-white/50 hover:text-white disabled:opacity-40"
+                        title="忽略该项目，以后不再弹出提醒，但仍可在左侧「未收录」中找到"
+                        disabled={pendingIgnores.has(u.path)}
+                        onClick={async () => {
+                          setPendingIgnores((prev) => new Set(prev).add(u.path))
+                          try {
+                            await onIgnoreUnlisted(u.path)
+                          } finally {
+                            setPendingIgnores((prev) => {
+                              const next = new Set(prev)
+                              next.delete(u.path)
+                              return next
+                            })
+                          }
+                        }}
+                      >
+                        忽略
+                      </button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
 
@@ -211,6 +247,50 @@ export default function ReconcileDialog({
                       </div>
                     </>
                   )}
+                </div>
+              ) : null}
+
+              {/* 已忽略项目管理 */}
+              {ignoredUnlistedPaths.length > 0 ? (
+                <div className="mt-4">
+                  <button
+                    className="text-white/50 text-xs hover:text-white flex items-center gap-1"
+                    onClick={() => setShowIgnored((v) => !v)}
+                  >
+                    <span>{showIgnored ? '▾' : '▸'}</span>
+                    已忽略 {ignoredUnlistedPaths.length} 项（点击展开管理）
+                  </button>
+                  {showIgnored ? (
+                    <div className="mt-2 max-h-40 overflow-auto thin-scroll rounded bg-black/20 p-2 space-y-1">
+                      {ignoredUnlistedPaths.map((p) => (
+                        <div key={p} className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-white/70 truncate" title={p}>
+                            {p.split(/[/\\]/).pop() ?? p}
+                          </span>
+                          {onUnignoreUnlisted ? (
+                            <button
+                              className="shrink-0 px-1.5 py-0.5 rounded hover:bg-white/10 text-white/60 hover:text-white disabled:opacity-40"
+                              disabled={pendingIgnores.has(p)}
+                              onClick={async () => {
+                                setPendingIgnores((prev) => new Set(prev).add(p))
+                                try {
+                                  await onUnignoreUnlisted(p)
+                                } finally {
+                                  setPendingIgnores((prev) => {
+                                    const next = new Set(prev)
+                                    next.delete(p)
+                                    return next
+                                  })
+                                }
+                              }}
+                            >
+                              取消忽略
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

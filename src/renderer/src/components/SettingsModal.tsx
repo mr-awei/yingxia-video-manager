@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Settings, ProxyMode, SortKey } from '../../../shared/types'
+import type { UpdateCheckResult } from '../../../shared/api-types'
 import { api } from '../lib/api'
 import Icon from './Icon'
 import type { IconName } from './Icon'
@@ -9,15 +10,26 @@ interface Props {
   settings: Settings
   onClose: () => void
   onSave: (patch: Partial<Settings>) => void
+  /** 隐私锁等操作直接走主进程后，用于刷新外部 settings 状态 */
+  onSaved?: () => void
 }
 
-type Category = 'general' | 'network' | 'appearance' | 'data' | 'danger'
+type Category =
+  | 'general'
+  | 'network'
+  | 'appearance'
+  | 'privacy'
+  | 'storage'
+  | 'update'
+  | 'danger'
 
 const CATEGORIES: { id: Category; label: string; icon: IconName }[] = [
   { id: 'general', label: '通用', icon: 'sliders' },
   { id: 'network', label: '网络', icon: 'globe' },
   { id: 'appearance', label: '外观', icon: 'palette' },
-  { id: 'data', label: '数据', icon: 'database' },
+  { id: 'privacy', label: '隐私与安全', icon: 'shield' },
+  { id: 'storage', label: '数据与存储', icon: 'database' },
+  { id: 'update', label: '更新', icon: 'refresh' },
   { id: 'danger', label: '危险操作', icon: 'alert' }
 ]
 
@@ -73,6 +85,31 @@ function normalizeProxy(s: Settings): Settings {
     fetchIntervalMs: Number(next.fetchIntervalMs) || 600,
     autoRescan: !!next.autoRescan,
     dataSource: next.dataSource ?? 'auto'
+  }
+}
+
+function formatBytes(n?: number): string {
+  if (n == null || n <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let v = n
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+function urgencyMeta(u?: UpdateCheckResult['urgency']) {
+  switch (u) {
+    case 'mandatory':
+      return { label: '强制更新', color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30', icon: 'alert' as IconName }
+    case 'critical':
+      return { label: '重要更新', color: 'text-amber-400', bg: 'bg-amber-500/15', border: 'border-amber-500/30', icon: 'alert' as IconName }
+    case 'recommended':
+      return { label: '推荐更新', color: 'text-sky-400', bg: 'bg-sky-500/15', border: 'border-sky-500/30', icon: 'info' as IconName }
+    default:
+      return { label: '普通更新', color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', icon: 'check' as IconName }
   }
 }
 
@@ -369,7 +406,7 @@ function ThemeCard({
 
 /* ---------------- main component ---------------- */
 
-export default function SettingsModal({ open, settings, onClose, onSave }: Props) {
+export default function SettingsModal({ open, settings, onClose, onSave, onSaved }: Props) {
   const [draft, setDraft] = useState<Settings>(settings)
   const [activeCategory, setActiveCategory] = useState<Category>('general')
   const [dataDir, setDataDir] = useState('')
@@ -384,6 +421,15 @@ export default function SettingsModal({ open, settings, onClose, onSave }: Props
   } | null>(null)
   const [ffmpegChecking, setFfmpegChecking] = useState(false)
   const [showFfmpegTutorial, setShowFfmpegTutorial] = useState(false)
+  const [lockPwd, setLockPwd] = useState('')
+  const [lockPwd2, setLockPwd2] = useState('')
+  const [lockMsg, setLockMsg] = useState('')
+  const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    if (open) setUpdateRes(null)
+  }, [open])
 
   useEffect(() => {
     if (open) {
@@ -444,6 +490,25 @@ export default function SettingsModal({ open, settings, onClose, onSave }: Props
       .then(setFfmpegStatus)
       .catch(() => setFfmpegStatus({ source: 'missing' }))
       .finally(() => setFfmpegChecking(false))
+  }
+
+  const checkUpdate = async () => {
+    setChecking(true)
+    try {
+      const r = await api.updateCheck()
+      setUpdateRes(r)
+    } catch {
+      setUpdateRes({
+        source: draft.updateSource ?? 'github',
+        currentVersion: '',
+        latestVersion: '',
+        hasUpdate: false,
+        releaseUrl: '',
+        error: '检查更新失败'
+      })
+    } finally {
+      setChecking(false)
+    }
   }
 
   return (
@@ -835,15 +900,113 @@ export default function SettingsModal({ open, settings, onClose, onSave }: Props
               </section>
             )}
 
-            {/* ===== 数据 ===== */}
-            {activeCategory === 'data' && (
+            {/* ===== 隐私与安全 ===== */}
+            {activeCategory === 'privacy' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="database" title="数据" description="扫描、缓存与隐私相关设置" />
+                <SectionHeader icon="shield" title="隐私与安全" description="访问控制与隐私护盾" />
+
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="shield" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">隐私护盾</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-2">开启后，海报墙与详情页的封面会被模糊打码，防止他人窥视。</div>
+                  <FieldRow label="默认开启" hint="开启后应用启动时自动进入隐私模式（海报模糊打码）。">
+                    <div className="flex items-center gap-2">
+                      <Icon name="shield" size={14} className="text-white/40" />
+                      <Toggle
+                        on={!!draft.privacyDefaultOn}
+                        onChange={(v) => setDraft({ ...draft, privacyDefaultOn: v })}
+                      />
+                    </div>
+                  </FieldRow>
+                </Card>
+
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="lock" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">隐私锁</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-3">
+                    给软件上锁后，每次打开需输入密码；密码错误 5 次自动退出。密码以 SHA-256 哈希存储，不保存明文。
+                  </div>
+                  <FieldRow label="当前状态" hint={settings.lockHash ? '已上锁' : '未上锁'}>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-xs font-medium ${
+                        settings.lockHash ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'
+                      }`}
+                    >
+                      {settings.lockHash ? '已上锁' : '未上锁'}
+                    </span>
+                  </FieldRow>
+                  <Field label="密码" hint={settings.lockHash ? '输入新密码即修改；留空则解除锁' : '设置你的锁屏密码'}>
+                    <input
+                      type="password"
+                      className={inputCls}
+                      placeholder="输入密码"
+                      value={lockPwd}
+                      onChange={(e) => {
+                        setLockPwd(e.target.value)
+                        setLockMsg('')
+                      }}
+                    />
+                  </Field>
+                  {!settings.lockHash ? (
+                    <div className="mb-3">
+                      <input
+                        type="password"
+                        className={inputCls}
+                        placeholder="再次输入确认"
+                        value={lockPwd2}
+                        onChange={(e) => setLockPwd2(e.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    {settings.lockHash ? (
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors cursor-pointer"
+                        onClick={async () => {
+                          await api.lockSet(lockPwd)
+                          setLockPwd('')
+                          setLockMsg(lockPwd ? '已修改密码' : '已解除锁')
+                          onSaved?.()
+                        }}
+                      >
+                        {lockPwd ? '修改密码' : '解除锁'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
+                        disabled={!lockPwd || lockPwd !== lockPwd2}
+                        onClick={async () => {
+                          await api.lockSet(lockPwd)
+                          setLockPwd('')
+                          setLockPwd2('')
+                          setLockMsg('已设置锁')
+                          onSaved?.()
+                        }}
+                      >
+                        设置锁
+                      </button>
+                    )}
+                  </div>
+                  {lockMsg ? <div className="text-white/60 text-xs mt-2">{lockMsg}</div> : null}
+                </Card>
+              </section>
+            )}
+
+            {/* ===== 数据与存储 ===== */}
+            {activeCategory === 'storage' && (
+              <section className="animate-fadeIn">
+                <SectionHeader icon="database" title="数据与存储" description="扫描性能、数据目录与缓存" />
 
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="refresh" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">扫描与隐私</div>
+                    <div className="text-white/90 text-sm font-medium">扫描</div>
                   </div>
                   <FieldRow label="启动时自动重扫" hint="每次打开软件自动对账所有媒体库（MD 驱动）。">
                     <Toggle on={!!draft.autoRescan} onChange={(v) => setDraft({ ...draft, autoRescan: v })} />
@@ -854,15 +1017,6 @@ export default function SettingsModal({ open, settings, onClose, onSave }: Props
                       options={['1', '2', '3', '4', '6', '8'].map((n) => ({ value: n, label: `${n} 并发` }))}
                       onChange={(v) => setDraft({ ...draft, scanConcurrency: Number(v) })}
                     />
-                  </FieldRow>
-                  <FieldRow label="隐私护盾默认开启" hint="开启后应用启动时自动进入隐私模式（海报模糊打码）。">
-                    <div className="flex items-center gap-2">
-                      <Icon name="shield" size={14} className="text-white/40" />
-                      <Toggle
-                        on={!!draft.privacyDefaultOn}
-                        onChange={(v) => setDraft({ ...draft, privacyDefaultOn: v })}
-                      />
-                    </div>
                   </FieldRow>
                 </Card>
 
@@ -888,6 +1042,182 @@ export default function SettingsModal({ open, settings, onClose, onSave }: Props
                     </button>
                   </div>
                   {clearMsg ? <div className="text-white/60 text-xs mt-2">{clearMsg}</div> : null}
+                </Card>
+              </section>
+            )}
+
+            {/* ===== 更新 ===== */}
+            {activeCategory === 'update' && (
+              <section className="animate-fadeIn">
+                <SectionHeader icon="refresh" title="更新" description="软件更新、检查源与自动更新频率" />
+
+                {/* 待处理更新横幅 */}
+                {settings.pendingUpdate ? (
+                  (() => {
+                    const meta = urgencyMeta(settings.pendingUpdate.urgency)
+                    return (
+                      <div className={`mb-5 rounded-xl border p-3.5 flex items-center gap-3 ${meta.bg} ${meta.border}`}>
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${meta.bg}`}>
+                          <Icon name={meta.icon} size={18} className={meta.color} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm font-medium">发现新版本 v{settings.pendingUpdate.version}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                          </div>
+                          <div className="text-white/45 text-[11px] truncate">
+                            {settings.pendingUpdate.publishedAt
+                              ? `发布于 ${new Date(settings.pendingUpdate.publishedAt).toLocaleDateString('zh-CN')}`
+                              : '可前往发布页下载'}
+                            {settings.pendingUpdate.assetName
+                              ? ` · ${settings.pendingUpdate.assetName}${settings.pendingUpdate.assetSize ? ` (${formatBytes(settings.pendingUpdate.assetSize)})` : ''}`
+                              : ''}
+                          </div>
+                        </div>
+                        <button
+                          className={`shrink-0 h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${meta.bg} ${meta.color} hover:brightness-110`}
+                          onClick={() => settings.pendingUpdate?.url && api.openExternal(settings.pendingUpdate.url)}
+                        >
+                          前往下载
+                        </button>
+                      </div>
+                    )
+                  })()
+                ) : null}
+
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="refresh" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">手动检查更新</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-3">点击立即向所选源查询是否有新版本。自动更新也会按下方频率在后台检测。</div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      className="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      onClick={checkUpdate}
+                      disabled={checking}
+                    >
+                      <Icon name="refresh" size={13} className={checking ? 'animate-spin' : ''} />
+                      {checking ? '检查中…' : '检查更新'}
+                    </button>
+                    {updateRes && !updateRes.hasUpdate && !updateRes.error ? (
+                      <span className="text-xs text-emerald-400">已是最新版本</span>
+                    ) : null}
+                  </div>
+                  {updateRes ? (
+                    (() => {
+                      const meta = urgencyMeta(updateRes.urgency)
+                      return (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {updateRes.error ? (
+                              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">检查失败</span>
+                            ) : updateRes.hasUpdate ? (
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                            ) : (
+                              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">已是最新</span>
+                            )}
+                            {!updateRes.error && updateRes.confidence ? (
+                              <span className="text-white/35 text-[11px]">
+                                判定置信度：
+                                {updateRes.confidence === 'full'
+                                  ? '完整（版本+安装包均匹配）'
+                                  : updateRes.confidence === 'partial'
+                                    ? '部分（版本较新但未找到安装包）'
+                                    : '无法判定'}
+                              </span>
+                            ) : null}
+                          </div>
+                          {updateRes.hasUpdate && !updateRes.error ? (
+                            <div className="space-y-1.5 mt-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-white text-sm font-medium">v{updateRes.latestVersion}</span>
+                                {updateRes.isPrerelease ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">预发布</span>
+                                ) : null}
+                                {updateRes.isDraft ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">草稿</span>
+                                ) : null}
+                              </div>
+                              {updateRes.publishedAt ? (
+                                <div className="text-white/50 text-xs">发布时间：{new Date(updateRes.publishedAt).toLocaleString('zh-CN', { hour12: false })}</div>
+                              ) : null}
+                              {updateRes.assetMatched && updateRes.asset ? (
+                                <div className="text-white/70 text-xs">
+                                  匹配资源：{updateRes.asset.name}（{formatBytes(updateRes.asset.size)}）
+                                  {updateRes.checksumAsset ? ` · 校验：${updateRes.checksumAsset.name}` : ''}
+                                </div>
+                              ) : !updateRes.error ? (
+                                <div className="text-amber-400/90 text-xs">未找到 Windows 安装包资源，仅版本号较新</div>
+                              ) : null}
+                              {updateRes.minimumVersion ? (
+                                <div className="text-red-400/90 text-xs">最低要求版本：v{updateRes.minimumVersion}（当前 v{updateRes.currentVersion}）</div>
+                              ) : null}
+                              {updateRes.notes ? (
+                                <div className="text-white/40 text-xs line-clamp-3 whitespace-pre-line">{updateRes.notes}</div>
+                              ) : null}
+                              <div className="flex items-center gap-3 pt-1">
+                                {updateRes.asset?.downloadUrl ? (
+                                  <button
+                                    className="text-brand hover:underline text-xs"
+                                    onClick={() => api.openExternal(updateRes.asset!.downloadUrl)}
+                                  >
+                                    直接下载安装包 →
+                                  </button>
+                                ) : null}
+                                <button
+                                  className="text-white/50 hover:text-white/80 hover:underline text-xs"
+                                  onClick={() => api.openExternal(updateRes.releaseUrl)}
+                                >
+                                  查看发布页 →
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {updateRes.error ? <div className="text-red-400/90 text-xs mt-1">{updateRes.error}</div> : null}
+                        </div>
+                      )
+                    })()
+                  ) : null}
+                </Card>
+
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="clock" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">自动更新频率</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-3">设置后，影匣会按此频率在启动时（及运行中）自动检测更新；检测到新版本会在此页与「设置」入口提示。</div>
+                  <SegmentedControl
+                    value={draft.autoUpdateFrequency ?? 'off'}
+                    options={[
+                      { value: 'off', label: '关闭' },
+                      { value: 'daily', label: '每天' },
+                      { value: 'weekly', label: '每周' },
+                      { value: 'monthly', label: '每月' }
+                    ]}
+                    onChange={(v) => setDraft({ ...draft, autoUpdateFrequency: v as 'off' | 'daily' | 'weekly' | 'monthly' })}
+                  />
+                  {draft.autoUpdateFrequency && draft.autoUpdateFrequency !== 'off' && settings.lastUpdateCheck ? (
+                    <div className="text-white/35 text-[11px] mt-2">
+                      上次自动检测：{new Date(settings.lastUpdateCheck).toLocaleString('zh-CN', { hour12: false })}
+                    </div>
+                  ) : null}
+                </Card>
+
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="globe" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">检查更新源</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-3">选择「检查更新」时使用的软件源（GitHub / Gitee）。</div>
+                  <SegmentedControl
+                    value={draft.updateSource ?? 'github'}
+                    options={[
+                      { value: 'github', label: 'GitHub' },
+                      { value: 'gitee', label: 'Gitee' }
+                    ]}
+                    onChange={(v) => setDraft({ ...draft, updateSource: v as 'github' | 'gitee' })}
+                  />
                 </Card>
               </section>
             )}

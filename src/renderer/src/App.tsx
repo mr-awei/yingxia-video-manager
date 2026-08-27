@@ -6,7 +6,8 @@ import type {
   ReconcileResult,
   Settings,
   SortKey,
-  Video
+  Video,
+  ViewMode
 } from '../../shared/types'
 import { DEFAULT_IMAGE_PRIORITY, DEFAULT_SETTINGS } from '../../shared/types'
 import { categorizeTag } from '../../shared/tagCategories'
@@ -27,6 +28,7 @@ import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
 import OnboardMdModal from './components/OnboardMdModal'
+import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
 import type { AppInfo } from '../../shared/api-types'
 
 interface FilterState {
@@ -131,10 +133,17 @@ export default function App() {
   const [view, setView] = useState<ViewName>('home')
   /** 智能筛选（我的清单 / 快捷过滤） */
   const [smart, setSmart] = useState<SmartFilter>('all')
-  /** 网格 / 列表 视图 */
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() =>
-    localStorage.getItem('vm-viewmode') === 'list' ? 'list' : 'grid'
-  )
+  /** 浏览视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('vm-viewmode')
+    if (saved === 'list') return 'list-filename'
+    if (saved === 'grid') return 'grid-portrait'
+    return (saved as ViewMode) || 'grid-landscape'
+  })
+  /** 是否已加载完基础设置（未加载前显示启动遮罩，避免锁界面闪烁泄露内容） */
+  const [loaded, setLoaded] = useState(false)
+  /** 隐私锁是否已解锁（未上锁时恒为 true） */
+  const [unlocked, setUnlocked] = useState(false)
   /** 命令面板 ⌘K */
   /** 随机推荐：手动刷新 nonce（每日刷新由种子里的日期自动驱动） */
   const [recommendNonce, setRecommendNonce] = useState(0)
@@ -175,7 +184,16 @@ export default function App() {
       // 启动时自动对账开关：关闭则跳过首次自动对账
       if (s.scanOnStartup === false) skipFirstAutoScanRef.current = true
       if (libs.length > 0) setLibraryId(libs[0].id)
+      setLoaded(true)
     })()
+  }, [])
+
+  // 后台轻量刷新设置：让「自动检查更新」写入的 pendingUpdate / lastUpdateCheck 自动回流到 UI（徽标、设置页横幅）
+  useEffect(() => {
+    const t = setInterval(() => {
+      void api.settingsGet().then(setSettings).catch(() => {})
+    }, 60000)
+    return () => clearInterval(t)
   }, [])
 
   // 对账：选中库变化时重新对账
@@ -220,6 +238,29 @@ export default function App() {
     }
     return () => {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
+    }
+  }, [progress])
+
+  // 扫描 / 补齐进度 → 统一 Toast（进度变体常驻，完成后停留 0.9s 再消失）
+  const progressToastId = useRef<string | null>(null)
+  useEffect(() => {
+    if (progress && progress.total > 0) {
+      if (!progressToastId.current) {
+        progressToastId.current = toast({
+          text: '扫描 / 补齐中…',
+          tone: 'info',
+          progress: { done: progress.done, total: progress.total, current: progress.current },
+          duration: 0
+        })
+      } else {
+        updateToast(progressToastId.current, {
+          progress: { done: progress.done, total: progress.total, current: progress.current }
+        })
+      }
+    } else if (progressToastId.current) {
+      const id = progressToastId.current
+      progressToastId.current = null
+      window.setTimeout(() => dismissToast(id), 900)
     }
   }, [progress])
 
@@ -490,6 +531,9 @@ export default function App() {
       case 'nocover':
         list = list.filter((e) => !e.video?.posterPath)
         break
+      case 'unlisted':
+        list = list.filter((e) => e.category === '未收录')
+        break
     }
     return list
   }, [applyMetaFilters, smart])
@@ -534,15 +578,21 @@ export default function App() {
       })
   }, [filtered, filter.sort, filter.groupMode, filter.category])
 
-  // 我的清单计数（侧栏徽标）
+  // 我的清单 / 待处理 计数（侧栏徽标）
   const flagCounts = useMemo(() => {
     let fav = 0
     let recent = 0
+    let unrated = 0
+    let nocover = 0
     for (const e of reconcile?.entries ?? []) {
       if (e.video?.favorite) fav++
       if ((e.video?.lastPlayedAt ?? 0) > 0) recent++
+      if (e.video && (e.score ?? e.video.rating) == null) unrated++
+      if (e.video && !e.video.posterPath) nocover++
     }
-    return { fav, recent }
+    // 未收录 仅统计待处理（已忽略的不计入徽标，但仍可在「待处理」里找到）
+    const unlisted = reconcile?.unlisted?.length ?? 0
+    return { fav, recent, unrated, nocover, unlisted }
   }, [reconcile])
 
   // 随机推荐：整库真随机洗牌（每次点击 nonce 变化即重新 Fisher-Yates 洗牌整页）。
@@ -739,6 +789,24 @@ export default function App() {
     )
   }, [])
 
+  const handlePosterFetched = useCallback(
+    (videoId: string, posterPath: string, previewPaths?: string[]) => {
+      setReconcile((prev) =>
+        prev
+          ? {
+              ...prev,
+              entries: prev.entries.map((e) =>
+                e.video && e.video.id === videoId
+                  ? { ...e, video: { ...e.video, posterPath, posterSource: 'ffmpeg', previewPaths } }
+                  : e
+              )
+            }
+          : prev
+      )
+    },
+    []
+  )
+
   const handleOpenMissing = useCallback(
     (_entry: DisplayEntry) => {
       if (currentLibrary?.introMdPath) void api.openPath(currentLibrary.introMdPath)
@@ -821,8 +889,7 @@ export default function App() {
     return updated
   }, [])
 
-  /** 批量补齐结果弹窗：成功数 + 来源分布 / 失败数 + 原因 */
-  /** 批量结果弹窗：结构化数据 + 不自动消失（必须手动关闭） */
+  /** 批量补齐结果：结构化数据 → 统一 Toast（含来源分布 / 失败原因） */
   interface BatchToastData {
     title?: string
     tone?: 'ok' | 'warn' | 'err'
@@ -833,13 +900,48 @@ export default function App() {
     stopped: boolean
     remaining: number
   }
-  const [batchToast, setBatchToast] = useState<BatchToastData | null>(null)
   const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
-    const tone: 'ok' | 'warn' | 'err' =
-      data.tone ??
-      (data.stopped || data.failed > 0 ? 'warn' : 'ok')
-    setBatchToast({ ...data, tone })
+    const tone: 'ok' | 'warn' | 'err' = data.tone ?? (data.stopped || data.failed > 0 ? 'warn' : 'ok')
+    const total = data.ok + data.failed
+    const jd = data.bySource.javdb
+    const jb = data.bySource.javbus
+    const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
+    const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
+    const detail = (
+      <div className="space-y-2">
+        {total > 0 ? (
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
+              <span className="text-[10px] text-white/65 font-mono tabular-nums">
+                JavDB {jd} · JavBus {jb} · 失败 {data.failed}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex">
+              <div
+                className={`h-full transition-all ${data.failed > 0 ? 'bg-emerald-500' : 'bg-brand'}`}
+                style={{ width: `${total > 0 ? (data.ok / total) * 100 : 0}%` }}
+              />
+              {data.failed > 0 ? (
+                <div className="bg-red-500/60 h-full transition-all" style={{ width: `${total > 0 ? (data.failed / total) * 100 : 0}%` }} />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {data.reasons.length > 0 ? (
+          <div className="space-y-0.5">
+            {data.reasons.map((r, i) => (
+              <div key={i} className="text-[12px] text-white/55 truncate">· {r}</div>
+            ))}
+          </div>
+        ) : null}
+        {data.stopped ? (
+          <div className="text-[11px] text-amber-400/90">⚠ 已自动停止，剩余 {data.remaining} 部未处理</div>
+        ) : null}
+      </div>
+    )
+    toast({ title, text: subtitle, tone, detail, duration: 9000 })
   }
 
   const handleBatchJavdb = useCallback(async (force = false) => {
@@ -907,6 +1009,10 @@ export default function App() {
     const s = await api.settingsSet(patch)
     setSettings(s)
     setSettingsOpen(false)
+    // 刚开启自动更新频率时，立即联网检测一次，让「待处理更新」尽快可见
+    if (patch.autoUpdateFrequency && patch.autoUpdateFrequency !== 'off') {
+      void api.updateCheck().then(() => api.settingsGet().then(setSettings)).catch(() => {})
+    }
   }, [])
 
   const togglePrivacy = useCallback(() => {
@@ -1135,7 +1241,18 @@ export default function App() {
   const seriesMembers =
     currentBase && seriesGroups.has(currentBase) ? seriesGroups.get(currentBase) : undefined
 
+  // 启动遮罩：未加载完基础设置前不渲染任何内容（防止隐私锁闪烁泄露）
+  if (!loaded) {
+    return <SplashScreen />
+  }
+  // 隐私锁：已上锁且未解锁 → 拦截整个界面
+  const locked = !!settings.lockHash && !unlocked
+  if (locked) {
+    return <LockScreen onUnlock={() => setUnlocked(true)} />
+  }
+
   return (
+    <ToastProvider>
     <div
       className={`h-full flex flex-col text-white ${privacy ? 'privacy-on' : ''} density-${settings.posterDensity}`}
     >
@@ -1157,49 +1274,6 @@ export default function App() {
         onBatchJavdb={handleBatchJavdb}
       />
 
-      {/* 扫描/补齐进度提示：屏幕顶部居中白底 toast（白底黑字，最强对比度），不再用顶部细条 + 复杂遮罩 */}
-      {progress && progress.total > 0 ? (
-        <>
-          {/* 进度 toast：贴顶偏左，避开右侧工具栏按钮 */}
-          <div
-            className="fixed top-2 left-[40%] -translate-x-1/2 z-[60] pointer-events-none rounded-full bg-white text-slate-900 ring-1 ring-black/10 shadow-[0_-8px_24px_-4px_rgba(0,0,0,0.25),0_10px_30px_-5px_rgba(0,0,0,0.4)] px-5 py-2.5 flex items-center gap-3 animate-fadeIn"
-            style={{ minWidth: 380 }}
-          >
-            <div className="relative w-5 h-5 shrink-0">
-              {progress.done >= progress.total ? (
-                <svg
-                  viewBox="0 0 16 16"
-                  className="w-5 h-5 text-emerald-500"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 8.5l3.5 3.5L13 4.5" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5 text-[#ff4d67] animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-              )}
-            </div>
-            <span className="text-[18px] font-extrabold tabular-nums tracking-tight text-slate-900">
-              {Math.round((progress.done / (progress.total || 1)) * 100)}%
-              <span className="text-[12px] font-bold text-slate-500 ml-1">
-                ({progress.done}/{progress.total})
-              </span>
-            </span>
-            {progress.current ? (
-              <span className="text-[13px] font-medium text-slate-700 max-w-[260px] truncate">
-                · {progress.current}
-              </span>
-            ) : null}
-          </div>
-        </>
-      ) : null}
-
       <div className="flex-1 flex min-h-0">
         <Sidebar
           view={view}
@@ -1215,6 +1289,10 @@ export default function App() {
           onAddLibrary={handleAddLibrary}
           favoriteCount={flagCounts.fav}
           recentCount={flagCounts.recent}
+          unlistedCount={flagCounts.unlisted}
+          unratedCount={flagCounts.unrated}
+          nocoverCount={flagCounts.nocover}
+          pendingUpdate={settings.pendingUpdate}
           sections={sectionList}
           selectedCategory={filter.category}
           onToggleCategory={toggleCategory}
@@ -1283,6 +1361,7 @@ export default function App() {
             </div>
           ) : view === 'home' ? (
             <HomeView
+              key="home"
               entries={reconcile.entries}
               onOpen={handleOpenEntry}
               onEdit={handleEditEntry}
@@ -1294,6 +1373,8 @@ export default function App() {
               hero={hero}
               onHeroNext={onHeroNext}
               onPickTag={handlePickTag}
+              viewMode={viewMode}
+              onSetView={setViewMode}
             />
           ) : filtered.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-white/40 text-sm px-6 text-center animate-fadeIn">
@@ -1303,7 +1384,7 @@ export default function App() {
               当前筛选条件下没有匹配的影片，试试调整搜索或标签。
             </div>
           ) : (
-            <div className="h-full flex flex-col p-4 min-h-0">
+            <div key="browse" className="h-full flex flex-col p-4 min-h-0 animate-fadeIn">
               <BrowseBar
                 libraryName={currentLibrary?.name}
                 categoryLabel={filter.category}
@@ -1317,7 +1398,7 @@ export default function App() {
                 groupMode={filter.groupMode}
                 onToggleGroup={() => setFilter((f) => ({ ...f, groupMode: f.groupMode === 'grouped' ? 'flat' : 'grouped' }))}
                 viewMode={viewMode}
-                onToggleView={() => setViewMode((m) => (m === 'grid' ? 'list' : 'grid'))}
+                onSetView={setViewMode}
                 onClearAll={clearAllFilters}
                 hasActiveFilters={hasActiveFilters}
                 mismatch={mismatch}
@@ -1408,22 +1489,26 @@ export default function App() {
               ) : null}
 
               <div className="flex-1 min-h-0">
-                {viewMode === 'grid' ? (
-                  <VirtualizedWall
-                    sections={sections}
-                    onOpen={handleOpenEntry}
-                    onEdit={handleEditEntry}
-                    onOpenMissing={handleOpenMissing}
-                    onToggleFlag={toggleFlag}
-                    onPickTag={handlePickTag}
-                  />
-                ) : (
+                {viewMode === 'list-filename' ? (
                   <ListView
                     entries={filtered}
                     onOpen={handleOpenEntry}
                     onEdit={handleEditEntry}
                     onOpenMissing={handleOpenMissing}
                     onToggleFlag={toggleFlag}
+                    onPickTag={handlePickTag}
+                    mode="filename"
+                  />
+                ) : (
+                  <VirtualizedWall
+                    key={viewMode}
+                    sections={sections}
+                    onOpen={handleOpenEntry}
+                    onEdit={handleEditEntry}
+                    onOpenMissing={handleOpenMissing}
+                    onToggleFlag={toggleFlag}
+                    onPickTag={handlePickTag}
+                    aspect={viewMode === 'grid-landscape' ? 'landscape' : 'portrait'}
                   />
                 )}
               </div>
@@ -1436,11 +1521,26 @@ export default function App() {
         open={reconcileOpen}
         result={reconcile}
         mdPath={currentLibrary?.introMdPath}
+        ignoredUnlistedPaths={settings.ignoredUnlistedPaths}
         onClose={() => setReconcileOpen(false)}
         onOpenFile={(p) => void api.openPath(p)}
         onRevealInFolder={(p) => void api.shellRevealInFolder(p)}
         onPreviewRenames={handlePreviewRenames}
         onApplyRenames={handleApplyRenames}
+        onIgnoreUnlisted={async (p) => {
+          if (!libraryId) return
+          const next = [...new Set([...settings.ignoredUnlistedPaths, p])]
+          const s = await api.settingsSet({ ignoredUnlistedPaths: next })
+          setSettings(s)
+          await runReconcile(libraryId)
+        }}
+        onUnignoreUnlisted={async (p) => {
+          if (!libraryId) return
+          const next = settings.ignoredUnlistedPaths.filter((x) => x !== p)
+          const s = await api.settingsSet({ ignoredUnlistedPaths: next })
+          setSettings(s)
+          await runReconcile(libraryId)
+        }}
       />
 
       <LibraryModal
@@ -1464,6 +1564,9 @@ export default function App() {
         settings={settings}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onSaved={() => {
+          void api.settingsGet().then(setSettings)
+        }}
       />
 
       <AboutModal
@@ -1480,88 +1583,6 @@ export default function App() {
         onFetchJavdb={handleFetchJavdb}
       />
 
-      {/* 批量补齐结果 toast：成功绿色（含来源分布）/ 部分失败琥珀 / 异常红色，8 秒自动消失 */}
-      {batchToast ? (
-        (() => {
-          const t = batchToast.tone
-          const ok = batchToast.ok
-          const failed = batchToast.failed
-          const total = ok + failed
-          const jd = batchToast.bySource.javdb
-          const jb = batchToast.bySource.javbus
-          const icon = t === 'ok' ? '✓' : t === 'warn' ? '!' : '✕'
-          const iconBg = t === 'ok' ? 'bg-emerald-500' : t === 'warn' ? 'bg-amber-500' : 'bg-red-500'
-          const bar = t === 'ok' ? 'bg-emerald-500' : t === 'warn' ? 'bg-amber-500' : 'bg-red-500'
-          const defaultTitle = t === 'ok' ? '补齐完成' : t === 'warn' ? '补齐部分失败' : '补齐失败'
-          const title = batchToast.title ?? defaultTitle
-          const subtitle = failed > 0
-            ? `成功 ${ok} 部 · 失败 ${failed} 部`
-            : ok > 0
-              ? `成功 ${ok} 部`
-              : ''
-          return (
-            <div className="fixed bottom-6 right-6 z-[80] w-[400px] max-w-[calc(100vw-2rem)] rounded-xl overflow-hidden backdrop-blur-xl shadow-2xl shadow-black/60 ring-1 ring-white/10 animate-fadeIn">
-              {/* 顶边状态色横条 */}
-              <div className={`h-1 ${bar}`} />
-              <div className="bg-ink-900/95 p-4 flex items-start gap-3">
-                {/* 状态图标 */}
-                <div className={`shrink-0 w-9 h-9 rounded-full ${iconBg} flex items-center justify-center text-white text-lg font-bold shadow-md`}>{icon}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[14px] font-semibold text-white tracking-tight truncate">{title}</div>
-                      {subtitle ? <div className="text-[11px] text-white/55 mt-0.5">{subtitle}</div> : null}
-                    </div>
-                    <button
-                      onClick={() => setBatchToast(null)}
-                      className="shrink-0 w-6 h-6 rounded-md hover:bg-white/10 text-white/50 hover:text-white text-sm flex items-center justify-center transition-colors"
-                      title="关闭"
-                    >✕</button>
-                  </div>
-                  {/* 来源分布堆叠条 */}
-                  {total > 0 ? (
-                    <div className="mt-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
-                        <span className="text-[10px] text-white/65 font-mono tabular-nums">
-                          JavDB {jd} · JavBus {jb} · 失败 {failed}
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex" title="成功 / 已处理（成功 + 失败）">
-                        <div
-                          className={`h-full transition-all ${
-                            failed > 0 ? 'bg-emerald-500' : 'bg-brand'
-                          }`}
-                          style={{ width: `${total > 0 ? (ok / total) * 100 : 0}%` }}
-                        />
-                        {failed > 0 ? (
-                          <div
-                            className="bg-red-500/60 h-full transition-all"
-                            style={{ width: `${total > 0 ? (failed / total) * 100 : 0}%` }}
-                          />
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {/* 失败原因列表 */}
-                  {batchToast.reasons.length > 0 ? (
-                    <div className="mt-2.5 space-y-0.5">
-                      {batchToast.reasons.map((r, i) => (
-                        <div key={i} className="text-[12px] text-white/55 truncate">· {r}</div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {/* 自动停止信息 */}
-                  {batchToast.stopped ? (
-                    <div className="mt-2 text-[11px] text-amber-400/90">⚠ 已自动停止，剩余 {batchToast.remaining} 部未处理</div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          )
-        })()
-      ) : null}
-
       {detail ? (
         <VideoDetail
           video={detail}
@@ -1571,6 +1592,7 @@ export default function App() {
             void api.videoOpen(v.id)
           }}
           onDetailFetched={handleDetailFetched}
+          onPosterFetched={handlePosterFetched}
           onTechInfoFetched={handleTechInfoFetched}
           onPickFilter={handlePickFilter}
           onPickTag={handlePickTag}
@@ -1609,6 +1631,92 @@ export default function App() {
         }}
       />
 
+    </div>
+    </ToastProvider>
+  )
+}
+
+/** 启动遮罩：加载基础设置期间显示，避免隐私锁闪烁泄露内容 */
+function SplashScreen() {
+  return (
+    <div className="h-full flex flex-col items-center justify-center bg-ink-900 text-white/70 animate-fadeIn">
+      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand to-[#ff9db6] flex items-center justify-center shadow-glow-sm mb-4">
+        <Icon name="film" size={24} className="text-white" />
+      </div>
+      <div className="text-sm">影匣启动中…</div>
+    </div>
+  )
+}
+
+/** 隐私锁界面：软件上锁后每次打开需输入密码；连续错误 5 次自动退出 */
+function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const [pwd, setPwd] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const attempts = useRef(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const submit = async () => {
+    if (!pwd || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const ok = await api.lockVerify(pwd)
+      if (ok) {
+        onUnlock()
+        return
+      }
+      attempts.current += 1
+      if (attempts.current >= 5) {
+        await api.appQuit()
+        return
+      }
+      setError(`密码错误（已尝试 ${attempts.current}/5 次，错误 5 次将自动退出）`)
+      setPwd('')
+    } catch {
+      setError('校验失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="h-full flex items-center justify-center bg-ink-900 px-4 animate-fadeIn">
+      <div className="w-full max-w-sm rounded-2xl bg-ink-800 ring-1 ring-white/10 shadow-2xl p-7">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-brand to-[#ff9db6] flex items-center justify-center shadow-glow-sm">
+            <Icon name="lock" size={20} className="text-white" />
+          </div>
+          <div>
+            <div className="text-white font-semibold text-lg">影匣已上锁</div>
+            <div className="text-white/45 text-xs">输入密码后继续使用</div>
+          </div>
+        </div>
+        <input
+          ref={inputRef}
+          type="password"
+          className="w-full bg-ink-900/60 text-white text-sm rounded-lg px-3 py-2.5 outline-none border border-white/10 focus:border-brand/60 focus:ring-1 focus:ring-brand/40 transition-colors"
+          placeholder="密码"
+          value={pwd}
+          onChange={(e) => setPwd(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void submit()
+          }}
+        />
+        {error ? <div className="text-red-400 text-xs mt-2">{error}</div> : null}
+        <button
+          className="w-full mt-4 px-4 py-2.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+          onClick={() => void submit()}
+          disabled={busy}
+        >
+          <Icon name="unlock" size={15} />
+          解锁
+        </button>
+      </div>
     </div>
   )
 }
