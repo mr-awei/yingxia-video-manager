@@ -191,6 +191,8 @@ export interface AppApi {
     deletedDir?: boolean
     /** 删除的目录路径（仅 deletedDir=true 时有） */
     dirPath?: string
+    /** 一并清理的关联缓存文件数（封面/预览图/ffmpeg 截图/javdb-javbus 信息图） */
+    removedCache?: number
     error?: string
   }>
   /** 预检 video 所在目录（不删除任何文件），供删除前确认"会删什么" */

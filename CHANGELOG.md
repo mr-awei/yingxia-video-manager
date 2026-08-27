@@ -1,5 +1,15 @@
 # 更新日志（Changelog）
 
+## v1.9.2（2026-08-28）
+
+**优化**
+- **删除视频时一并清理全部关联缓存文件**：除了把视频文件（或整个种子目录）挪到回收站，还会清理该视频在 `userData/posters/` 缓存目录下的所有相关文件：
+  - **封面**（`<videoId>.jpg`）
+  - **ffmpeg 预览图 / 截帧**（`<videoId>_preview_N.jpg`，最多 15 张）
+  - **javdb/javbus 信息图**（`javdb-cover-<CODE>.jpg`、`javdb-sample-<CODE>-N.jpg`、`javbus-cover-<CODE>.jpg`、`javbus-sample-<CODE>-N.jpg`）
+- **共享缓存安全保护**：javdb/javbus 缓存按**番号 CODE** 命名，同系列多分集视频可能共享同一份元数据图片。删除前会检查库中其他视频是否仍引用这些文件——**有其他视频引用则保留，仅清理无引用的**，避免同系列其他影片的封面/截图被误删。
+- 删除成功 toast 会显示「已清理 N 个关联缓存」。
+
 ## v1.9.1（2026-08-28）
 
 **优化**

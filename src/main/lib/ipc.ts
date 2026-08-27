@@ -12,7 +12,7 @@ import { resolvePoster, generatePreviewSet, frameLog } from './images'
 import { postersCacheDir } from './images'
 import { cacheRemoteImage } from './javdb'
 import { fetchJavdbPosterForVideo, fetchJavdbDetail } from './javdb'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, extractCode } from '../../shared/code'
 import { fetchJavBusDetail } from './javbus'
 import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
@@ -125,6 +125,81 @@ function normalizeAsset(raw: unknown): UpdateAssetInfo | null {
   const url = String(a.browser_download_url || a.direct_asset_url || a.url || '')
   if (!name || !url) return null
   return { name, size, downloadUrl: url, contentType: String(a.content_type || a.contentType || '') }
+}
+
+/**
+ * 清理某个视频的关联缓存文件（封面 / ffmpeg 截图 / javdb/javbus 下载的信息图）。
+ * 命名规则（均在 postersCacheDir 下）：
+ * - 视频专属：`<videoId>.jpg` + `<videoId>_preview_N.jpg`（封面 + ffmpeg 预览）
+ * - 按番号共享：`javdb-cover-<CODE>.jpg` / `javdb-sample-<CODE>-N.jpg`、
+ *   `javbus-cover-<CODE>.jpg` / `javbus-sample-<CODE>-N.jpg`
+ * 共享文件删除前检查：若其他视频仍引用同一文件（同系列多分集共用元数据），则保留。
+ * 返回删除的文件数。
+ */
+async function cleanVideoCacheFiles(video: Video): Promise<{ removed: number; kept: number }> {
+  try {
+    const cacheDir = postersCacheDir()
+    let entries: string[]
+    try {
+      entries = await fs.readdir(cacheDir)
+    } catch {
+      return { removed: 0, kept: 0 } // 缓存目录不存在
+    }
+
+    // 该视频引用的缓存文件（优先精确收集）
+    const referencedByVideo = new Set<string>()
+    if (video.posterPath) referencedByVideo.add(path.normalize(video.posterPath))
+    for (const p of video.previewPaths ?? []) referencedByVideo.add(path.normalize(p))
+
+    // 番号（用于 javdb/javbus 共享缓存匹配）
+    const detailCode = video.javdbDetail?.code ?? video.title ?? ''
+    const code = extractCode(detailCode).toUpperCase()
+    const prefixes = new Set<string>()
+    prefixes.add(`${video.id}`)
+    if (code) {
+      prefixes.add(`javdb-cover-${code}`)
+      prefixes.add(`javdb-sample-${code}`)
+      prefixes.add(`javbus-cover-${code}`)
+      prefixes.add(`javbus-sample-${code}`)
+    }
+
+    // 其他视频仍在引用的缓存文件（同系列多分集共享）——不可删
+    const stillReferenced = new Set<string>()
+    try {
+      const others = await repo.listVideos({})
+      for (const o of others) {
+        if (o.id === video.id) continue
+        if (o.posterPath) stillReferenced.add(path.normalize(o.posterPath))
+        for (const p of o.previewPaths ?? []) stillReferenced.add(path.normalize(p))
+      }
+    } catch {
+      /* 拿不到引用列表时保守处理：不删共享文件，只删视频专属文件 */
+    }
+
+    let removed = 0
+    let kept = 0
+    for (const f of entries) {
+      const lower = f.toLowerCase()
+      const matched = [...prefixes].some((p) => lower.startsWith(p.toLowerCase()))
+      if (!matched) continue
+      const abs = path.join(cacheDir, f)
+      // 视频专属文件（videoId 前缀）且被本视频引用过 → 直接删
+      // 共享文件（javdb/javbus）→ 仅当无其他视频引用才删
+      if (stillReferenced.has(path.normalize(abs))) {
+        kept++
+        continue
+      }
+      try {
+        await fs.unlink(abs)
+        removed++
+      } catch {
+        kept++
+      }
+    }
+    return { removed, kept }
+  } catch {
+    return { removed: 0, kept: 0 }
+  }
 }
 
 /** 从 release assets 中匹配 Windows x64 安装包与对应校验文件 */
@@ -880,7 +955,9 @@ export function registerIpc(): void {
       } catch (e) {
         // 目录不存在 / 权限不足 → 仍尝试只挪视频文件到回收站
         await shell.trashItem(filePath).catch(() => {})
-        return { ok: true, path: filePath, deletedDir: false, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅把视频文件挪到回收站` }
+        // 一并清理该视频的封面/截图/javdb 信息缓存
+        const c = await cleanVideoCacheFiles(v)
+        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅把视频文件挪到回收站` }
       }
 
       const otherVideoFiles: string[] = []
@@ -898,14 +975,17 @@ export function registerIpc(): void {
       // 整目录挪回收站的条件：同目录无其他视频 + 有 .torrent + 无其他非视频非种子文件
       const canDeleteDir = otherVideoFiles.length === 0 && torrentFiles.length > 0 && otherFiles.length === 0
 
+      // 无论哪种方式，先清理该视频的关联缓存（封面/预览图/ffmpeg 截图/javdb-javbus 信息图）
+      const c = await cleanVideoCacheFiles(v)
+
       if (canDeleteDir) {
         // 整目录挪回收站（shell.trashItem 支持目录）
         await shell.trashItem(dir)
-        return { ok: true, path: filePath, deletedDir: true, dirPath: dir }
+        return { ok: true, path: filePath, deletedDir: true, dirPath: dir, removedCache: c.removed }
       } else {
         // 只挪视频文件本身
         await shell.trashItem(filePath)
-        return { ok: true, path: filePath, deletedDir: false }
+        return { ok: true, path: filePath, deletedDir: false, removedCache: c.removed }
       }
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? '删除失败' }
