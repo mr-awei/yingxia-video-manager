@@ -410,6 +410,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
   const [draft, setDraft] = useState<Settings>(settings)
   const [activeCategory, setActiveCategory] = useState<Category>('general')
   const [dataDir, setDataDir] = useState('')
+  const [appVersion, setAppVersion] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; status?: number; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
   const [clearMsg, setClearMsg] = useState('')
@@ -443,7 +444,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
       setActiveCategory('general')
       setTestResult(null)
       setClearMsg('')
-      void api.appInfo().then((i) => setDataDir(i.dataDir))
+      void api.appInfo().then((i) => { setDataDir(i.dataDir); setAppVersion(i.version) })
       setFfmpegChecking(true)
       api
         .ffmpegStatus()
@@ -1063,8 +1064,21 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
               <section className="animate-fadeIn">
                 <SectionHeader icon="refresh" title="更新" description="软件更新、检查源与自动更新频率" />
 
-                {/* 待处理更新横幅 */}
-                {settings.pendingUpdate ? (
+                {/* 待处理更新横幅：只在 pendingUpdate.version 严格大于当前应用版本时显示，避免升级后残留显示 */}
+                {settings.pendingUpdate && appVersion && (() => {
+                  const parse = (v: string) => v.replace(/^v/i, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0)
+                  const pa = parse(settings.pendingUpdate.version)
+                  const ca = parse(appVersion)
+                  const n = Math.max(pa.length, ca.length)
+                  let newer = false
+                  for (let i = 0; i < n; i++) {
+                    const x = pa[i] ?? 0
+                    const y = ca[i] ?? 0
+                    if (x > y) { newer = true; break }
+                    if (x < y) { newer = false; break }
+                  }
+                  return newer
+                })() ? (
                   (() => {
                     const meta = urgencyMeta(settings.pendingUpdate.urgency)
                     return (
@@ -1118,15 +1132,15 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   {updateRes ? (
                     (() => {
                       const meta = urgencyMeta(updateRes.urgency)
+                      // 「已是最新」且无错：按钮旁已显示内联文字，不重复渲染整块
+                      if (!updateRes.hasUpdate && !updateRes.error) return null
                       return (
                         <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             {updateRes.error ? (
                               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">检查失败</span>
-                            ) : updateRes.hasUpdate ? (
-                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${meta.bg} ${meta.color}`}>{meta.label}</span>
                             ) : (
-                              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">已是最新</span>
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${meta.bg} ${meta.color}`}>{meta.label}</span>
                             )}
                             {!updateRes.error && updateRes.hasUpdate && updateRes.confidence ? (
                               <span className="text-white/35 text-[11px]">
