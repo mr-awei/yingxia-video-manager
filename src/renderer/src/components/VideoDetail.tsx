@@ -29,6 +29,10 @@ interface Props {
   seriesBase?: string
   /** 同系列全部条目（含当前） */
   seriesMembers?: DisplayEntry[]
+  /** 编辑影片信息 */
+  onEdit?: (v: Video) => void
+  /** 从磁盘删除视频文件（弹二次确认、按需连带删同目录种子文件夹） */
+  onDelete?: (v: Video) => void
 }
 
 /** 渲染元数据一行（key: value）—— label 左对齐，列宽由最宽 label 自动撑开 */
@@ -62,7 +66,7 @@ function formatTech(t?: Video['techInfo']): string | undefined {
   return p.length ? p.join(' · ') : undefined
 }
 
-export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, onPosterFetched, onTechInfoFetched, onPickFilter, onPickTag, onToggleFlag, related, onOpenRelated, seriesBase, seriesMembers }: Props) {
+export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, onPosterFetched, onTechInfoFetched, onPickFilter, onPickTag, onToggleFlag, related, onOpenRelated, seriesBase, seriesMembers, onEdit, onDelete }: Props) {
   const [detail, setDetail] = useState<Video['javdbDetail']>(video.javdbDetail)
   /** 本地 video 副本：截帧/封面更新后立即反映，不必等父组件重新拉取 */
   const [localVideo, setLocalVideo] = useState<Video>(video)
@@ -307,13 +311,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 </button>
               </>
             ) : null}
-            <button
-              className="no-drag h-8 px-4 rounded-lg flex items-center gap-1.5 bg-brand hover:brightness-110 text-white text-sm font-medium shadow-sm shadow-brand/30 transition-all"
-              onClick={() => onPlay(video)}
-            >
-              <Icon name="play" size={13} className="fill-current" />
-              播放
-            </button>
           </div>
         </div>
 
@@ -406,6 +403,47 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 <span className="text-white/40 text-xs">我的推荐评分</span>
               </div>
             ) : null}
+
+            {/* 主 CTA 行：参考大厂设计，播放按钮放在内容区（更突出、离标题/元信息更近），
+                顶栏只保留次要操作（分享/补齐/收藏）。同时把"编辑/打开文件位置/删除文件"等
+                也放这里作为二级按钮组，避免再返回顶栏。 */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <button
+                className="h-11 px-7 rounded-xl flex items-center gap-2.5 bg-brand hover:brightness-110 text-white text-sm font-semibold shadow-lg shadow-brand/40 transition-all"
+                onClick={() => onPlay(video)}
+              >
+                <Icon name="play" size={16} className="fill-current" />
+                播放
+              </button>
+              {onEdit ? (
+                <button
+                  className="h-11 px-4 rounded-xl flex items-center gap-2 bg-ink-700 hover:bg-ink-600 text-white/90 hover:text-white text-sm transition-colors"
+                  onClick={() => onEdit(video)}
+                  title="编辑影片信息"
+                >
+                  <Icon name="pencil" size={14} />
+                  编辑
+                </button>
+              ) : null}
+              <button
+                className="h-11 px-4 rounded-xl flex items-center gap-2 bg-ink-700 hover:bg-ink-600 text-white/90 hover:text-white text-sm transition-colors"
+                onClick={() => void api.shellRevealInFolder(video.path)}
+                title="在文件管理器中显示并选中该文件"
+              >
+                <Icon name="folderOpen" size={14} />
+                打开文件位置
+              </button>
+              {onDelete ? (
+                <button
+                  className="h-11 px-4 rounded-xl flex items-center gap-2 bg-red-500/10 hover:bg-red-500/25 text-red-300 hover:text-red-200 text-sm transition-colors"
+                  onClick={() => onDelete(video)}
+                  title="从磁盘删除该视频（可能连带删除所在目录）"
+                >
+                  <Icon name="trash" size={14} />
+                  删除文件
+                </button>
+              ) : null}
+            </div>
 
             <div className="space-y-1.5 mb-4">
               <MetaRow label="番号" value={d?.code ?? video.title} />

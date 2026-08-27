@@ -777,6 +777,73 @@ export default function App() {
 
   const handleEditEntry = useCallback((v: Video) => setEditing(v), [])
 
+  /** 从磁盘删除视频文件：先预检确认删除范围 → 二次确认 → 删除 → 全库扫描 */
+  const handleDeleteFile = useCallback(
+    async (v: Video) => {
+      if (!v.path) {
+        window.alert('该视频没有文件路径，无法删除')
+        return
+      }
+      const fileName = v.path.split(/[\\/]/).pop() || v.path
+
+      // 1) 预检：让用户在确认前看到准确的删除范围
+      const inspect = await api.videoInspectForDelete(v.id).catch((e) => ({ ok: false as const, error: String(e) }))
+      if (!inspect.ok) {
+        window.alert('删除预检失败：' + inspect.error)
+        return
+      }
+      const otherVideoCount = inspect.otherVideoCount ?? 0
+      const torrentCount = inspect.torrentCount ?? 0
+      const otherFileCount = inspect.otherFileCount ?? 0
+      const willDeleteDir = otherVideoCount === 0 && torrentCount > 0 && otherFileCount === 0
+
+      // 2) 二次确认（根据预检结果动态生成文案）
+      let scopeDesc: string
+      if (willDeleteDir) {
+        scopeDesc =
+          `所在目录除了「${fileName}」和 ${torrentCount} 个 .torrent 种子文件外，**没有其他视频、也没有其他文件**。\n` +
+          `→ 整个目录（含视频 + 种子）将一并删除`
+      } else {
+        const reasons: string[] = []
+        if (otherVideoCount > 0) reasons.push(`同目录还有 ${otherVideoCount} 个其他视频文件`)
+        if (otherFileCount > 0) reasons.push(`同目录还有 ${otherFileCount} 个非视频/非种子文件（保守起见不删目录）`)
+        if (torrentCount === 0) reasons.push(`同目录没有 .torrent 种子文件`)
+        scopeDesc =
+          reasons.length > 0
+            ? `删除范围：\n· ${reasons.join('\n· ')}\n→ 只会删除视频文件本身，所在目录保留`
+            : `删除范围：\n· 仅删除视频文件本身，所在目录保留`
+      }
+
+      const confirmMsg =
+        `确认删除「${v.title}」吗？\n\n` +
+        `文件路径：\n${v.path}\n\n` +
+        `${scopeDesc}\n\n` +
+        `⚠️ 此操作不可撤销！`
+
+      if (!window.confirm(confirmMsg)) return
+
+      // 3) 执行删除
+      try {
+        const r = await api.videoDeleteFile(v.id)
+        if (!r.ok) {
+          window.alert('删除失败：' + (r.error ?? '未知错误'))
+          return
+        }
+        const desc = r.deletedDir
+          ? `已删除整个目录（含视频和种子）：${r.dirPath}`
+          : `已删除文件：${fileName}`
+        toast({ title: '已删除', text: desc, tone: 'ok', duration: 4000 })
+        // 4) 触发全库扫描，让 data.json 重新同步
+        if (libraryId) {
+          await runReconcile(libraryId)
+        }
+      } catch (e) {
+        window.alert('删除失败：' + ((e as Error)?.message ?? String(e)))
+      }
+    },
+    [libraryId]
+  )
+
   const handleDetailFetched = useCallback((videoId: string, detail: Video['javdbDetail']) => {
     setReconcile((prev) =>
       prev
@@ -1376,6 +1443,7 @@ export default function App() {
               hero={hero}
               onHeroNext={onHeroNext}
               onPickTag={handlePickTag}
+              onDelete={handleDeleteFile}
               viewMode={viewMode}
               onSetView={setViewMode}
             />
@@ -1511,6 +1579,7 @@ export default function App() {
                     onOpenMissing={handleOpenMissing}
                     onToggleFlag={toggleFlag}
                     onPickTag={handlePickTag}
+                    onDelete={handleDeleteFile}
                     aspect={viewMode === 'grid-landscape' ? 'landscape' : 'portrait'}
                   />
                 )}
@@ -1606,6 +1675,11 @@ export default function App() {
           onOpenRelated={(e) => {
             if (e.video) setDetail(e.video)
           }}
+          onEdit={(v) => {
+            setDetail(null)
+            setEditing(v)
+          }}
+          onDelete={handleDeleteFile}
         />
       ) : null}
 

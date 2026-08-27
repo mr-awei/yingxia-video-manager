@@ -851,6 +851,101 @@ export function registerIpc(): void {
     return { dir, copied: true, items: itemsRsp }
   })
 
+  // ---------- 从磁盘删除视频文件（按需连带删同目录的"种子文件夹"） ----------
+  // 判定：视频所在目录下除自身外没有其他视频文件、且至少有一个 .torrent 文件
+  // → 视为"下载器为这个视频创建的种子文件夹"，整个目录一起删；
+  // 否则只删视频文件本身。
+  // 安全检查：若目录下除视频与 .torrent 外还有其他文件（文本/字幕/图片等），
+  // 保守地只删视频文件（避免误删用户其他资料）。
+  ipcMain.handle(IPC.videoDeleteFile, async (_e, id: string) => {
+    try {
+      const v = await repo.getVideo(id)
+      if (!v) return { ok: false, error: '视频不存在' }
+      if (!v.path) return { ok: false, error: '视频文件路径为空' }
+
+      const filePath = v.path
+      const dir = path.dirname(filePath)
+      const baseName = path.basename(filePath)
+
+      const VIDEO_EXTS = new Set([
+        '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.m2ts', '.mpg', '.mpeg'
+      ])
+
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true })
+      } catch (e) {
+        // 目录不存在 / 权限不足 → 仍尝试只删视频文件
+        await fs.unlink(filePath).catch(() => {})
+        return { ok: true, path: filePath, deletedDir: false, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅删除视频文件` }
+      }
+
+      const otherVideoFiles: string[] = []
+      const torrentFiles: string[] = []
+      const otherFiles: string[] = []
+      for (const e of entries) {
+        if (!e.isFile()) continue
+        if (e.name === baseName) continue
+        const ext = path.extname(e.name).toLowerCase()
+        if (VIDEO_EXTS.has(ext)) otherVideoFiles.push(e.name)
+        else if (ext === '.torrent') torrentFiles.push(e.name)
+        else otherFiles.push(e.name)
+      }
+
+      // 整目录删的条件：同目录无其他视频 + 有 .torrent + 无其他非视频非种子文件
+      const canDeleteDir = otherVideoFiles.length === 0 && torrentFiles.length > 0 && otherFiles.length === 0
+
+      if (canDeleteDir) {
+        await fs.rm(dir, { recursive: true, force: true })
+        return { ok: true, path: filePath, deletedDir: true, dirPath: dir }
+      } else {
+        await fs.unlink(filePath)
+        return { ok: true, path: filePath, deletedDir: false }
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? '删除失败' }
+    }
+  })
+
+  // ---------- 删除预检：列出 video 所在目录的视频数 / 种子数 / 其他文件数（不删任何文件） ----------
+  ipcMain.handle(IPC.videoInspectForDelete, async (_e, id: string) => {
+    try {
+      const v = await repo.getVideo(id)
+      if (!v) return { ok: false, error: '视频不存在' }
+      if (!v.path) return { ok: false, error: '视频文件路径为空' }
+
+      const filePath = v.path
+      const dir = path.dirname(filePath)
+      const baseName = path.basename(filePath)
+
+      const VIDEO_EXTS = new Set([
+        '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.m2ts', '.mpg', '.mpeg'
+      ])
+
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true })
+      } catch (e) {
+        return { ok: false, filePath, dirPath: dir, error: `无法读取目录：${(e as Error)?.message ?? '未知错误'}` }
+      }
+
+      let otherVideoCount = 0
+      let torrentCount = 0
+      let otherFileCount = 0
+      for (const e of entries) {
+        if (!e.isFile()) continue
+        if (e.name === baseName) continue
+        const ext = path.extname(e.name).toLowerCase()
+        if (VIDEO_EXTS.has(ext)) otherVideoCount++
+        else if (ext === '.torrent') torrentCount++
+        else otherFileCount++
+      }
+      return { ok: true, filePath, dirPath: dir, otherVideoCount, torrentCount, otherFileCount }
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? '预检失败' }
+    }
+  })
+
   // ---------- ffprobe 技术参数 ----------
   ipcMain.handle(IPC.videoProbe, async (_e, id: string) => {
     const v = await repo.getVideo(id)

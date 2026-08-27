@@ -15,6 +15,8 @@ interface Props {
   onToggleFlag?: (id: string, key: 'favorite') => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
+  /** 从磁盘删除视频文件（弹二次确认、可能连带删所在目录） */
+  onDelete?: (v: Video) => void
   /** 卡片宽高比：portrait 竖屏(2:3) / landscape 横屏(16:9) */
   aspect?: 'portrait' | 'landscape'
 }
@@ -41,7 +43,7 @@ function hoverVideo(entry: DisplayEntry): Video {
 /** Netflix 式悬浮预览面板：宽 360，高度动态；小图 96 宽 */
 const PANEL_W = 360
 
-function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag, aspect = 'portrait' }: Props) {
+function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag, onDelete, aspect = 'portrait' }: Props) {
   const [imgError, setImgError] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
@@ -369,6 +371,17 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                       void api.shellRevealInFolder(entry.video!.path)
                     }}
                   />
+                  {onDelete ? (
+                    <MenuItem
+                      icon="trash"
+                      label="删除文件"
+                      danger
+                      onClick={() => {
+                        setMenu(null)
+                        onDelete(entry.video!)
+                      }}
+                    />
+                  ) : null}
                   <div className="my-1 border-t border-white/5" />
                 </>
               ) : (
@@ -400,18 +413,25 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
 function MenuItem({
   icon,
   label,
-  onClick
+  onClick,
+  danger
 }: {
-  icon: 'play' | 'pencil' | 'folderOpen' | 'copy'
+  icon: 'play' | 'pencil' | 'folderOpen' | 'copy' | 'trash'
   label: string
   onClick: () => void
+  /** 危险操作样式（红色） */
+  danger?: boolean
 }) {
   return (
     <button
-      className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 text-white/90 hover:text-white text-[13px] transition-colors"
+      className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
+        danger
+          ? 'text-red-400/90 hover:bg-red-500/15 hover:text-red-300'
+          : 'text-white/90 hover:bg-ink-700 hover:text-white'
+      }`}
       onClick={onClick}
     >
-      <Icon name={icon} size={14} className="text-white/50" />
+      <Icon name={icon} size={14} className={danger ? 'text-red-400/70' : 'text-white/50'} />
       {label}
     </button>
   )

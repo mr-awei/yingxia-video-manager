@@ -27,6 +27,10 @@ export const IPC = {
   videoProbe: 'video:probe',
   // 分享：扫描视频文件夹的 .torrent 并转磁链
   videoShareTorrents: 'video:shareTorrents',
+  // 从磁盘删除视频文件（按需连带删除同目录种子文件夹）
+  videoDeleteFile: 'video:deleteFile',
+  // 预检：列出 video 所在目录的"其他视频数"和"是否含 .torrent"，供删除前确认
+  videoInspectForDelete: 'video:inspectForDelete',
   // 文件批量改名（清理文件名广告）
   libraryPreviewRenames: 'library:previewRenames',
   libraryApplyRenames: 'library:applyRenames',

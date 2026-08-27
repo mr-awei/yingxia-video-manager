@@ -22,6 +22,8 @@ const api: AppApi = {
   videoFetchJavdbDetail: (id) => ipcRenderer.invoke(IPC.videoFetchJavdbDetail, id),
   videoProbe: (id) => ipcRenderer.invoke(IPC.videoProbe, id),
   videoShareTorrents: (id) => ipcRenderer.invoke(IPC.videoShareTorrents, id),
+  videoDeleteFile: (id) => ipcRenderer.invoke(IPC.videoDeleteFile, id),
+  videoInspectForDelete: (id) => ipcRenderer.invoke(IPC.videoInspectForDelete, id),
   libraryPreviewRenames: (libraryId) => ipcRenderer.invoke(IPC.libraryPreviewRenames, libraryId),
   libraryApplyRenames: (libraryId, items) =>
     ipcRenderer.invoke(IPC.libraryApplyRenames, libraryId, items),

@@ -175,6 +175,35 @@ export interface AppApi {
     copied: boolean
     items: { name: string; size: number; infoHash: string; magnet: string }[]
   }>
+  /**
+   * 从磁盘删除视频文件。
+   * 智能判定：若视频所在目录除了它本身和 .torrent 文件外**没有其他文件**，
+   * 则整个目录一并删除（避免遗留种子/附属文件）；否则只删视频文件本身。
+   * 不动 data.json，调用方负责触发扫描以更新库。
+   */
+  videoDeleteFile(id: string): Promise<{
+    ok: boolean
+    /** 实际删除的路径（视频文件路径） */
+    path?: string
+    /** 是否连同所在目录一并删除（"种子文件夹"场景） */
+    deletedDir?: boolean
+    /** 删除的目录路径（仅 deletedDir=true 时有） */
+    dirPath?: string
+    error?: string
+  }>
+  /** 预检 video 所在目录（不删除任何文件），供删除前确认"会删什么" */
+  videoInspectForDelete(id: string): Promise<{
+    ok: boolean
+    filePath?: string
+    dirPath?: string
+    /** 同目录其他视频文件数（不含本视频） */
+    otherVideoCount?: number
+    /** 同目录 .torrent 文件数 */
+    torrentCount?: number
+    /** 同目录除视频与 .torrent 外的其他文件数 */
+    otherFileCount?: number
+    error?: string
+  }>
   onScanProgress(cb: (p: ScanProgress) => void): void
   /** 监听：简介 md 文件变化（需自动重新对账） */
   onMdChanged(cb: (libraryId: string) => void): void

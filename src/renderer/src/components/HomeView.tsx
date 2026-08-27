@@ -22,6 +22,8 @@ interface Props {
   onHeroNext: () => void
   /** 点击标签 → 一键筛选该标签全部影片 */
   onPickTag?: (tag: string) => void
+  /** 从磁盘删除视频文件 */
+  onDelete?: (v: Video) => void
   /** 首页视图模式：竖屏/横屏卡片（不含文件名列表） */
   viewMode: ViewMode
   onSetView: (m: ViewMode) => void
@@ -38,6 +40,7 @@ function Row({
   onMore,
   onRefresh,
   onPickTag,
+  onDelete,
   aspect
 }: {
   title: string
@@ -50,6 +53,7 @@ function Row({
   onMore?: () => void
   onRefresh?: () => void
   onPickTag?: (tag: string) => void
+  onDelete?: (v: Video) => void
   aspect: 'portrait' | 'landscape'
 }) {
   if (entries.length === 0) return null
@@ -92,6 +96,7 @@ function Row({
               onOpenMissing={onOpenMissing}
               onToggleFlag={onToggleFlag}
               onPickTag={onPickTag}
+              onDelete={onDelete}
               aspect={aspect}
             />
           </div>
@@ -101,7 +106,7 @@ function Row({
   )
 }
 
-export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag, viewMode, onSetView }: Props) {
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag, onDelete, viewMode, onSetView }: Props) {
   // 首页只支持竖屏 / 横屏两种卡片，文件名模式自动回退到横屏
   const aspect = viewMode === 'grid-portrait' ? 'portrait' : 'landscape'
   // 合并刷新：点 Hero 刷新或随机推荐行刷新，两者一起换一批
@@ -283,11 +288,11 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
-      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} aspect={aspect} />
-      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} aspect={aspect} />
-      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} aspect={aspect} />
-      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} aspect={aspect} />
-      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} aspect={aspect} />
+      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
     </div>
   )
 }
