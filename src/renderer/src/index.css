@@ -192,9 +192,14 @@ body {
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.28s ease,
     border-color 0.28s ease;
   will-change: transform;
-  /* 大库性能：浏览器自动跳过视口外卡片的渲染与布局 */
-  content-visibility: auto;
-  contain-intrinsic-size: 320px;
+  /* 固定宽高比（由外层按 aspect 挂类），浏览器不依赖子元素渲染即可确定卡片尺寸，
+     避免切换视图/缩放时出现高度塌缩与空隙 */
+}
+.entry-card.entry-portrait {
+  aspect-ratio: 2 / 3;
+}
+.entry-card.entry-landscape {
+  aspect-ratio: 16 / 9;
 }
 .entry-card:hover {
   transform: translateY(-4px) scale(1.03);

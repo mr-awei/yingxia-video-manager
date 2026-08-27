@@ -135,7 +135,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   return (
     <div
       ref={cardRef}
-      className={`entry-card group relative rounded-xl overflow-hidden cursor-pointer bg-ink-800 ring-1 ring-white/5 w-full min-w-0 ${
+      className={`entry-card entry-${aspect} group relative rounded-xl overflow-hidden cursor-pointer bg-ink-800 ring-1 ring-white/5 w-full min-w-0 ${
         isMissing ? 'opacity-80' : ''
       }`}
       onClick={() => (isMissing ? onOpenMissing(entry) : onOpen(entry))}

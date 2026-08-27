@@ -24,6 +24,7 @@ import VideoDetail from './components/VideoDetail'
 import StatsPanel from './components/StatsPanel'
 import AboutModal from './components/AboutModal'
 import HomeView from './components/HomeView'
+import HomeSkeleton from './components/HomeSkeleton'
 import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
@@ -1356,9 +1357,10 @@ export default function App() {
               </button>
             </div>
           ) : !reconcile ? (
-            <div className="h-full flex items-center justify-center text-white/40 text-sm">
-              {scanning ? '正在对账…' : '暂无数据，请点击「添加媒体库」或「库设置」配置简介文件'}
-            </div>
+            <HomeSkeleton
+              aspect={viewMode === 'grid-portrait' ? 'portrait' : 'landscape'}
+              label={scanning ? '正在对账…' : '正在加载媒体库…'}
+            />
           ) : view === 'home' ? (
             <HomeView
               key="home"
