@@ -176,9 +176,11 @@ export interface AppApi {
     items: { name: string; size: number; infoHash: string; magnet: string }[]
   }>
   /**
-   * 从磁盘删除视频文件。
+   * 把视频文件（可能连带所在目录）**挪到系统回收站**。
    * 智能判定：若视频所在目录除了它本身和 .torrent 文件外**没有其他文件**，
-   * 则整个目录一并删除（避免遗留种子/附属文件）；否则只删视频文件本身。
+   * 则整个目录一并挪到回收站（避免遗留种子/附属文件）；否则只挪视频文件本身。
+   * 用 Electron `shell.trashItem`（Windows 回收站 / macOS Trash / Linux trash），
+   * **不彻底删除**——用户可从回收站恢复。
    * 不动 data.json，调用方负责触发扫描以更新库。
    */
   videoDeleteFile(id: string): Promise<{

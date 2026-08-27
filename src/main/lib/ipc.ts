@@ -857,6 +857,9 @@ export function registerIpc(): void {
   // 否则只删视频文件本身。
   // 安全检查：若目录下除视频与 .torrent 外还有其他文件（文本/字幕/图片等），
   // 保守地只删视频文件（避免误删用户其他资料）。
+  // **实现方式：用 Electron `shell.trashItem` 把文件/目录挪到系统回收站**
+  //（Windows 回收站 / macOS Trash / Linux trash-cli），不彻底删除。
+  // 用户可从回收站恢复，比"直接删"安全得多。
   ipcMain.handle(IPC.videoDeleteFile, async (_e, id: string) => {
     try {
       const v = await repo.getVideo(id)
@@ -875,9 +878,9 @@ export function registerIpc(): void {
       try {
         entries = await fs.readdir(dir, { withFileTypes: true })
       } catch (e) {
-        // 目录不存在 / 权限不足 → 仍尝试只删视频文件
-        await fs.unlink(filePath).catch(() => {})
-        return { ok: true, path: filePath, deletedDir: false, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅删除视频文件` }
+        // 目录不存在 / 权限不足 → 仍尝试只挪视频文件到回收站
+        await shell.trashItem(filePath).catch(() => {})
+        return { ok: true, path: filePath, deletedDir: false, error: `无法读取目录（${(e as Error)?.message ?? '未知错误'}），仅把视频文件挪到回收站` }
       }
 
       const otherVideoFiles: string[] = []
@@ -892,14 +895,16 @@ export function registerIpc(): void {
         else otherFiles.push(e.name)
       }
 
-      // 整目录删的条件：同目录无其他视频 + 有 .torrent + 无其他非视频非种子文件
+      // 整目录挪回收站的条件：同目录无其他视频 + 有 .torrent + 无其他非视频非种子文件
       const canDeleteDir = otherVideoFiles.length === 0 && torrentFiles.length > 0 && otherFiles.length === 0
 
       if (canDeleteDir) {
-        await fs.rm(dir, { recursive: true, force: true })
+        // 整目录挪回收站（shell.trashItem 支持目录）
+        await shell.trashItem(dir)
         return { ok: true, path: filePath, deletedDir: true, dirPath: dir }
       } else {
-        await fs.unlink(filePath)
+        // 只挪视频文件本身
+        await shell.trashItem(filePath)
         return { ok: true, path: filePath, deletedDir: false }
       }
     } catch (e) {
