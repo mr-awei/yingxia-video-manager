@@ -441,11 +441,19 @@ export function registerIpc(): void {
     }
   })
   ipcMain.handle(IPC.dialogSelectFolder, async () => {
-    const res = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    const res = await dialog.showOpenDialog({
+      title: '第 1 步 · 选择视频文件夹',
+      buttonLabel: '选择此文件夹',
+      message: '影匣会扫描该文件夹及子文件夹里的全部视频文件，生成你的海报墙。',
+      properties: ['openDirectory']
+    })
     return res.canceled ? null : (res.filePaths[0] ?? null)
   })
   ipcMain.handle(IPC.dialogSelectFile, async () => {
     const res = await dialog.showOpenDialog({
+      title: '第 2 步 · 选择简介 md 文件（可跳过）',
+      buttonLabel: '选择此文件',
+      message: '这个 md 文件里是每部影片的中文简介、标签、评分和分类。没有的话可以先跳过，之后用内置向导生成。',
       properties: ['openFile'],
       filters: [
         { name: 'Markdown', extensions: ['md', 'markdown', 'txt'] },

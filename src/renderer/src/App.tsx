@@ -114,6 +114,8 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  /** true = 「添加媒体库」新建表单；false = 库设置编辑模式 */
+  const [addingLibrary, setAddingLibrary] = useState(false)
   /** 新建 md 文件向导（添加媒体库无 md / 库设置「按规范新建」时弹出） */
   const [onboard, setOnboard] = useState<Library | null>(null)
   const [editing, setEditing] = useState<Video | null>(null)
@@ -708,21 +710,10 @@ export default function App() {
     setScanning(false)
   }, [])
 
-  const handleAddLibrary = useCallback(async () => {
-    const folder = await api.dialogSelectFolder()
-    if (!folder) return
-    const md = await api.dialogSelectFile()
-    const name = folder.split(/[\\/]/).pop() || folder
-    const lib = await api.libraryAdd({
-      name,
-      folderPath: folder,
-      introMdPath: md ?? '',
-      imagePriority: [...DEFAULT_IMAGE_PRIORITY]
-    })
-    setLibraries((prev) => [...prev, lib])
-    setLibraryId(lib.id)
-    // 未选择 md 文件：自动弹出「新建简介文件向导」，引导用户按内置规范生成 md
-    if (!md) setOnboard(lib)
+  /** 添加媒体库：打开「添加媒体库」表单（不再直接连弹两个系统对话框），表单内提供两步引导说明 */
+  const handleAddLibrary = useCallback(() => {
+    setAddingLibrary(true)
+    setLibraryOpen(true)
   }, [])
 
   const handleScan = useCallback(() => {
@@ -756,16 +747,35 @@ export default function App() {
   )
 
   const handleSaveLibrary = useCallback(
-    async (patch: Partial<Library>) => {
-      if (!currentLibrary) return
+    async (patch: Partial<Library>): Promise<boolean> => {
+      if (addingLibrary) {
+        const lib = await api.libraryAdd({
+          name: patch.name?.trim() || patch.folderPath || '未命名媒体库',
+          folderPath: patch.folderPath || '',
+          introMdPath: patch.introMdPath ?? '',
+          imagePriority: [...DEFAULT_IMAGE_PRIORITY]
+        })
+        if (!lib) return false
+        setLibraries((prev) => [...prev, lib])
+        setLibraryId(lib.id)
+        setLibraryOpen(false)
+        setAddingLibrary(false)
+        await runReconcile(lib.id)
+        // 未选择 md 文件：自动弹出「新建简介文件向导」，引导用户按内置规范生成 md
+        if (!patch.introMdPath) setOnboard(lib)
+        return true
+      }
+      if (!currentLibrary) return false
       const updated = await api.libraryUpdate(currentLibrary.id, patch)
       if (updated) {
         setLibraries((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
         setLibraryOpen(false)
         await runReconcile(updated.id)
+        return true
       }
+      return false
     },
-    [currentLibrary, runReconcile]
+    [addingLibrary, currentLibrary, runReconcile]
   )
 
   const handleRemoveLibrary = useCallback(async () => {
@@ -773,6 +783,7 @@ export default function App() {
     await api.libraryRemove(currentLibrary.id)
     setLibraries((prev) => prev.filter((l) => l.id !== currentLibrary.id))
     setLibraryOpen(false)
+    setAddingLibrary(false)
     setReconcile(null)
     const rest = libraries.filter((l) => l.id !== currentLibrary.id)
     setLibraryId(rest[0]?.id ?? '')
@@ -1197,7 +1208,10 @@ export default function App() {
           libraries={libraries}
           libraryId={libraryId}
           onLibrary={handleNavLibrary}
-          onEditLibrary={() => setLibraryOpen(true)}
+          onEditLibrary={() => {
+            setAddingLibrary(false)
+            setLibraryOpen(true)
+          }}
           onAddLibrary={handleAddLibrary}
           favoriteCount={flagCounts.fav}
           recentCount={flagCounts.recent}
@@ -1431,12 +1445,16 @@ export default function App() {
 
       <LibraryModal
         open={libraryOpen}
-        library={currentLibrary}
-        onClose={() => setLibraryOpen(false)}
+        library={addingLibrary ? null : currentLibrary}
+        onClose={() => {
+          setLibraryOpen(false)
+          setAddingLibrary(false)
+        }}
         onSave={handleSaveLibrary}
         onRemove={handleRemoveLibrary}
         onOnboard={() => {
           setLibraryOpen(false)
+          setAddingLibrary(false)
           setOnboard(currentLibrary)
         }}
       />
@@ -1586,6 +1604,7 @@ export default function App() {
         onOpenSpec={(p) => void api.openPath(p)}
         onOpenLibrarySettings={() => {
           setOnboard(null)
+          setAddingLibrary(false)
           setLibraryOpen(true)
         }}
       />
