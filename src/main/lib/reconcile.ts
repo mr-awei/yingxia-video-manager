@@ -13,12 +13,54 @@ import { parseIntroExcel } from './excel'
 import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type VideoChange } from './repo'
 import { resolvePoster, generatePreviewSet } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
-import { isDomestic } from '../../shared/code'
+import { isDomestic, normalizeCode } from '../../shared/code'
 
 async function readIntroDoc(library: Library): Promise<IntroDoc | null> {
   // 仅使用 Excel 片单（已全面切换到 Excel 格式）
-  if (!library.introExcelPath) return null
-  return await parseIntroExcel(library.introExcelPath)
+  if (library.introExcelPath) {
+    return await parseIntroExcel(library.introExcelPath)
+  }
+  // v2.2.3 修复：library 没显式配 introExcelPath 时，**自动扫描库根目录找 .xlsx**——用户友好，
+  // 避免「明明片单就在库里却因没配字段而全部归未收录」的体验。匹配规则：
+  // 1) 优先匹配根目录下含「品番」列的工作簿（顺序按文件名排序）
+  // 2) 只在库根（不递归子目录）扫，避免误匹配到无关 xlsx
+  return await autoFindIntroExcel(library.folderPath)
+}
+
+/** 在媒体库根目录自动查找 Excel 片单：
+ *  - 只扫一层（不递归）
+ *  - 优先选择含「品番」列的工作簿
+ *  - 多个匹配时按文件名排序取第一个
+ *  - 没找到返回 null（让 reconcile 走 else 自动归类分支）
+ *  - 找到时打 console.log 方便用户排查
+ */
+async function autoFindIntroExcel(folderPath: string): Promise<IntroDoc | null> {
+  let entries: import('node:fs').Dirent[]
+  try {
+    entries = await fs.readdir(folderPath, { withFileTypes: true })
+  } catch {
+    return null
+  }
+  const xlsxFiles = entries
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .filter((n) => /\.(xlsx|xls)$/i.test(n))
+    .sort((a, b) => a.localeCompare(b, 'zh'))
+  if (xlsxFiles.length === 0) return null
+  // 依次尝试每个 xlsx，找到第一个「品番列可解析」的
+  for (const name of xlsxFiles) {
+    const fullPath = path.join(folderPath, name)
+    try {
+      const doc = await parseIntroExcel(fullPath)
+      if (doc && doc.categories.length > 0) {
+        console.log(`[reconcile] 自动使用库根 Excel 片单: ${fullPath}（${doc.categories.reduce((n, c) => n + c.items.length, 0)} 部）`)
+        return doc
+      }
+    } catch {
+      // 单文件解析失败不影响整体
+    }
+  }
+  return null
 }
 
 interface FileEntry {
@@ -40,20 +82,21 @@ function collectFiles(files: string[]): FileEntry[] {
 }
 
 /**
- * 番号归一化：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。
+ * normalizeCode 已抽到 src/shared/code.ts（v2.2.3），reconcile 直接 import 使用。
+ * 行为：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。
  * SONE-566 / sone-566 / sone.566 / SONE_566 归一化后一致。
- * 2026-08-30 修复：原版只去空格/点，下划线残留，导致 `folder/SONE_566/xx.mp4` 与 Excel `SONE-566` 永不命中。
  */
-export function normalizeCode(s: string): string {
-  return s.toUpperCase().replace(/[\s._]+/g, '')
-}
 
 /**
  * 判断文件名 key 是否命中番号 code：
  * - 归一化后包含；
  * - 前缀边界：code 前不能紧跟字母数字（防 `1SONE-560` 之类）；
- * - 后缀边界：code 后若紧跟数字或大写字母则不算（防 `SONE-56` 误命中 `SONE-560`、
- *   也防 `SONE-566AB` 被合并到 `SONE-566` —— 系列分集合并应由 extractBaseCode/hasSeriesSuffix 处理）。
+ * - 后缀边界：code 后若紧跟**数字**则不算（防 `SONE-56` 误命中 `SONE-560`）；
+ * - **2026-08-30 v2.2.3 修复**：不再拒绝字母后缀——v2.2.2 加的 `/[A-Z0-9]/.test(after)` 会把
+ *   `JUR-031.mp4` 归一后 `JUR-031MP4` 的 `M` 误判为「另一番号字母」拒绝，导致正常的
+ *   `JUR-031.mp4` 文件都匹配不上 Excel 里的 `JUR-031`（用户实测全 miss）。
+ *   系列分集合并（`SONE-566AB` 误并 `SONE-566`）改由 `extractBaseCode/hasSeriesSuffix` 在
+ *   抓取源（javdb/javbus）显式处理，不要在文件名 keyMatches 上做强约束。
  */
 export function keyMatches(key: string, code: string): boolean {
   const k = normalizeCode(key)
@@ -63,7 +106,7 @@ export function keyMatches(key: string, code: string): boolean {
   const before = i > 0 ? k[i - 1] : ''
   if (before && /[A-Z0-9]/.test(before)) return false
   const after = k[i + c.length]
-  if (after && /[A-Z0-9]/.test(after)) return false
+  if (after && /[0-9]/.test(after)) return false
   return true
 }
 
@@ -255,6 +298,10 @@ export async function reconcileLibrary(
     // 2026-08-30 修复：原 path.basename(f) 含扩展名（SONE-280.mp4），传给 ensureVideo 后写入 video.title，
     // EntryCard 显示就是 `SONE-280.mp4`。先剥扩展名。
     for (const f of allFiles) {
+      // v2.2.3 P0 修复：原 else 分支没用 used 记账，导致下方 L297「未收录」循环重复 push 同 filePath →
+      // 同 code 两条 entry → HomeView `key={e.code}` duplicate key 警告（用户截图「未收录 84 + 未分类 79」）。
+      // 这里补全 else 分支的 used 记账，让未配 Excel 时按文件维度只产出 1 条 entry。
+      used.add(f)
       const base = path.basename(f)
       const titleNoExt = path.basename(base, path.extname(base))
       const video = await ensureVideo(

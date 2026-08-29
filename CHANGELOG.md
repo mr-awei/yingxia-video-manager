@@ -1,5 +1,40 @@
 # 更新日志（Changelog）
 
+## v2.2.3（2026-08-30）
+
+**核心修复（用户反馈"问题依旧存在 + 两个截帧角标 + 标签两份 + 控制台大量报错"）**
+
+### 1. P0：library 未配 Excel 片单时自动扫描库根目录（最关键）
+- `reconcile.ts` 加 `autoFindIntroExcel(folderPath)`：当 `library.introExcelPath` 未设时，**自动扫描库根目录一层**找 `.xlsx/.xls`（按文件名排序取第一个能解析品番列的）。
+- 用户友好：用户把 `收藏整理_2026.xlsx` 放到 library 根目录即可，无需手动配 `introExcelPath`。
+- 多个 xlsx 时按 zh 排序取第一个；console.log 提示「自动使用库根 Excel 片单」。
+
+### 2. P0：reconcile.ts 双重 push（用户截图「未收录 84 + 未分类 79」根因）
+- `reconcile.ts` else 分支（L260）补 `used.add(f)`：未配 Excel 时按文件维度只产出 1 条 entry。
+- 之前每个 filePath 同时进入「未分类」和「未收录」两条 entry，`code` 完全相同 → `HomeView key={e.code}` 重复 key 警告（`MKMP-542`、`juy-703`）→ 详情页 seriesMembers 出现两次相同 chip。
+
+### 3. P0：EntryCard 双「截帧」徽标
+- `EntryCard.tsx` 删 `bg-violet-500/90` 重复 chip（v2.0.2 + v2.1.0 合并遗留），保留 `bg-fuchsia-500/90` 带 film 图标版。
+- 顺手把数据源徽标改为单 IIFE 来源（防未来再加源时 paste 复制出错）。
+
+### 4. P0：EntryCard 双「JavLibrary」徽标（靛 + 天蓝重叠）
+- `EntryCard.tsx` 删链外 `bg-sky-500/90` 残留块，保留链内 `bg-indigo-500/90` 标准版。
+- 顺手加 `posterSource === 'manual'` 时显示绿色「设为封面」chip（之前没有）。
+
+### 5. P0：撤销 v2.2.2 的 `keyMatches` 字母后缀拒绝（最阴险 bug）
+- v2.2.2 把 `keyMatches` 后缀检查改成 `/[A-Z0-9]/`，**严重过度修改**——把 `JUR-031.mp4` 归一后的 `M`（来自 MP4）误判为「另一番号字母」拒绝，导致**正常文件都匹配不上**。
+- v2.2.3 改回只拒绝数字后缀：`/[0-9]/.test(after)`。`JUR-031.mp4` ↔ `JUR-031` ✅。
+- 系列分集合并（`SONE-566AB` → `SONE-566`）改由 `extractBaseCode/hasSeriesSuffix` 在抓取源显式处理，不要在文件名 keyMatches 上做强约束。
+
+### 6. P1：parseIntroExcel 同 code 多行不去重
+- 解析循环内加 `seenCodes = new Set<string>()`（用归一 key），跳过重复并 warn。
+- 同步把 `normalizeCode` 从 reconcile.ts 抽到 `src/shared/code.ts` 共享（reconcile + excel 两处共用）。
+
+### 7. P1：HomeView key 防御性加固
+- `HomeView.tsx:94` `key={e.code}` → `key={e.video?.id ?? \`code:${e.code}\`}`，未来再出重复 code 也不会 crash。
+
+**回归测试**：14/14 用户截图文件名 → Excel 命中；normalize/autoFindIntroExcel/keyMatches v2.2.3 全部通过。
+
 ## v2.2.2（2026-08-30）
 
 **Bug 修复（用户反馈"未收录 84 个"）**

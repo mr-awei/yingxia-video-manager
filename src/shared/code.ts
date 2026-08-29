@@ -14,6 +14,16 @@
 const SERIES_SUFFIX_RE = /^([A-Z]{2,}-\d+)(?:(?:-?(?:CD|PART|DISC|VOL)\d+)|(?:-\d+)|(?:-[A-DUC])|(?:[A-DUC]))$/i
 
 /**
+ * 番号归一化：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。
+ * SONE-566 / sone-566 / sone.566 / SONE_566 归一化后一致。
+ * 2026-08-30 修复：原版只去空格/点，下划线残留，导致 `folder/SONE_566/xx.mp4` 与 Excel `SONE-566` 永不命中。
+ * 2026-08-30 v2.2.3 抽到 shared 层：reconcile.ts + excel.ts 共用。
+ */
+export function normalizeCode(s: string): string {
+  return s.toUpperCase().replace(/[\s._]+/g, '')
+}
+
+/**
  * 提取系列 base code（大写）。
  * 例：HUNTA-468CD2 / hunta-468-cd1 / HUNTA-468-1 / HUNTA-468-A → HUNTA-468
  * SONE-280 / SSIS-419 / SONE-292 等正常序号会保持原样，不再被误归到 SONE-2 / SSIS-4。

@@ -1,4 +1,5 @@
 import type { IntroDoc, IntroItem } from '../../shared/types'
+import { normalizeCode } from '../../shared/code'
 // SheetJS：读取 xlsx。xlsx 解析是主进程侧依赖（electron-builder 打进 app.asar）。
 import * as XLSX from 'xlsx'
 
@@ -96,6 +97,7 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
   }
 
   const entries: Array<{ category: string; item: IntroItem }> = []
+  const seenCodes = new Set<string>()  // v2.2.3 P1：按归一番号去重（保留首次出现）；重复行只 warn 一次
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r]
     if (!row || row.length === 0) continue
@@ -103,6 +105,12 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
     if (!code) continue
     // 跳过汇总/统计行（无品番）
     if (!/[A-Za-z]{2,}/.test(code)) continue
+    const norm = normalizeCode(code)
+    if (seenCodes.has(norm)) {
+      console.warn(`[excel] 跳过重复番号 ${code}（行 ${r + 1}，已出现于更早分类）`)
+      continue
+    }
+    seenCodes.add(norm)
 
     const category = String(row[ci.category] ?? '').trim() || '未分类'
     const score = toScore(row[ci.score])

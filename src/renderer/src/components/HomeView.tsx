@@ -91,7 +91,7 @@ function Row({
       </div>
       <div className="flex gap-3 overflow-x-auto thin-scroll pb-2 -mx-1 px-1">
         {entries.map((e) => (
-          <div key={e.code} className={`${aspect === 'landscape' ? 'w-56' : 'w-36'} shrink-0`}>
+          <div key={e.video?.id ?? `code:${e.code}`} className={`${aspect === 'landscape' ? 'w-56' : 'w-36'} shrink-0`}>
             <EntryCard
               entry={e}
               onOpen={onOpen}
