@@ -40,19 +40,20 @@ function collectFiles(files: string[]): FileEntry[] {
 }
 
 /**
- * 番号归一化：转大写、去空格与点（保留连字符，连字符是番号结构的一部分）。
- * SONE-566 / sone-566 / sone.566 归一化后一致。
+ * 番号归一化：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。
+ * SONE-566 / sone-566 / sone.566 / SONE_566 归一化后一致。
+ * 2026-08-30 修复：原版只去空格/点，下划线残留，导致 `folder/SONE_566/xx.mp4` 与 Excel `SONE-566` 永不命中。
  */
 export function normalizeCode(s: string): string {
-  return s.toUpperCase().replace(/[\s.]+/g, '')
+  return s.toUpperCase().replace(/[\s._]+/g, '')
 }
 
 /**
  * 判断文件名 key 是否命中番号 code：
  * - 归一化后包含；
  * - 前缀边界：code 前不能紧跟字母数字（防 `1SONE-560` 之类）；
- * - 后缀边界：code 后若紧跟数字则不算（防 `SONE-56` 误命中 `SONE-560`）；
- *   但允许紧跟字母/连字符等版本标记（`SONE-566-uc`、`SONE-566UC` 都算同片）。
+ * - 后缀边界：code 后若紧跟数字或大写字母则不算（防 `SONE-56` 误命中 `SONE-560`、
+ *   也防 `SONE-566AB` 被合并到 `SONE-566` —— 系列分集合并应由 extractBaseCode/hasSeriesSuffix 处理）。
  */
 export function keyMatches(key: string, code: string): boolean {
   const k = normalizeCode(key)
@@ -62,7 +63,7 @@ export function keyMatches(key: string, code: string): boolean {
   const before = i > 0 ? k[i - 1] : ''
   if (before && /[A-Z0-9]/.test(before)) return false
   const after = k[i + c.length]
-  if (after && /[0-9]/.test(after)) return false
+  if (after && /[A-Z0-9]/.test(after)) return false
   return true
 }
 
@@ -251,12 +252,16 @@ export async function reconcileLibrary(
     // 需求 B（自动归类）：有数据源元数据（javdbDetail.genres 非空）的视频按 genres 自动归类，
     // 归入「【JavBus】高清·字幕」这类自动分类（order 9000，未分类 9999 之前）；
     // 无元数据的仍归「未分类」（order 0）。
+    // 2026-08-30 修复：原 path.basename(f) 含扩展名（SONE-280.mp4），传给 ensureVideo 后写入 video.title，
+    // EntryCard 显示就是 `SONE-280.mp4`。先剥扩展名。
     for (const f of allFiles) {
+      const base = path.basename(f)
+      const titleNoExt = path.basename(base, path.extname(base))
       const video = await ensureVideo(
         f,
         library,
         settings,
-        { code: path.basename(f), description: '', tags: [] },
+        { code: titleNoExt, description: '', tags: [] },
         changes
       )
       const d = video.javdbDetail
@@ -267,8 +272,8 @@ export async function reconcileLibrary(
         kind: 'matched',
         category: catName,
         order: hasGenres ? 9000 : 0,
-        code: path.basename(f),
-        title: path.basename(f, path.extname(f)),
+        code: titleNoExt,
+        title: titleNoExt,
         description: '',
         tags: [],
         video

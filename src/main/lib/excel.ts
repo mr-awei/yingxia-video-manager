@@ -44,26 +44,36 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
     return null
   }
   // 兼容不同 sheet 名（片单 / 收藏 / Sheet1 ...）：取第一个有「品番」列的
+  // 2026-08-30 修复：原版只看 B 列 (rows[0]?.[1])，用户把品番放 D 列、F 列时直接报"未找到含品番列"。
+  // 改成扫描整个首行（含表头 fallback 至 B 列，若全部工作表都没品番就放弃）
   const sheetNames = wb.SheetNames
   let ws: XLSX.WorkSheet | undefined
   let sheetName = ''
+  let codeColIdx = -1  // 本 sheet 中品番列所在位置
   for (const name of sheetNames) {
     const candidate = wb.Sheets[name]
     if (!candidate) continue
     const rows = XLSX.utils.sheet_to_json<unknown[]>(candidate, { header: 1 })
-    if (rows.length > 0 && String(rows[0]?.[1] ?? '').includes('品番')) {
+    if (rows.length === 0) continue
+    const header = (rows[0] ?? []) as unknown[]
+    // 优先整行扫「品番」
+    let idx = header.findIndex((h) => String(h ?? '').trim() === '品番')
+    // 兼容部分老 sheet：B 列就是品番但表头没文字
+    if (idx < 0) idx = String(header[1] ?? '').trim() === '' ? -1 : 1
+    if (idx >= 0) {
       ws = candidate
       sheetName = name
+      codeColIdx = idx
       break
     }
   }
-  if (!ws) {
+  if (!ws || codeColIdx < 0) {
     console.error(`[excel] ${filePath} 未找到含「品番」列的工作表（sheets=${sheetNames.join(',')}）`)
     return null
   }
 
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 }) as unknown[][]
-  const header = rows[0] ?? []
+  const header = (rows[0] ?? []) as unknown[]
   if (rows.length < 2) return null
 
   // 列索引：按表头名定位（容错表头顺序变化）
@@ -72,7 +82,7 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
     return i >= 0 ? i : -1
   }
   const ci = {
-    code: colIndex('品番'),
+    code: codeColIdx,
     category: colIndex('分类'),
     score: colIndex('推荐评分'),
     desc: colIndex('简介')

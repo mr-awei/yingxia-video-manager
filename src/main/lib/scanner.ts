@@ -18,9 +18,11 @@ export function idForPath(p: string): string {
 function cleanTitle(name: string): string {
   const noExt = name.replace(/\.[^./\\]+$/, '')
   let s = noExt
+    // 2026-08-30 修复：原版只吃 ASCII `[]`/`()`/`{}`，中文方括号【】、中文圆括号（）残留，导致标题里带【中字】
+    // 整段被认定为"内容"污染搜索。改成吃 ASCII + 全角混用。
     .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/[\(（][^\)）]*[\)）]/g, ' ')
+    .replace(/[\{【][^\}】]*[\}】]/g, ' ')
   s = s.replace(
     /\b(720p|1080p|2160p|4k|8k|hr|hd|fhd|uhd|web-?dl|blu-?ray|bdrip|dvdrip|hdtv|webrip|x264|x265|hevc|h\.?264|h\.?265|avc|10bit|8bit|yuv420p|ac3|aac|dts|truehd|atmos|chinese|english|双语|中英|双字|内封|外挂|合集|完整版|国语|粤语|普通话)\b/gi,
     ' '

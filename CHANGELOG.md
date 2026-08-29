@@ -1,5 +1,24 @@
 # 更新日志（Changelog）
 
+## v2.2.2（2026-08-30）
+
+**Bug 修复（用户反馈"未收录 84 个"）**
+- **`extractCode` 域名前缀误提取**（P0，github 项目根因）：`hdd800.com@JUR-031.mp4` 之前被错误识别成 `HDD-800`。修复：内部改造为先按 `@` 切多段 → 去方括号包裹 → 含 dashes 的合法番号形态段排序靠前 → plain fallback 用 `[A-Z]{2,}[A-Z]+\d{2,}`（要求额外字母，过滤纯字母+纯数字紧凑形态如 `HDD800`）。**覆盖测试 44/44 通过**（含 `b8s2048.org@EBOD-835`、`[hhd800.com@]DASS-733-C`、`44x.mejuy-703-2` 等用户截图实拍文件名）。
+- **`javdb.ts` 的 extractCode 语义漂移**（P0）：与 code.ts 并行两套，访问 `m[0]` 而非 `m[1]`，独立归一逻辑。统一为从 `src/shared/code.ts` re-export，确保 main/renderer 两侧同语义（缓存前缀 `javdb-cover-SONE-560CD2` 与实际 `javdb-cover-SONE-560.jpg` 不匹配导致老缓存删不掉的 bug 同时修复）。
+
+**其他 P1 解析增强**（按 Agent 全量排查报告逐条修）
+- `reconcile.normalizeCode`：下划线归一（`SONE_566` → `SONE566`，与 `SONE-566` 命中）。
+- `reconcile.keyMatches`：后缀字母也拒绝（防 `SONE-566AB` 误合并到 `SONE-566`；分集合并改由 `extractBaseCode/hasSeriesSuffix` 显式处理）。
+- `rename.cleanVideoFileName`：先 `.toUpperCase()` 入参再匹配（`sone-566-uc.mp4` / `ALDN606.mp4` 之前返回 null 现能正确改名）；"无需改名"判定改为按大写比较（用户原大写即无需改）。
+- `code.extractBaseCode` (`SERIES_SUFFIX_RE`)：尾部字母限制 `[A-DUC]`（之前 `[A-Z]` 太宽，把 `SONE-560X` / `KSJK-013V` 错剥成 `SONE-560` / `KSJK-013`）。
+- `excel`：`品番` 列扫描从仅 B 列改为扫整个表头（用户把品番放 D/F 列之前会全部静默归入"未分类"）。
+
+**P2**
+- `scanner.cleanTitle`：清理中文方括号【】、中文圆括号（）。
+- `reconcile` 未配置 Excel 分支：去掉扩展名后再写入 `code` 字段（之前 UI 卡片显示 `xxx.mp4`）。
+
+**测试**：回归测试 61/61 通过（44 个 extractCode + 17 个 normalizeCode/keyMatches）。
+
 ## v2.2.1（2026-08-30）
 
 **数据源自定义优先级（1-5）**
