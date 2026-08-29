@@ -481,37 +481,45 @@ async function fetchDetailSmart(
   }
   // ---- auto：Javapi（未配置则跳过）→ Javinfo（未配置则跳过）→ JavDB（仅网络失败计数）→ JavBus → JavLibrary ----
   if (hasJavapiConfig(settings) && !state.javapiDisabled) {
+    const errs: string[] = []
     try {
-      const javapi = await fetchJavapiDetail(code, settings, onError)
+      const javapi = await fetchJavapiDetail(code, settings, (m) => errs.push(m))
       if (javapi) {
         state.javapiFails = 0
         return { detail: javapi, source: 'javapi' }
       }
     } catch (e) {
-      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
+      errs.push(`Javapi 异常：${(e as Error)?.message || e}`)
     }
-    state.javapiFails++
-    if (state.javapiFails >= JAVAPI_CONSECUTIVE_LIMIT) {
-      state.javapiDisabled = true
-      console.log(`[batch] Javapi 连续失败 ${state.javapiFails} 部，本轮自动切换 Javinfo`)
+    // 仅网络错误计数；「无结果」不计数（与 javdb/javbus 约定一致）
+    if (errs.length > 0) {
+      state.javapiFails++
+      if (state.javapiFails >= JAVAPI_CONSECUTIVE_LIMIT) {
+        state.javapiDisabled = true
+        console.log(`[batch] Javapi 连续网络失败 ${state.javapiFails} 部，本轮自动切换 Javinfo`)
+      }
     }
   } else if (!hasJavapiConfig(settings)) {
     errors.push('未配置本地 Javapi，跳过')
   }
   if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
+    const errs: string[] = []
     try {
-      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      const javinfo = await fetchJavinfoDetail(code, settings, (m) => errs.push(m))
       if (javinfo) {
         state.javinfoFails = 0
         return { detail: javinfo, source: 'javinfo' }
       }
     } catch (e) {
-      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+      errs.push(`Javinfo 异常：${(e as Error)?.message || e}`)
     }
-    state.javinfoFails++
-    if (state.javinfoFails >= JAVINFO_CONSECUTIVE_LIMIT) {
-      state.javinfoDisabled = true
-      console.log(`[batch] Javinfo 连续失败 ${state.javinfoFails} 部，本轮自动切换 JavDB`)
+    // 仅网络错误计数；「无结果」不计数
+    if (errs.length > 0) {
+      state.javinfoFails++
+      if (state.javinfoFails >= JAVINFO_CONSECUTIVE_LIMIT) {
+        state.javinfoDisabled = true
+        console.log(`[batch] Javinfo 连续网络失败 ${state.javinfoFails} 部，本轮自动切换 JavDB`)
+      }
     }
   } else if (!hasJavinfoKey(settings)) {
     errors.push('未配置 Javinfo key，跳过')

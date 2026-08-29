@@ -87,7 +87,7 @@ async function lookupMovie(
     }
     const data = (await res.json()) as JavapiResponse
     if (!data?.movie) {
-      onError?.(`本地 Javapi 未匹配到详情：${code}`)
+      // 无结果正常静默（与 javdb/javbus 约定一致，不触发批量失败计数）
       return null
     }
     console.log(`[javapi] ${code} title=${(data.movie.title || '').slice(0, 40)}`)
