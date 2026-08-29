@@ -11,8 +11,8 @@ import type {
 } from '../../shared/types'
 import { parseIntroMd } from './parser'
 import { parseIntroExcel } from './excel'
-import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
-import { resolvePoster } from './images'
+import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type VideoChange } from './repo'
+import { resolvePoster, generatePreviewSet } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic } from '../../shared/code'
 
@@ -321,6 +321,35 @@ export async function reconcileLibrary(
 
   // 一次性批量落盘（避免逐条全量写 JSON）
   await applyVideoChanges(changes)
+
+  // 无封面兜底：数据源抓不到时，对账完成后后台给无海报视频截帧（不阻塞对账返回）
+  //（封面缺失视频 → ffmpeg 截帧 → 下次列表/详情直接命中）
+  const missingPoster = entries.filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder')).map((e) => e.video!)
+  if (missingPoster.length > 0) {
+    const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
+    let idx = 0
+    void (async () => {
+      const worker = async () => {
+        while (idx < missingPoster.length) {
+          const v = missingPoster[idx++]
+          try {
+            const set = await generatePreviewSet(v, settings)
+            if (set?.coverPath) {
+              await updateVideo(v.id, {
+                posterSource: 'ffmpeg',
+                posterPath: set.coverPath,
+                posterPathFfmpeg: set.coverPath,
+                previewPaths: set.previewPaths
+              })
+            }
+          } catch {
+            /* 截帧失败静默，下次对账再试 */
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(conc, missingPoster.length) }, () => worker()))
+    })()
+  }
 
   onProgress?.({ libraryId: library.id, total: mdCount + allFiles.length, done: mdCount + allFiles.length })
   return {

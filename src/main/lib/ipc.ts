@@ -802,6 +802,44 @@ export function registerIpc(): void {
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, videos.length) }, () => worker()))
     emitProgress({ libraryId, total: videos.length, done: videos.length })
+    // 无封面兜底：多数据源都抓不到数据的视频，后台 ffmpeg 截帧显示真实画面（不阻塞补齐返回）
+    void (async () => {
+      try {
+        const all = await repo.listVideos({})
+        const noPoster = all.filter(
+          (v) => v.libraryId === libraryId && (!v.posterPath || v.posterSource === 'placeholder')
+        )
+        if (noPoster.length === 0) return
+        const conc2 = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
+        let i2 = 0
+        const w2 = async () => {
+          while (i2 < noPoster.length) {
+            const v = noPoster[i2++]
+            try {
+              const set = await generatePreviewSet(v, settings)
+              if (set?.coverPath) {
+                await repo.updateVideo(v.id, {
+                  posterSource: 'ffmpeg',
+                  posterPath: set.coverPath,
+                  posterPathFfmpeg: set.coverPath,
+                  previewPaths: set.previewPaths
+                })
+                for (const w of BrowserWindow.getAllWindows()) {
+                  if (!w.isDestroyed()) {
+                    w.webContents.send(IPC.javdbFetched, { videoId: v.id, posterPath: set.coverPath, posterSource: 'ffmpeg' })
+                  }
+                }
+              }
+            } catch {
+              /* 截帧失败静默 */
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(conc2, noPoster.length) }, () => w2()))
+      } catch {
+        /* 静默 */
+      }
+    })()
     return {
       ok,
       failed,

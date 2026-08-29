@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Library, ScanProgress, Settings, Video } from '../../shared/types'
 import { findVideoByPath, upsertVideo, updateVideo, listLibraries } from './repo'
-import { resolvePoster, postersCacheDir } from './images'
+import { resolvePoster, postersCacheDir, generatePreviewSet } from './images'
 import { isDomestic } from '../../shared/code'
 
 export const VIDEO_EXTS = new Set([
@@ -107,7 +107,7 @@ export async function scanLibrary(
   // 富集阶段：ffmpeg 截帧兜底（并发 = settings.scanConcurrency，默认 4）
   const libraries = await listLibraries()
   const lib = libraries.find((l) => l.id === library.id) ?? library
-  const needFfmpeg = lib.imagePriority.includes('ffmpeg')
+  // 兜底策略：无论 imagePriority 是否包含 ffmpeg，只要视频最终没有封面（数据源抓不到）就截帧显示
   const concurrency = Math.max(1, Math.min(8, Math.floor(settings.scanConcurrency) || 4))
 
   let doneCount = 0
@@ -118,12 +118,28 @@ export async function scanLibrary(
       const v = created[i]
       onProgress?.({ libraryId: library.id, total, done: total + doneCount, current: v.title })
       try {
-        // 若仍无海报且策略允许，尝试 ffmpeg 截帧
-        if (needFfmpeg && (!created[i].posterPath || created[i].posterSource === 'placeholder')) {
+        // 无海报 → 尝试 resolvePoster（含 ffmpeg 生成）；仍无则直接 ffmpeg 截帧兜底
+        if (!created[i].posterPath || created[i].posterSource === 'placeholder') {
           const r = await resolvePoster(created[i], lib, settings, { allowFfmpeg: true })
           if (r.source !== 'placeholder') {
-            const updated = await updateVideo(created[i].id, { posterSource: r.source, posterPath: r.posterPath })
+            const updated = await updateVideo(created[i].id, {
+              posterSource: r.source,
+              posterPath: r.posterPath,
+              posterPathFfmpeg: r.source === 'ffmpeg' ? r.posterPath : created[i].posterPathFfmpeg
+            })
             if (updated) created[i] = updated
+          } else {
+            // 优先级链最终仍是占位 → 强制 ffmpeg 截帧兜底（保证有真实画面）
+            const set = await generatePreviewSet(created[i], settings)
+            if (set?.coverPath) {
+              const updated = await updateVideo(created[i].id, {
+                posterSource: 'ffmpeg',
+                posterPath: set.coverPath,
+                posterPathFfmpeg: set.coverPath,
+                previewPaths: set.previewPaths
+              })
+              if (updated) created[i] = updated
+            }
           }
         }
       } catch {
