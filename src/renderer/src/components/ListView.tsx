@@ -282,7 +282,8 @@ function ListThumb({ video, code, isMissing }: { video?: Video | null; code: str
       ? video.posterPath
       : null
   const poster = manualPoster ?? detailCover ?? realPoster ?? video?.posterPath ?? null
-  const original = poster ? posterUrl(poster) : null
+  // coverVersion：手动设为封面后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
+  const original = poster ? posterUrl(poster, video?.coverVersion) : null
   const hasValidSrc = original && !imgError ? original : null
   const { fallbackPoster } = useFrameFallback(video ?? undefined, hasValidSrc)
   const src = hasValidSrc ?? fallbackPoster

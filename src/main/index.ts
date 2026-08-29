@@ -57,7 +57,9 @@ function registerLocalMedia(): void {
       }
       const data = await fs.readFile(real)
       return new Response(data, {
-        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*' }
+        // no-store：封面文件可能被手动设为封面覆盖（路径不变内容变），禁止 Chromium 缓存，
+        // 配合渲染端 lm:// URL 的 ?v= 版本号，保证封面立即生效
+        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
       })
     } catch (e) {
       console.warn('[lm] 读取失败:', (e as Error).message)

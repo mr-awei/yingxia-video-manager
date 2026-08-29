@@ -36,6 +36,9 @@ export interface Video {
   /** 解析后的海报本地路径（缓存文件或手动指定文件） */
   posterPath?: string
   posterSource?: ImageSource
+  /** 封面缓存失效版本号（仅渲染进程内存使用，不落盘）：posterPath 文件被覆盖但路径不变时自增，
+   *  列表/详情页用它给 lm:// URL 加 ?v=N，强制立即刷新封面而不依赖重开/切库 */
+  coverVersion?: number
   durationSec?: number
   fileSize?: number
   /** ffprobe 读取的视频技术参数（编码/分辨率/码率等） */

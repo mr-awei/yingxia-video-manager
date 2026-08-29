@@ -66,7 +66,8 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
       ? v0.posterPath
       : null
   const poster = manualPoster ?? detailCover ?? realPoster ?? v0?.posterPath ?? null
-  const originalSrc = poster ? posterUrl(poster) : null
+  // coverVersion：手动设为封面后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
+  const originalSrc = poster ? posterUrl(poster, v0?.coverVersion) : null
   const hasValidSrc = originalSrc && !imgError ? originalSrc : null
   const { fallbackPoster } = useFrameFallback(entry.video, hasValidSrc)
   const src = hasValidSrc ?? fallbackPoster

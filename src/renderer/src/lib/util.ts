@@ -1,19 +1,24 @@
 /** lm:// URL 结果缓存（同一路径只编码一次，大库滚动时避免重复 base64） */
 const posterUrlCache = new Map<string, string>()
 
-/** 把本地绝对路径构造成 lm:// 协议 URL（主进程 lm:// 协议处理器返回图片）；远程 URL 直接透传 */
-export function posterUrl(posterPath?: string): string | null {
+/**
+ * 把本地绝对路径构造成 lm:// 协议 URL（主进程 lm:// 协议处理器返回图片）；远程 URL 直接透传。
+ * @param version 封面缓存失效版本号：手动设为封面后文件内容变了但路径不变，
+ *                传一个自增版本号让 URL 带 ?v=N，强制 Chromium 重新请求（主进程只解析 pathname，query 被忽略）
+ */
+export function posterUrl(posterPath?: string, version?: number | string): string | null {
   if (!posterPath) return null
   if (/^https?:\/\//.test(posterPath)) return posterPath
-  const cached = posterUrlCache.get(posterPath)
+  const cacheKey = version != null ? `${posterPath}\u0000v${version}` : posterPath
+  const cached = posterUrlCache.get(cacheKey)
   if (cached) return cached
   const bytes = new TextEncoder().encode(posterPath)
   let bin = ''
   bytes.forEach((b) => (bin += String.fromCharCode(b)))
   const b64 = btoa(bin)
-  const url = `lm://poster/${encodeURIComponent(b64)}`
+  const url = `lm://poster/${encodeURIComponent(b64)}${version != null ? `?v=${version}` : ''}`
   if (posterUrlCache.size > 5000) posterUrlCache.clear() // 防无限增长
-  posterUrlCache.set(posterPath, url)
+  posterUrlCache.set(cacheKey, url)
   return url
 }
 

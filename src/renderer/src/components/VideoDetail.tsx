@@ -12,8 +12,9 @@ interface Props {
   onPlay: (v: Video) => void
   /** 抓取成功回调（用于回写 App 展示数据，下次直接命中本地缓存） */
   onDetailFetched?: (videoId: string, detail: JavdbDetail) => void
-  /** 截帧/封面更新回调（用于回写 App 列表态，立即刷新封面） */
-  onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[]) => void
+  /** 截帧/封面更新回调（用于回写 App 列表态，立即刷新封面）。
+   *  previewPaths 为空表示不修改原有预览帧；posterSource 默认 'ffmpeg' */
+  onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[], posterSource?: string) => void
   /** ffprobe 技术参数读取成功回调（回写持久化） */
   onTechInfoFetched?: (videoId: string, tech: Video['techInfo']) => void
   /** 点击演员/片商/系列 → 请求按该维度筛选并回到首页 */
@@ -73,10 +74,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const [localVideo, setLocalVideo] = useState<Video>(video)
   /** 封面加载失败（路径失效）时标记，触发截帧兜底 */
   const [coverImgError, setCoverImgError] = useState(false)
+  /** 封面缓存失效版本号：手动设封面/重新截帧后 +1，让封面 img 的 lm:// URL 带 ?v= 强制立即刷新；
+   *  初始值取自 App 的 coverVersion，重开详情页时与列表端版本一致，避免退回旧缓存 */
+  const [posterVersion, setPosterVersion] = useState(video.coverVersion ?? 0)
   useEffect(() => {
     setLocalVideo(video)
     setDetail(video.javdbDetail)
     setCoverImgError(false)
+    setPosterVersion(video.coverVersion ?? 0)
   }, [video.id])
   /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
@@ -119,7 +124,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       const updated = await api.videoGeneratePreviews(localVideo.id)
       if (updated?.posterPath) {
         setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath, posterSource: updated.posterSource ?? 'ffmpeg', previewPaths: updated.previewPaths }))
-        onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths)
+        setPosterVersion((v) => v + 1)
+        onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths, updated.posterSource ?? 'ffmpeg')
         toast({ text: '已用 ffmpeg 重新截帧（封面 + 预览）', tone: 'ok' })
       } else {
         toast({ text: '截帧失败：未检测到 ffmpeg 或无视频流', tone: 'err' })
@@ -136,8 +142,10 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       try {
         const updated = await api.videoSetPreviewAsCover(localVideo.id, previewPath)
         if (updated?.posterPath) {
-          setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath!, posterSource: updated.posterSource ?? 'ffmpeg' }))
-          onPosterFetched?.(localVideo.id, updated.posterPath)
+          setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath!, posterSource: updated.posterSource ?? 'manual' }))
+          setPosterVersion((v) => v + 1)
+          // 透传 previewPaths：避免父组件把已有截帧预览清空；posterSource 也透传（manual），不再硬编码 ffmpeg
+          onPosterFetched?.(localVideo.id, updated.posterPath, localVideo.previewPaths, updated.posterSource ?? 'manual')
           toast({ text: '已将该预览帧设为封面', tone: 'ok' })
         } else {
           toast({ text: '设置失败：预览帧无效', tone: 'err' })
@@ -380,13 +388,13 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <div className="absolute inset-0">
                 {/* 模糊铺底：横竖屏封面完整显示，四周裁切处由模糊同图填充 */}
                 <img
-                  src={posterUrl(coverSrc) ?? ''}
+                  src={posterUrl(coverSrc, posterVersion) ?? ''}
                   alt=""
                   aria-hidden
                   className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-40"
                 />
                 <img
-                  src={posterUrl(coverSrc) ?? ''}
+                  src={posterUrl(coverSrc, posterVersion) ?? ''}
                   alt={video.title}
                   className="relative h-full w-full object-contain poster-img"
                   onError={() => setCoverImgError(true)}

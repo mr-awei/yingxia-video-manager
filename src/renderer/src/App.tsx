@@ -310,7 +310,9 @@ export default function App() {
                         video: {
                           ...e.video,
                           posterPath,
-                          posterSource: (posterSource ?? 'javdb') as ImageSource
+                          posterSource: (posterSource ?? 'javdb') as ImageSource,
+                          // 同上：文件内容可能已覆盖，自增版本强制列表端刷新
+                          coverVersion: (e.video.coverVersion ?? 0) + 1
                         }
                       }
                     : e
@@ -863,14 +865,25 @@ export default function App() {
   }, [])
 
   const handlePosterFetched = useCallback(
-    (videoId: string, posterPath: string, previewPaths?: string[]) => {
+    (videoId: string, posterPath: string, previewPaths?: string[], posterSource?: string) => {
       setReconcile((prev) =>
         prev
           ? {
               ...prev,
               entries: prev.entries.map((e) =>
                 e.video && e.video.id === videoId
-                  ? { ...e, video: { ...e.video, posterPath, posterSource: 'ffmpeg', previewPaths } }
+                  ? {
+                      ...e,
+                      video: {
+                        ...e.video,
+                        posterPath,
+                        posterSource: (posterSource ?? 'ffmpeg') as ImageSource,
+                        // 保留原预览帧：设为封面等回调若不传 previewPaths，不能把已有的截帧预览清掉
+                        previewPaths: previewPaths ?? e.video.previewPaths,
+                        // 自增版本号：posterPath 可能不变（如 <id>.jpg 被覆盖），列表端靠它让 lm:// URL 带 ?v= 强制刷新
+                        coverVersion: (e.video.coverVersion ?? 0) + 1
+                      }
+                    }
                   : e
               )
             }
