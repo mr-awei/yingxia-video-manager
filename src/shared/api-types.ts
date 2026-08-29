@@ -21,8 +21,8 @@ export interface BatchFetchResult {
   ok: number
   /** 失败部数 */
   failed: number
-  /** 成功来源分布 */
-  bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
+  /** 成功来源分布（v2.2.7 加 javlibrary —— 自定义顺序里也可能命中） */
+  bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number }
   /** 失败明细（标题 + 原因） */
   failures: Array<{ title: string; reason: string }>
   /** 是否因连续失败自动停止 */

@@ -798,7 +798,7 @@ export default function App() {
           title: '检测到可能的同系列视频',
           ok: 0,
           failed: 0,
-          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
           reasons: warns.slice(0, 8).map((c) => `${c}${warns.length > 8 ? '…' : ''}`),
           stopped: false,
           remaining: 0
@@ -1084,19 +1084,26 @@ export default function App() {
     tone?: 'ok' | 'warn' | 'err'
     ok: number
     failed: number
-    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
+    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number }
     reasons: string[]
     stopped: boolean
     remaining: number
+    /** v2.2.7：按用户的 customSourceOrder 渲染来源分布条，让展示顺序跟实际采集顺序一致 */
+    customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
   }
   const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
     const tone: 'ok' | 'warn' | 'err' = data.tone ?? (data.stopped || data.failed > 0 ? 'warn' : 'ok')
     const total = data.ok + data.failed
-    const jd = data.bySource.javdb
-    const jb = data.bySource.javbus
-    const ji = data.bySource.javinfo ?? 0
-    const jp = data.bySource.javapi ?? 0
+    // v2.2.7：按 customSourceOrder 排 bySource 展示，跟用户实际的采集顺序一致
+    const SOURCE_LABELS: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', string> = {
+      javapi: 'Javapi', javinfo: 'Javinfo', javdb: 'JavDB', javbus: 'JavBus', javlibrary: 'JavLibrary'
+    }
+    const order = data.customSourceOrder ?? (['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary'] as const)
+    const bySourceLine = order
+      .filter((s) => s !== 'javlibrary') // 进度条不显示 javlibrary（它没参与 bySource 统计）
+      .map((s) => `${SOURCE_LABELS[s]} ${data.bySource[s]}`)
+      .join(' · ')
     const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
     const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
     const detail = (
@@ -1106,7 +1113,7 @@ export default function App() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
               <span className="text-[10px] text-white/65 font-mono tabular-nums">
-                Javapi {jp} · Javinfo {ji} · JavDB {jd} · JavBus {jb} · 失败 {data.failed}
+                {bySourceLine} · 失败 {data.failed}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex">
@@ -1157,10 +1164,11 @@ export default function App() {
         tone,
         ok: res.ok,
         failed: res.failed,
-        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
+        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0, javlibrary: res.bySource.javlibrary ?? 0 },
         reasons,
         stopped: res.stopped ?? false,
-        remaining: res.remaining ?? 0
+        remaining: res.remaining ?? 0,
+        customSourceOrder: settings.customSourceOrder
       })
       await runReconcile(libraryId)
     } catch (e) {
@@ -1169,7 +1177,7 @@ export default function App() {
         tone: 'err',
         ok: 0,
         failed: 0,
-        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
+        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
         reasons: [`请求异常：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0

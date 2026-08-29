@@ -1,5 +1,32 @@
 # 更新日志（Changelog）
 
+## v2.2.7（2026-08-30）
+
+**文案随顺序联动（用户反馈："都已经支持自定义采集顺序了，采集逻辑和文案也要跟着变"）**
+
+v2.2.6 暴露了 customSourceOrder 拖拽 UI，但多处文案还写死默认顺序——拖了顺序后文案不会跟变。v2.2.7 把所有相关文案改成"动态跟随 customSourceOrder"。
+
+### 1. SettingsModal 顶部 auto 降级说明
+- 原来："auto 自动降级（Javapi → Javinfo → JavDB → JavBus → JavLibrary，连续失败自动切换）"
+- 现在：`formatSourceOrder(draft.customSourceOrder)` 函数渲染，**用户拖一下就跟着变**。
+- 顶部文案 + 拖拽列表里 1/2/3/4/5 编号 + "恢复推荐" 按钮——三处共享同一份顺序。
+
+### 2. Javapi/Javinfo API Key 输入框 placeholder
+- 原来：Javapi placeholder "留空则跳过 Javapi，直接走 Javinfo → JavDB → JavBus"（写死）
+- 原来：Javinfo placeholder "留空则跳过 Javinfo，直接走 JavDB → JavBus"（写死）
+- 现在：从 draft.customSourceOrder 过滤掉当前源，剩余顺序拼文案。"留空则跳过 Javinfo，直接走 JavDB → JavBus → JavLibrary"（实际当前顺序）。
+
+### 3. 补齐完成 toast 的「来源分布」条
+- 原来："Javapi X · Javinfo Y · JavDB Z · JavBus W · 失败 N"（写死）
+- 现在：按 `settings.customSourceOrder` 渲染对应源 + 数量，**顺序跟用户实际采集顺序一致**。
+- 顺手在 `api-types.ts` `BatchJavdbResult.bySource` 加了 `javlibrary: number` 字段（之前漏了，自定义顺序里可能命中 javlibrary）。
+
+### 4. 没动的文案
+- 拖拽列表底部的"抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。" — 顺序是动态的、"JavBus" 是事实（无论排在哪位都是连续 3 部 stop），文案本身无需变。
+- "推荐顺序：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary" — JSX 注释不是给用户看的，保留。
+
+---
+
 ## v2.2.6（2026-08-30）
 
 **数据源采集：完整流程可见 + 顺序可调（用户反馈"javapi/javinfo 失败应继续试其他源"）**

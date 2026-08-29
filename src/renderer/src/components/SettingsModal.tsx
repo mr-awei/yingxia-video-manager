@@ -107,6 +107,16 @@ const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrar
   javbus: { label: 'JavBus', tier: '★★★ 中', risk: '★★☆ 中（Cloudflare）', cost: '免费' },
   javlibrary: { label: 'JavLibrary', tier: '★★☆ 偏简', risk: '★☆☆ 低（但偶发 503）', cost: '免费' }
 }
+
+/**
+ * 把当前顺序拼成 "Javapi → Javinfo → JavDB → ..." 文案给顶部说明文字用，
+ * 跟着用户的拖拽走，**不是**写死默认顺序。
+ * 函数形式让 React 每次 render 都重新算（draft.customSourceOrder 改了 → 文案立即变）。
+ */
+function formatSourceOrder(order?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>): string {
+  const arr = normalizeSourceOrder(order)
+  return arr.map((s) => SOURCE_META[s].label).join(' → ')
+}
 function formatBytes(n?: number): string {
   if (n == null || n <= 0) return ''
   const units = ['B', 'KB', 'MB', 'GB']
@@ -411,6 +421,8 @@ function ThemeCard({
 export default function SettingsModal({ open, settings, onClose, onSave, onSaved }: Props) {
   const [draft, setDraft] = useState<Settings>(settings)
   const [activeCategory, setActiveCategory] = useState<Category>('general')
+  // v2.2.6：顶部 auto 降级文案动态跟着 draft.customSourceOrder 走
+  const autoOrderSummary = formatSourceOrder(draft.customSourceOrder)
   const [dataDir, setDataDir] = useState('')
   const [appVersion, setAppVersion] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; status?: number; error?: string } | null>(null)
@@ -790,7 +802,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name="database" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">数据源</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">auto 自动降级（Javapi → Javinfo → JavDB → JavBus → JavLibrary，连续失败自动切换）；手动指定可单独调试某个源。</div>
+                  <div className="text-white/40 text-xs mb-3">
+                    auto 自动降级（{autoOrderSummary}，连续失败自动切换）；手动指定可单独调试某个源。
+                  </div>
                   <SegmentedControl
                     value={draft.dataSource ?? 'auto'}
                     options={[
@@ -902,7 +916,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   >
                     <input
                       className={inputCls}
-                      placeholder="留空则跳过 Javapi，直接走 Javinfo → JavDB → JavBus"
+                      placeholder={`留空则跳过 Javapi，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi'))}`}
                       value={draft.javapiKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javapiKey: e.target.value.trim() })}
                     />
@@ -913,7 +927,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   >
                     <input
                       className={inputCls}
-                      placeholder="留空则跳过 Javinfo，直接走 JavDB → JavBus"
+                      placeholder={`留空则跳过 Javinfo，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi' && s !== 'javinfo'))}`}
                       value={draft.javinfoKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javinfoKey: e.target.value.trim() })}
                     />
