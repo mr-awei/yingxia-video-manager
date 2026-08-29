@@ -1,5 +1,33 @@
 # 更新日志（Changelog）
 
+## v2.2.6（2026-08-30）
+
+**数据源采集：完整流程可见 + 顺序可调（用户反馈"javapi/javinfo 失败应继续试其他源"）**
+
+### 1. P0：fetchDetailSmart auto 模式错误信息完整化
+- v2.2.4 把 `fetchDetailSmart` 抽到独立模块时**漏修一处**——`errors` 数组（javapi 跳过 / javinfo 跳过的提示）没合并到 return error。同时**没在 ipc.ts 删掉旧的 `fetchMovieDetail`**（v2.2.4 漏改），导致用户点「补齐信息」走 `fetchMovieDetail`、批量补齐走 `fetchDetailSmart`，**两套逻辑不一致**。
+- 表现：用户的 SONE-560_1 点「补齐信息」只显示「未配置本地 Javapi，跳过；未配置 Javinfo key，跳过」——看起来像只跑了 javapi 就停了。实际上 javdb/javbus/javlibrary 也跑了但「无结果」（不是异常），所以 `errors` 数组里没反映。
+- v2.2.6 修复：
+  - `fetchDetailSmart` auto 模式用 `srcResults[]` 记录每个源的状态（`hit` / `skipped` / `no-result` / `network-failed`），最后拼成 `javapi=跳过(...); javinfo=跳过(...); javdb=无结果; javbus=无结果; javlibrary=无结果` 这种完整 summary
+  - `ipc.ts fetchMovieDetail` 删掉（保留 wrapper，内部调 `fetchDetailSmart`），保证两套入口行为一致
+  - `ipc.ts` 清理掉 6 个不再直接用的 per-source import（fetchJavapiDetail / fetchJavinfoDetail / fetchJavdbDetail / fetchJavBusDetail / fetchJavLibraryDetail / hasJavapiConfig / hasJavinfoKey）
+
+### 2. P0：SettingsModal 加 customSourceOrder 拖拽排序 UI
+- v2.2.0 时加了 `Settings.customSourceOrder` 字段，v2.2.4 抽到 javdb-smart.ts 的 fetchDetailSmart 也读了，**但 UI 没暴露调整入口**——只能选 auto/单源。
+- v2.2.6 暴露 UI：dataSource=auto 时显示 5 个源的可拖拽列表
+  - 拖拽 ⠿ 调整顺序（HTML5 drag-and-drop）
+  - 点 ↑↓ 按钮也行
+  - 「恢复推荐」一键还原默认顺序
+  - 每个源展示「信息全面度 + 风控 + 成本」三维度评估
+  - 底部说明抓取逻辑：按顺序逐个尝试，任一源命中即停；任一源连续 3 部网络失败自动跳过本轮；JavBus 连续 3 部失败停止整批；所有源都失败 → 走 ffmpeg 截帧兜底
+- 字段已存在 Shared types，store 持久化天然支持
+
+### 3. 数据层未做（留给 v2.2.7）
+- 「文档定义标签优先、其他数据源标签折叠成备用」还没做。当前 v.tags 是文档 tags + 数据源 genres 合并去重。
+- v2.2.7 计划：Video 加 `tagCategories` + `backupTags` 字段；reconcile if (doc) 分支写 tagCategories；backfillFromDetail 把 detail.genres 写 backupTags 不合并；详情页 UI 折叠显示。
+
+---
+
 ## v2.2.5（2026-08-30）
 
 **控制台大量 ENOENT 报错修复（用户反馈"控制台大量报错"）**

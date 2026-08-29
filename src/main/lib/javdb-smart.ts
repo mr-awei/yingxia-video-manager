@@ -103,6 +103,16 @@ export async function fetchDetailSmart(
     }
     return { detail: null, error: errs.length ? errs.join('；') : 'JavBus 未返回结果' }
   }
+  if (mode === 'javlibrary') {
+    const errs: string[] = []
+    try {
+      const javlibrary = await fetchJavLibraryDetail(code, settings, (m) => errs.push(m))
+      if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+    } catch (e) {
+      errs.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errs.length ? errs.join('；') : 'JavLibrary 未返回结果' }
+  }
   // ---- auto：按自定义/推荐优先级降级 ----
   // 推荐顺序（信息全面度 / 获取难度 / 风控）：Javapi → Javinfo → JavDB → JavBus → JavLibrary
   // 用户可在设置里自定义 1-5 优先级（customSourceOrder）
@@ -117,8 +127,9 @@ export async function fetchDetailSmart(
     settings.customSourceOrder && settings.customSourceOrder.length === 5
       ? settings.customSourceOrder
       : DEFAULT_SOURCE_ORDER
-  const javdbErrs: string[] = []
-  const javbusErrs: string[] = []
+  // v2.2.6 修复：完整记录每个源的结果（"跳过" / "无结果" / "抓到了" / "网络失败"），
+  // 让用户清楚看到 5 个源都跑了哪些、为什么最终失败。errors 数组合并到最终的 return error。
+  const srcResults: Array<{ src: string; status: 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }> = []
   for (const src of order) {
     if (state.stop) break
     if (src === 'javapi') {
@@ -128,10 +139,12 @@ export async function fetchDetailSmart(
           const javapi = await fetchJavapiDetail(code, settings, (m) => errs.push(m))
           if (javapi) {
             state.javapiFails = 0
+            srcResults.push({ src, status: 'hit' })
             return { detail: javapi, source: 'javapi' }
           }
+          srcResults.push({ src, status: 'no-result' })
         } catch (e) {
-          errs.push(`Javapi 异常：${(e as Error)?.message || e}`)
+          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
         }
         if (errs.length > 0) {
           state.javapiFails++
@@ -140,8 +153,8 @@ export async function fetchDetailSmart(
             console.log(`[batch] Javapi 连续网络失败 ${state.javapiFails} 部，本轮自动跳过`)
           }
         }
-      } else if (!hasJavapiConfig(settings)) {
-        errors.push('未配置本地 Javapi，跳过')
+      } else {
+        srcResults.push({ src, status: 'skipped', detail: '未配置本地 Javapi（设置 → 数据源）' })
       }
     } else if (src === 'javinfo') {
       if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
@@ -150,10 +163,12 @@ export async function fetchDetailSmart(
           const javinfo = await fetchJavinfoDetail(code, settings, (m) => errs.push(m))
           if (javinfo) {
             state.javinfoFails = 0
+            srcResults.push({ src, status: 'hit' })
             return { detail: javinfo, source: 'javinfo' }
           }
+          srcResults.push({ src, status: 'no-result' })
         } catch (e) {
-          errs.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
         }
         if (errs.length > 0) {
           state.javinfoFails++
@@ -162,55 +177,79 @@ export async function fetchDetailSmart(
             console.log(`[batch] Javinfo 连续网络失败 ${state.javinfoFails} 部，本轮自动跳过`)
           }
         }
-      } else if (!hasJavinfoKey(settings)) {
-        errors.push('未配置 Javinfo key，跳过')
+      } else {
+        srcResults.push({ src, status: 'skipped', detail: '未配置 Javinfo key' })
       }
     } else if (src === 'javdb') {
       if (!state.javdbDisabled) {
+        const errs: string[] = []
         try {
-          const javdb = await fetchJavdbDetail(code, settings, (m) => javdbErrs.push(m))
+          const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m))
           if (javdb) {
             state.javdbFails = 0
+            srcResults.push({ src, status: 'hit' })
             return { detail: javdb, source: 'javdb' }
           }
+          srcResults.push({ src, status: 'no-result' })
         } catch (e) {
-          javdbErrs.push(`JavDB 异常：${(e as Error)?.message || e}`)
+          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
         }
-        if (javdbErrs.length > 0) {
+        if (errs.length > 0) {
           state.javdbFails++
           if (state.javdbFails >= JAVDB_CONSECUTIVE_LIMIT) {
             state.javdbDisabled = true
             console.log(`[batch] JavDB 连续网络失败 ${state.javdbFails} 部，本轮自动跳过`)
           }
         }
+      } else {
+        srcResults.push({ src, status: 'skipped', detail: 'JavDB 已被本轮禁用' })
       }
     } else if (src === 'javbus') {
+      const errs: string[] = []
       try {
-        const javbus = await fetchJavBusDetail(code, settings, (m) => javbusErrs.push(m))
+        const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m))
         if (javbus) {
           state.javbusFails = 0
+          srcResults.push({ src, status: 'hit' })
           return { detail: javbus, source: 'javbus' }
         }
+        srcResults.push({ src, status: 'no-result' })
       } catch (e) {
-        javbusErrs.push(`JavBus 异常：${(e as Error)?.message || e}`)
+        srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
       }
-      if (javbusErrs.length > 0) {
+      if (errs.length > 0) {
         state.javbusFails++
         if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
           state.stop = true
-          javbusErrs.push(`JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止`)
+          srcResults.push({ src, status: 'network-failed', detail: `JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止` })
         }
       }
     } else {
       // javlibrary：不计数（数据与 javdb/javbus 重叠度高，纯兜底，静默）
       try {
         const javlibrary = await fetchJavLibraryDetail(code, settings)
-        if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+        if (javlibrary) {
+          srcResults.push({ src, status: 'hit' })
+          return { detail: javlibrary, source: 'javlibrary' }
+        }
+        srcResults.push({ src, status: 'no-result' })
       } catch {
-        /* 静默 */
+        srcResults.push({ src, status: 'network-failed' })
       }
     }
   }
-  const allErrs = [...javdbErrs, ...javbusErrs]
-  return { detail: null, error: allErrs.length ? allErrs.join('；') : '未知原因' }
+  // v2.2.6 修：完整 5 源结果拼成错误消息（用户能看到"5 个源全试了"而不是只看到跳过提示）
+  const STATUS_LABEL: Record<typeof srcResults[number]['status'], string> = {
+    hit: '命中',
+    skipped: '跳过',
+    'no-result': '无结果',
+    'network-failed': '网络失败'
+  }
+  const summary = srcResults
+    .map((r) => {
+      const label = STATUS_LABEL[r.status]
+      return r.detail ? `${r.src}=${label}(${r.detail})` : `${r.src}=${label}`
+    })
+    .join('；')
+  return { detail: null, error: summary || '未知原因' }
 }

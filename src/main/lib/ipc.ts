@@ -11,12 +11,8 @@ import { openVideo } from './player'
 import { resolvePoster, generatePreviewSet, frameLog } from './images'
 import { postersCacheDir } from './images'
 import { cacheRemoteImage } from './javdb'
-import { fetchJavdbPosterForVideo, fetchJavdbDetail } from './javdb'
+import { fetchJavdbPosterForVideo } from './javdb'
 import { extractBaseCode, extractCode } from '../../shared/code'
-import { fetchJavBusDetail } from './javbus'
-import { fetchJavLibraryDetail } from './javlibrary'
-import { fetchJavinfoDetail, hasJavinfoKey } from './javinfo'
-import { fetchJavapiDetail, hasJavapiConfig } from './javapi'
 import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
@@ -316,95 +312,11 @@ function detectUrgency(notes: string, minimumVersion?: string, currentVersion?: 
 }
 
 async function fetchMovieDetail(code: string, settings: Settings): Promise<MovieDetailResult> {
-  const mode = settings.dataSource ?? 'auto'
-  const errors: string[] = []
-  const onError = (m: string) => errors.push(m)
-  // 手动指定源：只走该源（调试 Javapi/Javinfo/JavBus/JavDB/JavLibrary 用）
-  if (mode === 'javapi') {
-    try {
-      const javapi = await fetchJavapiDetail(code, settings, onError)
-      if (javapi) return { detail: javapi, source: 'javapi' }
-    } catch (e) {
-      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
-    }
-    return { detail: null, error: errors.length ? errors.join('；') : 'Javapi 未返回结果' }
-  }
-  if (mode === 'javinfo') {
-    try {
-      const javinfo = await fetchJavinfoDetail(code, settings, onError)
-      if (javinfo) return { detail: javinfo, source: 'javinfo' }
-    } catch (e) {
-      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
-    }
-    return { detail: null, error: errors.length ? errors.join('；') : 'Javinfo 未返回结果' }
-  }
-  if (mode === 'javdb') {
-    try {
-      const javdb = await fetchJavdbDetail(code, settings, onError)
-      if (javdb) return { detail: javdb, source: 'javdb' }
-    } catch (e) {
-      errors.push(`JavDB 异常：${(e as Error)?.message || e}`)
-    }
-    return { detail: null, error: errors.length ? errors.join('；') : 'JavDB 未返回结果' }
-  }
-  if (mode === 'javbus') {
-    try {
-      const javbus = await fetchJavBusDetail(code, settings, onError)
-      if (javbus) return { detail: javbus, source: 'javbus' }
-    } catch (e) {
-      errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
-    }
-    return { detail: null, error: errors.length ? errors.join('；') : 'JavBus 未返回结果' }
-  }
-  if (mode === 'javlibrary') {
-    try {
-      const javlibrary = await fetchJavLibraryDetail(code, settings, onError)
-      if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
-    } catch (e) {
-      errors.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
-    }
-    return { detail: null, error: errors.length ? errors.join('；') : 'JavLibrary 未返回结果' }
-  }
-  // auto：Javapi（本地免费，优先）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary 降级
-  if (hasJavapiConfig(settings)) {
-    try {
-      const javapi = await fetchJavapiDetail(code, settings, onError)
-      if (javapi) return { detail: javapi, source: 'javapi' }
-    } catch (e) {
-      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
-    }
-  } else {
-    errors.push('未配置本地 Javapi，跳过')
-  }
-  if (hasJavinfoKey(settings)) {
-    try {
-      const javinfo = await fetchJavinfoDetail(code, settings, onError)
-      if (javinfo) return { detail: javinfo, source: 'javinfo' }
-    } catch (e) {
-      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
-    }
-  } else {
-    errors.push('未配置 Javinfo key，跳过')
-  }
-  try {
-    const javdb = await fetchJavdbDetail(code, settings, onError)
-    if (javdb) return { detail: javdb, source: 'javdb' }
-  } catch (e) {
-    errors.push(`JavDB 异常：${(e as Error)?.message || e}`)
-  }
-  try {
-    const javbus = await fetchJavBusDetail(code, settings, onError)
-    if (javbus) return { detail: javbus, source: 'javbus' }
-  } catch (e) {
-    errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
-  }
-  try {
-    const javlibrary = await fetchJavLibraryDetail(code, settings, onError)
-    if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
-  } catch (e) {
-    errors.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
-  }
-  return { detail: null, error: errors.length ? errors.join('；') : '多个数据源均未返回结果' }
+  // v2.2.6：fetchDetailSmart 已统一处理所有 5 个源（含顺序、降级、错误信息），
+  // 这里保留 wrapper 是为了让 videoFetchJavdbDetail 等老调用方零改动；
+  // fetchDetailSmart 内部会按 settings.dataSource / customSourceOrder 自动分支。
+  const state = createSmartFetchState()
+  return await fetchDetailSmart(code, settings, state)
 }
 
 function emitProgress(p: ScanProgress): void {

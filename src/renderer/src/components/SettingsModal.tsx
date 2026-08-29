@@ -79,10 +79,33 @@ function normalizeProxy(s: Settings): Settings {
     fetchIntervalMs: Number(next.fetchIntervalMs) || 600,
     autoRescan: !!next.autoRescan,
     dataSource: next.dataSource ?? 'auto',
+    customSourceOrder: normalizeSourceOrder(next.customSourceOrder),
     javinfoKey: next.javinfoKey ?? '',
     javapiUrl: next.javapiUrl ?? 'http://127.0.0.1:8080',
     javapiKey: next.javapiKey ?? ''
   }
+}
+
+/**
+ * 把任意顺序归一化到完整的 5 个源（缺哪个补默认 javapi→javinfo→javdb→javbus→javlibrary），
+ * 用于 UI 拖拽排序时的初始 / 兜底。
+ */
+function normalizeSourceOrder(order?: string[]): Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> {
+  const ALL: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']
+  if (!Array.isArray(order) || order.length !== 5) return ALL
+  const set = new Set(order)
+  // 必须正好 5 个合法源
+  if (ALL.some((s) => !set.has(s))) return ALL
+  return order as Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
+}
+
+/** 数据源展示信息（标签 + 三维度评估） */
+const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string }> = {
+  javapi: { label: 'Javapi', tier: '★★★★★ 信息最全', risk: '无风控（本地自托管）', cost: '免费' },
+  javinfo: { label: 'Javinfo', tier: '★★★★ 全面', risk: '★☆☆ 低（聚合 API）', cost: '免费额度 + 按量' },
+  javdb: { label: 'JavDB', tier: '★★★★ 全面', risk: '★★★ 中（Cloudflare 偶发 403）', cost: '免费' },
+  javbus: { label: 'JavBus', tier: '★★★ 中', risk: '★★☆ 中（Cloudflare）', cost: '免费' },
+  javlibrary: { label: 'JavLibrary', tier: '★★☆ 偏简', risk: '★☆☆ 低（但偶发 503）', cost: '免费' }
 }
 function formatBytes(n?: number): string {
   if (n == null || n <= 0) return ''
@@ -780,6 +803,88 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     ]}
                     onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary' })}
                   />
+                  {/* v2.2.6：自定义数据源采集顺序。auto 模式下生效，按这个顺序降级。
+                      推荐顺序：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary
+                      （任一源连续网络失败 3 部自动跳过；JavBus 连续失败 3 部直接停止整批）
+                      鼠标拖拽 ⠿ 调整顺序；点 ↑↓ 按钮也行。 */}
+                  {draft.dataSource === 'auto' ? (
+                    <div className="mt-3 rounded-lg border border-white/10 bg-white/3 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-white/85 text-xs font-medium">数据源采集顺序（拖拽调整）</div>
+                        <button
+                          type="button"
+                          className="text-[11px] text-brand hover:text-brand/80 transition-colors no-drag"
+                          onClick={() => setDraft({ ...draft, customSourceOrder: ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary'] })}
+                          title="恢复推荐顺序"
+                        >
+                          恢复推荐
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).map((src, idx, arr) => {
+                          const meta = SOURCE_META[src]
+                          return (
+                            <div
+                              key={src}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move'
+                                e.dataTransfer.setData('text/plain', String(idx))
+                              }}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                const from = Number(e.dataTransfer.getData('text/plain'))
+                                if (Number.isNaN(from) || from === idx) return
+                                const next = arr.slice()
+                                const [moved] = next.splice(from, 1)
+                                next.splice(idx, 0, moved)
+                                setDraft({ ...draft, customSourceOrder: next })
+                              }}
+                              className="flex items-center gap-2 rounded-md bg-ink-800/60 ring-1 ring-white/8 px-2.5 py-1.5 cursor-move hover:ring-white/15 transition-shadow"
+                              title="拖拽调整顺序"
+                            >
+                              <span className="text-white/30 cursor-grab text-sm leading-none select-none">⠿</span>
+                              <span className="text-[10px] text-white/40 w-3 tabular-nums">{idx + 1}</span>
+                              <span className="text-white/90 text-xs font-medium shrink-0">{meta.label}</span>
+                              <span className="text-white/50 text-[10px] truncate">{meta.tier} · {meta.risk} · {meta.cost}</span>
+                              <div className="ml-auto flex items-center gap-0.5 no-drag">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => {
+                                    const next = arr.slice()
+                                    ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                                    setDraft({ ...draft, customSourceOrder: next })
+                                  }}
+                                  className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
+                                  title="上移"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === arr.length - 1}
+                                  onClick={() => {
+                                    const next = arr.slice()
+                                    ;[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]
+                                    setDraft({ ...draft, customSourceOrder: next })
+                                  }}
+                                  className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
+                                  title="下移"
+                                >
+                                  ↓
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="mt-2 text-white/35 text-[10.5px] leading-relaxed">
+                        抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。
+                      </div>
+                    </div>
+                  ) : null}
                   <Field
                     label="本地 Javapi 地址（自托管，免费）"
                     hint="自托管 javapi（github.com/a1850976305/javapi）本地服务地址。JavDB API 元数据 + 8 个视频站，免费、无 Cloudflare/IP 风控。启动：AUTH_API_KEYS=你的key go run ./cmd/api"
