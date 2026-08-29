@@ -31,6 +31,7 @@ import Icon from './components/Icon'
 import OnboardMdModal from './components/OnboardMdModal'
 import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
 import ConfirmDeleteModal, { type DeletePreview } from './components/ConfirmDeleteModal'
+import UserNoticeModal from './components/UserNoticeModal'
 import type { AppInfo } from '../../shared/api-types'
 
 interface FilterState {
@@ -118,6 +119,8 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  /** 用户须知弹窗：首次启动（noticeDismissed 未设置/为 false）时强制弹出 */
+  const [noticeOpen, setNoticeOpen] = useState(false)
   /** true = 「添加媒体库」新建表单；false = 库设置编辑模式 */
   const [addingLibrary, setAddingLibrary] = useState(false)
   /** 新建 md 文件向导（添加媒体库无 md / 库设置「按规范新建」时弹出） */
@@ -190,6 +193,8 @@ export default function App() {
       // 启动时自动对账开关：关闭则跳过首次自动对账
       if (s.scanOnStartup === false) skipFirstAutoScanRef.current = true
       if (libs.length > 0) setLibraryId(libs[0].id)
+      // 首次启动：用户须知未确认则强制弹窗（背景点击 / ESC 均不关闭）
+      if (!s.noticeDismissed) setNoticeOpen(true)
       setLoaded(true)
     })()
   }, [])
@@ -783,6 +788,17 @@ export default function App() {
   const handleEditEntry = useCallback((v: Video) => setEditing(v), [])
 
   /** 从磁盘删除视频文件：预检 → 打开二次确认弹窗（Impeccable 设计 ConfirmDeleteModal） */
+  const handleNoticeConfirm = async (dismissed: boolean) => {
+    setNoticeOpen(false)
+    if (dismissed) {
+      try {
+        await api.settingsSet({ noticeDismissed: true })
+        setSettings((prev) => ({ ...prev, noticeDismissed: true }))
+      } catch {
+        /* 保存失败下次再弹 */
+      }
+    }
+  }
   const openDeleteConfirm = useCallback(
     async (v: Video) => {
       if (!v.path) {
@@ -791,7 +807,7 @@ export default function App() {
       }
       const fileName = v.path.split(/[\\/]/).pop() || v.path
 
-      // 预检：让用户在确认前看到准确的删除范围（不删任何文件）
+  // 预检：让用户在确认前看到准确的删除范围（不删任何文件）
       const inspect = await api.videoInspectForDelete(v.id).catch((e) => ({ ok: false as const, error: String(e) }))
       if (!inspect.ok) {
         window.alert('删除预检失败：' + inspect.error)
@@ -1720,6 +1736,12 @@ export default function App() {
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setDeletePreview(null)}
+      />
+
+      {/* 用户须知弹窗：首次启动（noticeDismissed 未确认）强制弹出；勾选+确认后不再弹 */}
+      <UserNoticeModal
+        open={noticeOpen}
+        onClose={handleNoticeConfirm}
       />
 
     </div>

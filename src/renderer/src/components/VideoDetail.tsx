@@ -257,33 +257,9 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const d = detail
   // 只用本地路径：远程 URL 经 posterUrl 透传会让 Chromium 直连 javdb CDN 触发 403 反盗链
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
-  // 封面来源切换：切换后覆盖显示（数据源图 ↔ FFmpeg 截帧图）
-  const [posterOverride, setPosterOverride] = useState<string | null>(null)
-  const [posterBusy, setPosterBusy] = useState(false)
-  const coverSrc =
-    posterOverride ||
-    (d?.cover && isLocal(d.cover) ? d.cover : localVideo.posterPath) ||
-    null
-  const hasFfmpegPoster = !!localVideo.posterPathFfmpeg
-  const isFfmpegActive = posterOverride
-    ? posterOverride === localVideo.posterPathFfmpeg
-    : localVideo.posterSource === 'ffmpeg'
-  function switchPoster(src: 'data' | 'ffmpeg') {
-    if (posterBusy) return
-    setPosterBusy(true)
-    api
-      .videoSwitchPoster(video.id, src)
-      .then((r) => {
-        if (r.ok && r.posterPath) {
-          setPosterOverride(r.posterPath)
-          onPosterFetched?.(video.id, r.posterPath)
-        } else if (!r.ok) {
-          window.alert('封面切换失败：' + (r.error ?? '未知原因'))
-        }
-      })
-      .catch((e) => window.alert('封面切换失败：' + ((e as Error)?.message ?? e)))
-      .finally(() => setPosterBusy(false))
-  }
+  const coverSrc = (d?.cover && isLocal(d.cover)
+    ? d.cover
+    : localVideo.posterPath) || null
 
   return (
     <div
@@ -359,46 +335,16 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               </div>
             )}
           </div>
-          {/* 封面来源切换：数据源图 ↔ FFmpeg 截帧图（两套独立保存，自由切换） */}
-          <div className="mt-2 flex items-center justify-center gap-1.5">
-            <button
-              type="button"
-              disabled={posterBusy}
-              onClick={() => switchPoster('data')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${
-                !isFfmpegActive
-                  ? 'bg-brand/20 text-brand ring-1 ring-brand/40'
-                  : 'bg-ink-700 text-white/60 hover:text-white'
-              } disabled:opacity-40`}
-            >
-              数据源图
-            </button>
-            <button
-              type="button"
-              disabled={posterBusy}
-              onClick={() => switchPoster('ffmpeg')}
-              title={hasFfmpegPoster ? '使用 FFmpeg 随机截帧图' : '尚无 FFmpeg 截图，点击生成'}
-              className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${
-                isFfmpegActive
-                  ? 'bg-brand/20 text-brand ring-1 ring-brand/40'
-                  : 'bg-ink-700 text-white/60 hover:text-white'
-              } disabled:opacity-40`}
-            >
-              {posterBusy ? '处理中…' : 'FFmpeg 截图'}
-            </button>
-          </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex flex-col">
             {d ? (
               <span
                 className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 ${
                   d.source === 'javbus'
                     ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'
-                    : d.source === 'javlibrary'
-                      ? 'bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30'
-                      : 'bg-brand/15 text-brand ring-1 ring-brand/30'
+                    : 'bg-brand/15 text-brand ring-1 ring-brand/30'
                 }`}
               >
-                数据来源 {d.source === 'javbus' ? 'JavBus' : d.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'}
+                数据来源 {d.source === 'javbus' ? 'JavBus' : 'JavDB'}
               </span>
             ) : null}
             {/* 国产片徽章：纯中文文件夹，不抓元数据，仅 ffmpeg 截帧 */}
@@ -585,6 +531,25 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <div className="mt-4 text-white/40 text-xs">正在抓取 javdb 详情…</div>
             ) : null}
             {error ? <div className="mt-4 text-amber-400 text-xs">{error}</div> : null}
+
+            {/* 文件信息：始终展示在右栏底部，填满 grid 拉伸后的剩余高度，避免大片空白 */}
+            <div className="mt-auto pt-4 border-t border-white/5 space-y-1">
+              <div className="text-white/40 text-[11px] mb-1.5 flex items-center gap-1.5">
+                <Icon name="info" size={11} className="text-white/30" />
+                文件信息
+              </div>
+              <MetaRow label="文件名" value={video.fileName} />
+              {video.addedAt ? (
+                <MetaRow label="添加于" value={new Date(video.addedAt).toLocaleString('zh-CN')} />
+              ) : null}
+              {video.lastPlayedAt ? (
+                <MetaRow label="上次播放" value={new Date(video.lastPlayedAt).toLocaleString('zh-CN')} />
+              ) : null}
+              {video.durationSec ? (
+                <MetaRow label="时长" value={`${Math.floor(video.durationSec / 60)} 分 ${Math.round(video.durationSec % 60)} 秒`} />
+              ) : null}
+              {video.path ? <MetaRow label="完整路径" value={video.path} /> : null}
+            </div>
           </div>
         </div>
 

@@ -176,6 +176,8 @@ export interface Settings {
   } | null
   /** 用户已选择忽略的对账未收录文件路径列表（不再弹窗/不再进入「未收录」分类） */
   ignoredUnlistedPaths: string[]
+  /** 用户须知弹窗已确认（勾选了下次不再显示）；未勾选/未确认则首次启动仍弹 */
+  noticeDismissed?: boolean
 }
 
 export interface VideoFilter {
@@ -223,7 +225,8 @@ export const DEFAULT_SETTINGS: Settings = {
   updateSource: 'gitee',
   autoUpdateFrequency: 'off',
   pendingUpdate: null,
-  ignoredUnlistedPaths: []
+  ignoredUnlistedPaths: [],
+  noticeDismissed: false
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javdb > javbus > 截帧 > 占位 */
