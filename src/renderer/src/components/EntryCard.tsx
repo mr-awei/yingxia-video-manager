@@ -53,14 +53,19 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const cardRef = useRef<HTMLDivElement>(null)
   const isMissing = entry.kind === 'missing'
   const v0 = entry.video
-  // 真实封面优先于 ffmpeg 截帧：
-  // ① 抓详情缓存的本地海报（javdbDetail.cover）→ ② 非截帧来源的 posterPath → ③ ffmpeg 截帧 posterPath
+  // 封面优先级：手动设的封面（预览帧设为封面, manual）> javdbDetail.cover（本地真实海报）>
+  // 非截帧来源的 posterPath > ffmpeg 截帧 posterPath > 新截帧兜底
+  const manualPoster = v0?.posterSource === 'manual' && v0?.posterPath ? v0.posterPath : null
   const detailCover = v0?.javdbDetail?.cover && !/^https?:\/\//.test(v0.javdbDetail.cover) ? v0.javdbDetail.cover : null
   const realPoster =
-    v0?.posterPath && v0.posterSource && v0.posterSource !== 'ffmpeg' && v0.posterSource !== 'placeholder'
+    v0?.posterPath &&
+    v0.posterSource &&
+    v0.posterSource !== 'ffmpeg' &&
+    v0.posterSource !== 'placeholder' &&
+    v0.posterSource !== 'manual'
       ? v0.posterPath
       : null
-  const poster = detailCover ?? realPoster ?? v0?.posterPath ?? null
+  const poster = manualPoster ?? detailCover ?? realPoster ?? v0?.posterPath ?? null
   const originalSrc = poster ? posterUrl(poster) : null
   const hasValidSrc = originalSrc && !imgError ? originalSrc : null
   const { fallbackPoster } = useFrameFallback(entry.video, hasValidSrc)
@@ -68,7 +73,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const showPoster = !!src
   // 「截帧」标识：仅当实际展示的是视频画面一帧（新截帧兜底，或 posterPath 为 ffmpeg 截帧且无真实封面）
   const isFrameFallback = src
-    ? src === fallbackPoster || (!detailCover && !realPoster && v0?.posterSource === 'ffmpeg')
+    ? src === fallbackPoster || (!manualPoster && !detailCover && !realPoster && v0?.posterSource === 'ffmpeg')
     : false
   const score = entry.score ?? entry.video?.rating
   const v = hoverVideo(entry)

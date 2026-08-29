@@ -269,20 +269,25 @@ export default memo(ListViewInner)
 /** 列表缩略图：无真实封面时懒加载 ffmpeg 截帧兜底，右上角「帧」标识；完整显示封面（object-contain） */
 function ListThumb({ video, code, isMissing }: { video?: Video | null; code: string; isMissing: boolean }) {
   const [imgError, setImgError] = useState(false)
-  // 真实封面优先于 ffmpeg 截帧（与 EntryCard 一致）：javdbDetail.cover → 非截帧 posterPath → 截帧 posterPath
+  // 封面优先级：手动设的封面（manual）> javdbDetail.cover（真实海报）> 非截帧 posterPath > 截帧 posterPath
+  const manualPoster = video?.posterSource === 'manual' && video?.posterPath ? video.posterPath : null
   const detailCover =
     video?.javdbDetail?.cover && !/^https?:\/\//.test(video.javdbDetail.cover) ? video.javdbDetail.cover : null
   const realPoster =
-    video?.posterPath && video.posterSource && video.posterSource !== 'ffmpeg' && video.posterSource !== 'placeholder'
+    video?.posterPath &&
+    video.posterSource &&
+    video.posterSource !== 'ffmpeg' &&
+    video.posterSource !== 'placeholder' &&
+    video.posterSource !== 'manual'
       ? video.posterPath
       : null
-  const poster = detailCover ?? realPoster ?? video?.posterPath ?? null
+  const poster = manualPoster ?? detailCover ?? realPoster ?? video?.posterPath ?? null
   const original = poster ? posterUrl(poster) : null
   const hasValidSrc = original && !imgError ? original : null
   const { fallbackPoster } = useFrameFallback(video ?? undefined, hasValidSrc)
   const src = hasValidSrc ?? fallbackPoster
   const isFrameFallback = src
-    ? src === fallbackPoster || (!detailCover && !realPoster && video?.posterSource === 'ffmpeg')
+    ? src === fallbackPoster || (!manualPoster && !detailCover && !realPoster && video?.posterSource === 'ffmpeg')
     : false
   return (
     <div className="w-11 h-16 shrink-0 rounded-md overflow-hidden bg-ink-900 ring-1 ring-white/10 relative">

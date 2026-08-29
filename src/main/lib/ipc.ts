@@ -1474,10 +1474,11 @@ export function registerIpc(): void {
     const coverPath = path.join(postersCacheDir(), `${id}.jpg`)
     await fs.copyFile(previewPath, coverPath)
     await frameLog(`[videoSetPreviewAsCover] id=${id} poster=${path.basename(previewPath)}`)
-    const updated = await repo.updateVideo(id, { posterSource: 'ffmpeg', posterPath: coverPath })
+    // posterSource='manual'：手动选择的封面，优先级高于自动抓取的真实封面（详情页/列表立即生效并持久）
+    const updated = await repo.updateVideo(id, { posterSource: 'manual', posterPath: coverPath })
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.isDestroyed()) {
-        w.webContents.send(IPC.javdbFetched, { videoId: id, posterPath: coverPath, posterSource: 'ffmpeg' })
+        w.webContents.send(IPC.javdbFetched, { videoId: id, posterPath: coverPath, posterSource: 'manual' })
       }
     }
     return updated

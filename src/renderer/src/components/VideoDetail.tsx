@@ -78,8 +78,10 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     setDetail(video.javdbDetail)
     setCoverImgError(false)
   }, [video.id])
-  /** 手动「补齐信息」进行中 */
+  /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
+  /** 手动「重新截帧」进行中 */
+  const [framing, setFraming] = useState(false)
   /** 手动补齐：无视缓存强制重抓当前作品（多源 JavDB → JavBus）。
    * 无论数据是否与旧缓存一致，只要拿到新数据就弹窗提示已更新 + 来源；失败弹窗说明原因。 */
   const forceFetch = useCallback(async () => {
@@ -110,8 +112,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   }, [localVideo.id, localVideo.domestic, fetching, onDetailFetched, onPosterFetched])
   /** ffmpeg 重新截帧（1 封面 + 预览帧），所有视频（含非国产片）都可用 */
   const handleGenerateFrames = useCallback(async () => {
-    if (fetching) return
-    setFetching(true)
+    if (framing) return
+    setFraming(true)
     setError(null)
     try {
       const updated = await api.videoGeneratePreviews(localVideo.id)
@@ -125,9 +127,9 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     } catch (e) {
       toast({ text: `截帧失败：${(e as Error)?.message ?? e}`, tone: 'err' })
     } finally {
-      setFetching(false)
+      setFraming(false)
     }
-  }, [localVideo.id, onPosterFetched, fetching])
+  }, [localVideo.id, onPosterFetched, framing])
   /** 截帧预览帧 → 设为封面：复制为 <id>.jpg 并更新本地副本 + 通知父组件 */
   const handleSetPreviewAsCover = useCallback(
     async (previewPath: string) => {
@@ -292,9 +294,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const d = detail
   // 只用本地路径：远程 URL 经 posterUrl 透传会让 Chromium 直连 javdb CDN 触发 403 反盗链
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
-  const originalCover = (d?.cover && isLocal(d.cover)
-    ? d.cover
-    : localVideo.posterPath) || null
+  // 手动设为封面（posterSource='manual'，预览帧设为封面）优先级最高，立即生效且持久；
+  // 否则用详情真实封面（d.cover），再退回 posterPath
+  const originalCover =
+    (localVideo.posterSource === 'manual' && localVideo.posterPath
+      ? localVideo.posterPath
+      : d?.cover && isLocal(d.cover)
+        ? d.cover
+        : localVideo.posterPath) || null
   // 无封面/封面加载失败 → ffmpeg 截帧兜底（懒加载）
   const { fallbackPoster, isFrameFallback } = useFrameFallback(
     localVideo,
@@ -334,7 +341,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <button
                 className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={forceFetch}
-                disabled={fetching}
+                disabled={fetching || framing}
                 title="强制重新获取当前作品的全部信息（JavDB → JavBus 多源）"
               >
                 <Icon name="refresh" size={13} className={fetching ? 'animate-spin' : ''} />
@@ -344,11 +351,11 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             <button
               className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleGenerateFrames}
-              disabled={fetching}
+              disabled={fetching || framing}
               title="用 ffmpeg 重新截帧（1 封面 + 预览帧），可再挑一帧设为封面"
             >
-              <Icon name="film" size={13} className={fetching ? 'animate-spin' : ''} />
-              {fetching ? '截帧中…' : '重新截帧'}
+              <Icon name="film" size={13} className={framing ? 'animate-spin' : ''} />
+              {framing ? '截帧中…' : '重新截帧'}
             </button>
             {onToggleFlag ? (
               <>
