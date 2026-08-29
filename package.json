@@ -1,5 +1,6 @@
 {
   "name": "local-video-manager",
+  "productName": "影匣",
   "version": "2.1.0",
   "description": "本地视频管理工具 - 海报墙式影库，悬停看简介，点击看详情，本地播放器打开",
   "type": "module",
@@ -11,9 +12,11 @@
     "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "preview": "electron-vite preview",
-    "pack": "node scripts/clean.mjs && npm run build && electron-builder"
+    "pack": "npm run build && node scripts/pack.mjs"
   },
   "dependencies": {
+    "app-builder-bin": "^4.2.0",
+    "builder-util": "^24.13.1",
     "socks": "^2.8.9",
     "undici": "^6.28.0",
     "xlsx": "^0.18.5"

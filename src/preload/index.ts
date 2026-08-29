@@ -48,6 +48,8 @@ const api: AppApi = {
   appQuit: () => ipcRenderer.invoke(IPC.appQuit),
   updateCheck: () => ipcRenderer.invoke(IPC.updateCheck),
   videoGeneratePreviews: (id) => ipcRenderer.invoke(IPC.videoGeneratePreviews, id),
+  videoFrameFallback: (id) => ipcRenderer.invoke(IPC.videoFrameFallback, id),
+  videoSetPreviewAsCover: (id, previewPath) => ipcRenderer.invoke(IPC.videoSetPreviewAsCover, id, previewPath),
   onScanProgress: (cb) => {
     ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
   },
@@ -55,7 +57,7 @@ const api: AppApi = {
     ipcRenderer.on(IPC.mdChanged, (_e, libraryId) => cb(libraryId))
   },
   specGet: () => ipcRenderer.invoke(IPC.specGet),
-  libraryExportCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryExportCodes, libraryId),
+  libraryExportCodes: (libraryId, format) => ipcRenderer.invoke(IPC.libraryExportCodes, libraryId, format),
   libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId)
 }
 

@@ -3,6 +3,9 @@ productName: 影匣
 copyright: Copyright © 2026
 
 directories:
+  # 输出目录：实际由 scripts/pack.mjs 通过 --config.directories.output 覆盖，
+  # 指向工作区外的 ~/yingxia-release/<时间戳>（WorkBuddy 监视不到 → app.asar 永不被占用）。
+  # 此处仅为直接运行 electron-builder 时的兜底。
   output: release
   buildResources: build
 
@@ -20,10 +23,12 @@ extraResources:
   - from: build/icon.png
     to: icon.png
   # ffmpeg 套件（视频封面截帧 + 技术信息探测）：直接捆绑进安装包，新电脑零下载即可用
-  - from: build/ffmpeg
-    to: ffmpeg
-    filter:
-      - "**/*"
+  # 注：本地打包时 build/ffmpeg 不存在，暂时注释掉；运行时自适应复用系统已装的 ffmpeg。
+  # 如需恢复捆绑，把 ffmpeg 解压到 build/ffmpeg（bin/ffmpeg.exe + bin/ffprobe.exe）后取消注释。
+  # - from: build/ffmpeg
+  #   to: ffmpeg
+  #   filter:
+  #     - "**/*"
 
 # electron 二进制与打包工具走国内镜像（避免下载失败/超时）
 electronDownload:

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, titleSecondary, formatDuration } from '../lib/util'
+import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import HoverDetail from './HoverDetail'
 import Icon from './Icon'
@@ -51,8 +52,30 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const closeTimer = useRef<number | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const isMissing = entry.kind === 'missing'
-  const src = entry.video ? posterUrl(entry.video.posterPath) : null
-  const showPoster = !!src && !imgError
+  const v0 = entry.video
+  // 封面优先级：手动设的封面（预览帧设为封面, manual）> javdbDetail.cover（本地真实海报）>
+  // 非截帧来源的 posterPath > ffmpeg 截帧 posterPath > 新截帧兜底
+  const manualPoster = v0?.posterSource === 'manual' && v0?.posterPath ? v0.posterPath : null
+  const detailCover = v0?.javdbDetail?.cover && !/^https?:\/\//.test(v0.javdbDetail.cover) ? v0.javdbDetail.cover : null
+  const realPoster =
+    v0?.posterPath &&
+    v0.posterSource &&
+    v0.posterSource !== 'ffmpeg' &&
+    v0.posterSource !== 'placeholder' &&
+    v0.posterSource !== 'manual'
+      ? v0.posterPath
+      : null
+  const poster = manualPoster ?? detailCover ?? realPoster ?? v0?.posterPath ?? null
+  // coverVersion：手动设为封面后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
+  const originalSrc = poster ? posterUrl(poster, v0?.coverVersion) : null
+  const hasValidSrc = originalSrc && !imgError ? originalSrc : null
+  const { fallbackPoster } = useFrameFallback(entry.video, hasValidSrc)
+  const src = hasValidSrc ?? fallbackPoster
+  const showPoster = !!src
+  // 「截帧」标识：仅当实际展示的是视频画面一帧（新截帧兜底，或 posterPath 为 ffmpeg 截帧且无真实封面）
+  const isFrameFallback = src
+    ? src === fallbackPoster || (!manualPoster && !detailCover && !realPoster && v0?.posterSource === 'ffmpeg')
+    : false
   const score = entry.score ?? entry.video?.rating
   const v = hoverVideo(entry)
   const isFavorite = !!entry.video?.favorite
@@ -109,6 +132,11 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
     }
   }, [preview])
 
+  // 组件实例复用（虚拟墙无 key）：切换视频时重置封面加载失败状态，避免旧错误状态影响新封面显示
+  useEffect(() => {
+    setImgError(false)
+  }, [entry.video?.id])
+
   // 卸载清理 timer
   useEffect(() => {
     return () => {
@@ -153,14 +181,25 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
     >
       <div className={`${aspect === 'landscape' ? 'aspect-video' : 'aspect-[2/3]'} w-full relative`}>
         {showPoster ? (
-          <img
-            src={src}
-            alt={entry.title}
-            loading="lazy"
-            decoding="async"
-            onError={() => setImgError(true)}
-            className="h-full w-full object-cover poster-img transition-transform duration-500 group-hover:scale-[1.04]"
-          />
+          <div className="absolute inset-0 poster-img">
+            {/* 模糊铺底：横竖屏封面都能完整显示，四周裁切处由模糊同图填充，不露黑边 */}
+            <img
+              src={src}
+              alt=""
+              aria-hidden
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 h-full w-full scale-110 object-cover blur-lg opacity-40"
+            />
+            <img
+              src={src}
+              alt={entry.title}
+              loading="lazy"
+              decoding="async"
+              onError={() => setImgError(true)}
+              className="absolute inset-0 h-full w-full object-contain poster-img transition-transform duration-500 group-hover:scale-[1.04]"
+            />
+          </div>
         ) : (
           <PlaceholderCard code={entry.code} />
         )}
@@ -178,10 +217,33 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               <Icon name="heart" size={10} className="fill-current" />
             </span>
           ) : null}
-          {/* 数据来源角标：JavBus / JavLibrary / FFmpeg 截帧；无角标 = JavDB（默认） */}
-          {entry.video?.javdbDetail?.source === 'javbus' ? (
+          {/* 截帧封面标识：无真实封面，展示的是视频里截取的一帧画面 */}
+          {isFrameFallback && !isMissing ? (
+            <span
+              className="px-1.5 py-0.5 rounded-md bg-fuchsia-500/90 backdrop-blur-sm text-[10px] text-white font-bold flex items-center gap-1"
+              title="无真实封面，截取视频画面一帧作为封面"
+            >
+              <Icon name="film" size={10} className="fill-current" />
+              截帧
+            </span>
+          ) : null}
+          {/* 数据来源角标：Javapi / JavBus / Javinfo / JavLibrary 显示（无角标 = JavDB） */}
+          {entry.video?.javdbDetail?.source === 'javapi' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-sky-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
+              Javapi
+            </span>
+          ) : entry.video?.javdbDetail?.source === 'javbus' ? (
+
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
               JavBus
+            </span>
+          ) : entry.video?.javdbDetail?.source === 'javinfo' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
+              Javinfo
+            </span>
+          ) : entry.video?.javdbDetail?.source === 'javlibrary' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/90 backdrop-blur-sm text-[10px] text-white font-bold">
+              JavLibrary
             </span>
           ) : null}
           {entry.video?.javdbDetail?.source === 'javlibrary' ? (
@@ -284,9 +346,9 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
             >
               {/* 上：封面 + 标题 + 元信息 + 标签（标签填满右信息区空白） */}
               <div className="flex gap-3 p-3 pb-2.5">
-                <div className={`${aspect === 'landscape' ? 'w-32 h-[72px]' : 'w-24 h-36'} shrink-0 rounded-lg overflow-hidden bg-ink-700 ring-1 ring-white/5`}>
+                <div className={`${aspect === 'landscape' ? 'w-32 h-[72px]' : 'w-24 h-36'} shrink-0 rounded-lg overflow-hidden bg-ink-700 ring-1 ring-white/5 relative`}>
                   {src ? (
-                    <img src={src} alt={entry.title} className="h-full w-full object-cover poster-img" />
+                    <img src={src} alt={entry.title} className="h-full w-full object-contain poster-img" />
                   ) : (
                     <div
                       className="h-full w-full flex items-center justify-center text-xl font-bold text-white/70"
@@ -295,6 +357,12 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                       <PlaceholderCard code={entry.code} compact />
                     </div>
                   )}
+                  {isFrameFallback ? (
+                    <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold flex items-center gap-0.5">
+                      <Icon name="film" size={8} className="fill-current" />
+                      帧
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="min-w-0 flex-1">

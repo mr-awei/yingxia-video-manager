@@ -1,6 +1,7 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatDuration, formatSize } from '../lib/util'
+import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import Icon from './Icon'
 
@@ -34,7 +35,6 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
         {entries.map((e) => {
           const v = e.video
           const isMissing = e.kind === 'missing'
-          const src = v?.posterPath ? posterUrl(v.posterPath) : null
           const score = e.score ?? v?.rating
           const fav = !!v?.favorite
 
@@ -58,7 +58,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
               >
                 {/* 文件名 */}
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-white/90 truncate">
+                  <div className="text-[13px] text-white/90 truncate" title={v?.fileName ? v.fileName.replace(/\.[^./\\]+$/, '') : e.title || e.code}>
                     {v?.fileName ? v.fileName.replace(/\.[^./\\]+$/, '') : e.title || e.code}
                   </div>
                   <div className="text-white/35 text-[11px] truncate mt-0.5">
@@ -99,8 +99,8 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                   ) : null}
                 </div>
 
-                {/* 标签：中等宽度即显示，点击可一键筛选 */}
-                <div className="flex-1 min-w-0 hidden md:flex items-center gap-1">
+                {/* 标签：仅占所需宽度（不再 flex-1 抢占空间），文件名获得全部剩余宽度避免截断 */}
+                <div className="max-w-[260px] min-w-0 overflow-hidden hidden md:flex items-center gap-1">
                   {tags.slice(0, 4).map((t) => (
                     <button
                       key={t}
@@ -177,25 +177,8 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
               }`}
               onClick={() => (isMissing ? onOpenMissing(e) : onOpen(e))}
             >
-              {/* 缩略图 */}
-              <div className="w-11 h-16 shrink-0 rounded-md overflow-hidden bg-ink-900 ring-1 ring-white/10 relative">
-                {src ? (
-                  <img src={src} alt={e.title} className="h-full w-full object-cover poster-img" loading="lazy" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-base font-bold text-white/80" style={{ background: placeholderGradient(e.code) }}>
-                    {titleInitial(e.code)}
-                  </div>
-                )}
-                {isMissing ? (
-                  <span className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-[9px] font-bold">缺失</span>
-                ) : null}
-                {v?.posterSource === 'ffmpeg' ? (
-                  <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-violet-500/90 backdrop-blur-sm text-[9px] text-white font-medium flex items-center gap-0.5">
-                    <Icon name="film" size={8} />
-                    截帧
-                  </span>
-                ) : null}
-              </div>
+              {/* 缩略图：无封面时 ffmpeg 截帧兜底，右上角「帧」标识 */}
+              <ListThumb video={v} code={e.code} isMissing={isMissing} />
 
               {/* 主信息 */}
               <div className="min-w-0 flex-1">
@@ -282,3 +265,49 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
 }
 
 export default memo(ListViewInner)
+
+/** 列表缩略图：无真实封面时懒加载 ffmpeg 截帧兜底，右上角「帧」标识；完整显示封面（object-contain） */
+function ListThumb({ video, code, isMissing }: { video?: Video | null; code: string; isMissing: boolean }) {
+  const [imgError, setImgError] = useState(false)
+  // 封面优先级：手动设的封面（manual）> javdbDetail.cover（真实海报）> 非截帧 posterPath > 截帧 posterPath
+  const manualPoster = video?.posterSource === 'manual' && video?.posterPath ? video.posterPath : null
+  const detailCover =
+    video?.javdbDetail?.cover && !/^https?:\/\//.test(video.javdbDetail.cover) ? video.javdbDetail.cover : null
+  const realPoster =
+    video?.posterPath &&
+    video.posterSource &&
+    video.posterSource !== 'ffmpeg' &&
+    video.posterSource !== 'placeholder' &&
+    video.posterSource !== 'manual'
+      ? video.posterPath
+      : null
+  const poster = manualPoster ?? detailCover ?? realPoster ?? video?.posterPath ?? null
+  // coverVersion：手动设为封面后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
+  const original = poster ? posterUrl(poster, video?.coverVersion) : null
+  const hasValidSrc = original && !imgError ? original : null
+  const { fallbackPoster } = useFrameFallback(video ?? undefined, hasValidSrc)
+  const src = hasValidSrc ?? fallbackPoster
+  const isFrameFallback = src
+    ? src === fallbackPoster || (!manualPoster && !detailCover && !realPoster && video?.posterSource === 'ffmpeg')
+    : false
+  return (
+    <div className="w-11 h-16 shrink-0 rounded-md overflow-hidden bg-ink-900 ring-1 ring-white/10 relative">
+      {src ? (
+        <>
+          <img src={src} alt="" aria-hidden loading="lazy" className="absolute inset-0 h-full w-full scale-110 object-cover blur-md opacity-40" />
+          <img src={src} alt="" loading="lazy" className="relative h-full w-full object-contain poster-img" onError={() => setImgError(true)} />
+          {isFrameFallback ? (
+            <span className="absolute bottom-0.5 right-0.5 px-1 py-px rounded bg-black/70 text-white/90 text-[8px] font-bold leading-none">帧</span>
+          ) : null}
+        </>
+      ) : (
+        <div className="h-full w-full flex items-center justify-center text-base font-bold text-white/80" style={{ background: placeholderGradient(code) }}>
+          {titleInitial(code)}
+        </div>
+      )}
+      {isMissing ? (
+        <span className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-[9px] font-bold">缺失</span>
+      ) : null}
+    </div>
+  )
+}

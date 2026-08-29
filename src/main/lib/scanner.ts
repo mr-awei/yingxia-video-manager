@@ -44,12 +44,9 @@ export async function* walk(dir: string, minSizeBytes = 0): AsyncGenerator<strin
       if (VIDEO_EXTS.has(ext)) {
         // 大小过滤：跳过小于 minSizeBytes 的文件（过滤短视频/广告样片；0 = 不过滤）
         if (minSizeBytes > 0) {
-          try {
-            const st = await fs.stat(full)
-            if (st.size < minSizeBytes) continue
-          } catch {
-            continue
-          }
+          // stat 失败时保守保留（不跳过，避免网络盘/权限异常时误过滤）
+          const st = await fs.stat(full).catch(() => null)
+          if (st && st.size < minSizeBytes) continue
         }
         yield full
       }
@@ -67,6 +64,8 @@ export async function scanLibrary(
   settings: Settings,
   onProgress?: (p: ScanProgress) => void
 ): Promise<Video[]> {
+  // 扫描最小文件大小过滤：0 = 不限；小于阈值的视频（短视频/广告等）不进媒体库。
+  // 只影响本次扫描**新建**的条目；已入库的视频不受影响（避免误删既有数据）。
   const minSizeBytes = Math.max(0, Math.floor(settings.scanMinSizeMB ?? 0)) * 1024 * 1024
   const allFiles: string[] = []
   for await (const f of walk(library.folderPath, minSizeBytes)) allFiles.push(f)

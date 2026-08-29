@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
+import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import Icon from './Icon'
 import { toast } from './Toast'
@@ -11,8 +12,9 @@ interface Props {
   onPlay: (v: Video) => void
   /** 抓取成功回调（用于回写 App 展示数据，下次直接命中本地缓存） */
   onDetailFetched?: (videoId: string, detail: JavdbDetail) => void
-  /** 截帧/封面更新回调（用于回写 App 列表态，立即刷新封面） */
-  onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[]) => void
+  /** 截帧/封面更新回调（用于回写 App 列表态，立即刷新封面）。
+   *  previewPaths 为空表示不修改原有预览帧；posterSource 默认 'ffmpeg' */
+  onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[], posterSource?: string) => void
   /** ffprobe 技术参数读取成功回调（回写持久化） */
   onTechInfoFetched?: (videoId: string, tech: Video['techInfo']) => void
   /** 点击演员/片商/系列 → 请求按该维度筛选并回到首页 */
@@ -70,12 +72,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const [detail, setDetail] = useState<Video['javdbDetail']>(video.javdbDetail)
   /** 本地 video 副本：截帧/封面更新后立即反映，不必等父组件重新拉取 */
   const [localVideo, setLocalVideo] = useState<Video>(video)
+  /** 封面加载失败（路径失效）时标记，触发截帧兜底 */
+  const [coverImgError, setCoverImgError] = useState(false)
+  /** 封面缓存失效版本号：手动设封面/重新截帧后 +1，让封面 img 的 lm:// URL 带 ?v= 强制立即刷新；
+   *  初始值取自 App 的 coverVersion，重开详情页时与列表端版本一致，避免退回旧缓存 */
+  const [posterVersion, setPosterVersion] = useState(video.coverVersion ?? 0)
   useEffect(() => {
     setLocalVideo(video)
     setDetail(video.javdbDetail)
+    setCoverImgError(false)
+    setPosterVersion(video.coverVersion ?? 0)
   }, [video.id])
-  /** 手动「补齐信息」进行中 */
+  /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
+  /** 手动「重新截帧」进行中 */
+  const [framing, setFraming] = useState(false)
   /** 手动补齐：无视缓存强制重抓当前作品（多源 JavDB → JavBus）。
    * 无论数据是否与旧缓存一致，只要拿到新数据就弹窗提示已更新 + 来源；失败弹窗说明原因。 */
   const forceFetch = useCallback(async () => {
@@ -85,21 +96,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     try {
       if (localVideo.domestic) {
         // 国产片：不抓 JavDB/JavBus，仅用 ffmpeg 重新截帧（封面 + 预览）
-        const updated = await api.videoGeneratePreviews(localVideo.id)
-        if (updated?.posterPath) {
-          setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath, posterSource: updated.posterSource ?? 'ffmpeg', previewPaths: updated.previewPaths }))
-          onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths)
-          toast({ text: '已用 ffmpeg 重新截帧（封面 + 预览）', tone: 'ok' })
-        } else {
-          toast({ text: '截帧失败：未检测到 ffmpeg 或无视频流', tone: 'err' })
-        }
+        await handleGenerateFrames()
         return
       }
       const res = await api.videoFetchJavdbDetail(video.id)
       if (res?.ok && res.detail) {
         setDetail(res.detail)
         onDetailFetched?.(video.id, res.detail)
-        const src = res.source === 'javbus' ? 'JavBus' : 'JavDB'
+        const src = res.source === 'javbus' ? 'JavBus' : res.source === 'javinfo' ? 'Javinfo' : res.source === 'javapi' ? 'Javapi' : 'JavDB'
         toast({ text: `信息已更新（来源：${src}）`, tone: 'ok' })
       } else {
         const reason = res && !res.ok ? res.error : '未知原因'
@@ -111,6 +115,47 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       setFetching(false)
     }
   }, [localVideo.id, localVideo.domestic, fetching, onDetailFetched, onPosterFetched])
+  /** ffmpeg 重新截帧（1 封面 + 预览帧），所有视频（含非国产片）都可用 */
+  const handleGenerateFrames = useCallback(async () => {
+    if (framing) return
+    setFraming(true)
+    setError(null)
+    try {
+      const updated = await api.videoGeneratePreviews(localVideo.id)
+      if (updated?.posterPath) {
+        setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath, posterSource: updated.posterSource ?? 'ffmpeg', previewPaths: updated.previewPaths }))
+        setPosterVersion((v) => v + 1)
+        onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths, updated.posterSource ?? 'ffmpeg')
+        toast({ text: '已用 ffmpeg 重新截帧（封面 + 预览）', tone: 'ok' })
+      } else {
+        toast({ text: '截帧失败：未检测到 ffmpeg 或无视频流', tone: 'err' })
+      }
+    } catch (e) {
+      toast({ text: `截帧失败：${(e as Error)?.message ?? e}`, tone: 'err' })
+    } finally {
+      setFraming(false)
+    }
+  }, [localVideo.id, onPosterFetched, framing])
+  /** 截帧预览帧 → 设为封面：复制为 <id>.jpg 并更新本地副本 + 通知父组件 */
+  const handleSetPreviewAsCover = useCallback(
+    async (previewPath: string) => {
+      try {
+        const updated = await api.videoSetPreviewAsCover(localVideo.id, previewPath)
+        if (updated?.posterPath) {
+          setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath!, posterSource: updated.posterSource ?? 'manual' }))
+          setPosterVersion((v) => v + 1)
+          // 透传 previewPaths：避免父组件把已有截帧预览清空；posterSource 也透传（manual），不再硬编码 ffmpeg
+          onPosterFetched?.(localVideo.id, updated.posterPath, localVideo.previewPaths, updated.posterSource ?? 'manual')
+          toast({ text: '已将该预览帧设为封面', tone: 'ok' })
+        } else {
+          toast({ text: '设置失败：预览帧无效', tone: 'err' })
+        }
+      } catch (e) {
+        toast({ text: `设置失败：${(e as Error)?.message ?? e}`, tone: 'err' })
+      }
+    },
+    [localVideo.id, onPosterFetched]
+  )
   /** ffprobe 技术参数：本地持有，避免依赖父组件回写延迟；首次打开无则自动探测 */
   const [tech, setTech] = useState<Video['techInfo']>(video.techInfo)
   // 若无技术参数，自动用 ffprobe 读取（一次），成功则本地展示 + 回写父组件持久化
@@ -257,9 +302,20 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const d = detail
   // 只用本地路径：远程 URL 经 posterUrl 透传会让 Chromium 直连 javdb CDN 触发 403 反盗链
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
-  const coverSrc = (d?.cover && isLocal(d.cover)
-    ? d.cover
-    : localVideo.posterPath) || null
+  // 手动设为封面（posterSource='manual'，预览帧设为封面）优先级最高，立即生效且持久；
+  // 否则用详情真实封面（d.cover），再退回 posterPath
+  const originalCover =
+    (localVideo.posterSource === 'manual' && localVideo.posterPath
+      ? localVideo.posterPath
+      : d?.cover && isLocal(d.cover)
+        ? d.cover
+        : localVideo.posterPath) || null
+  // 无封面/封面加载失败 → ffmpeg 截帧兜底（懒加载）
+  const { fallbackPoster, isFrameFallback } = useFrameFallback(
+    localVideo,
+    originalCover && !coverImgError ? originalCover : null
+  )
+  const coverSrc = (originalCover && !coverImgError ? originalCover : null) ?? fallbackPoster
 
   return (
     <div
@@ -289,14 +345,25 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <Icon name="copy" size={13} />
               分享
             </button>
+            {!video.domestic ? (
+              <button
+                className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={forceFetch}
+                disabled={fetching || framing}
+                title="强制重新获取当前作品的全部信息（JavDB → JavBus 多源）"
+              >
+                <Icon name="refresh" size={13} className={fetching ? 'animate-spin' : ''} />
+                {fetching ? '处理中…' : '补齐信息'}
+              </button>
+            ) : null}
             <button
               className="no-drag h-8 px-3 rounded-lg flex items-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={forceFetch}
-              disabled={fetching}
-              title={video.domestic ? '用 ffmpeg 重新截帧（封面 + 预览）' : '强制重新获取当前作品的全部信息（JavDB → JavBus 多源）'}
+              onClick={handleGenerateFrames}
+              disabled={fetching || framing}
+              title="用 ffmpeg 重新截帧（1 封面 + 预览帧），可再挑一帧设为封面"
             >
-              <Icon name="refresh" size={13} className={fetching ? 'animate-spin' : ''} />
-              {fetching ? '截帧中…' : video.domestic ? '重新截帧' : '补齐信息'}
+              <Icon name="film" size={13} className={framing ? 'animate-spin' : ''} />
+              {framing ? '截帧中…' : '重新截帧'}
             </button>
             {onToggleFlag ? (
               <>
@@ -316,16 +383,23 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
 
         {/* 封面 + 元数据 */}
         <div className="grid grid-cols-[260px_1fr] gap-6 mb-6">
-          <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10">
+          <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative">
             {coverSrc ? (
-              <img
-                src={posterUrl(coverSrc) ?? ''}
-                alt={video.title}
-                className="h-full w-full object-cover poster-img"
-                onError={(e) => {
-                  console.error('[VideoDetail] poster load error', coverSrc, e.currentTarget.src)
-                }}
-              />
+              <div className="absolute inset-0">
+                {/* 模糊铺底：横竖屏封面完整显示，四周裁切处由模糊同图填充 */}
+                <img
+                  src={posterUrl(coverSrc, posterVersion) ?? ''}
+                  alt=""
+                  aria-hidden
+                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-40"
+                />
+                <img
+                  src={posterUrl(coverSrc, posterVersion) ?? ''}
+                  alt={video.title}
+                  className="relative h-full w-full object-contain poster-img"
+                  onError={() => setCoverImgError(true)}
+                />
+              </div>
             ) : (
               <div
                 className="h-full w-full flex items-center justify-center text-5xl font-bold text-white/80"
@@ -341,10 +415,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 ${
                   d.source === 'javbus'
                     ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'
-                    : 'bg-brand/15 text-brand ring-1 ring-brand/30'
+                    : d.source === 'javinfo'
+                      ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                      : d.source === 'javapi'
+                        ? 'bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30'
+                        : 'bg-brand/15 text-brand ring-1 ring-brand/30'
                 }`}
               >
-                数据来源 {d.source === 'javbus' ? 'JavBus' : 'JavDB'}
+                数据来源 {d.source === 'javbus' ? 'JavBus' : d.source === 'javinfo' ? 'Javinfo' : d.source === 'javapi' ? 'Javapi' : 'JavDB'}
+              </span>
+            ) : null}
+            {/* 截帧封面标识：无真实封面，展示的是视频画面里截的一帧（d.cover 有真实封面时不显示） */}
+            {isFrameFallback && !(d?.cover && isLocal(d.cover)) ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 bg-fuchsia-500/15 text-fuchsia-400 ring-1 ring-fuchsia-500/30">
+                <Icon name="film" size={11} className="fill-current" />
+                截帧封面（视频画面一帧，非真实封面）
               </span>
             ) : null}
             {/* 国产片徽章：纯中文文件夹，不抓元数据，仅 ffmpeg 截帧 */}
@@ -607,20 +692,30 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               {localVideo.previewPaths.map((url, i) => (
                 <div
                   key={url}
-                  className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative"
-                  onMouseEnter={() => {
-                    cancelClose()
-                    scheduleOpen(url)
-                  }}
-                  onMouseLeave={clearOpenTimer}
+                  className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative group/preview"
+                  onClick={() => setZoomUrl(url)}
+                  title="点击放大预览"
                 >
                   <img
                     src={posterUrl(url) ?? ''}
                     alt={`preview-${i}`}
                     loading="lazy"
                     decoding="async"
-                    className="h-full w-full object-cover poster-img transition-transform duration-300 hover:scale-105"
+                    className="h-full w-full object-cover poster-img"
                   />
+                  {/* 设为封面：hover 显示，点击把这帧复制为封面 */}
+                  <button
+                    type="button"
+                    className="absolute bottom-1.5 right-1.5 opacity-0 group-hover/preview:opacity-100 transition-opacity px-2 py-1 rounded-md bg-white/95 text-slate-900 hover:bg-brand hover:text-white text-[11px] font-medium flex items-center gap-1 no-drag shadow-md shadow-black/25"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleSetPreviewAsCover(url)
+                    }}
+                    title="用这一帧作为封面"
+                  >
+                    <Icon name="film" size={10} className="fill-current" />
+                    设为封面
+                  </button>
                 </div>
               ))}
             </div>

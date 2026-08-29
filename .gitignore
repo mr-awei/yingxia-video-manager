@@ -23,3 +23,11 @@ build/ffmpeg/
 # 系统 / 日志
 .DS_Store
 *.log
+release-javinfo/
+node_modules/
+dist/
+*.log
+out/
+release/
+dist-*/
+electron.vite.config.*.mjs

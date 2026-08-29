@@ -1,6 +1,6 @@
 // 跨主进程/渲染进程的共享类型定义（纯接口，无 Node/DOM 依赖）
 
-export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'javlibrary' | 'ffmpeg' | 'placeholder'
+export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'javlibrary' | 'javapi' | 'javinfo' | 'ffmpeg' | 'placeholder'
 export type SortKey = 'title' | 'year' | 'added' | 'lastPlayed' | 'random' | 'score'
 /** 浏览页视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */
 export type ViewMode = 'grid-portrait' | 'grid-landscape' | 'list-filename'
@@ -40,6 +40,9 @@ export interface Video {
   posterSource?: ImageSource
   /** FFmpeg 截帧生成的封面路径（与 posterPath 独立保存，供「数据源图/FFmpeg 截图」自由切换） */
   posterPathFfmpeg?: string
+  /** 封面缓存失效版本号（仅渲染进程内存使用，不落盘）：posterPath 文件被覆盖但路径不变时自增，
+   *  列表/详情页用它给 lm:// URL 加 ?v=N，强制立即刷新封面而不依赖重开/切库 */
+  coverVersion?: number
   durationSec?: number
   fileSize?: number
   /** ffprobe 读取的视频技术参数（编码/分辨率/码率等） */
@@ -82,8 +85,8 @@ export interface JavdbDetail {
   samples: string[]
   /** 解析器版本标记：v2 = zip 配对解析器（2026-08-26 修复男演员混入）。旧数据无此字段。 */
   parseVer?: number
-  /** 数据来源：javdb / javbus / javlibrary（旧数据无此字段，默认视为 javdb） */
-  source?: 'javdb' | 'javbus' | 'javlibrary'
+  /** 数据来源：javdb / javbus / javlibrary / javapi / javinfo（旧数据无此字段，默认视为 javdb） */
+  source?: 'javdb' | 'javbus' | 'javlibrary' | 'javapi' | 'javinfo'
   fetchedAt: number
 }
 
@@ -119,8 +122,14 @@ export interface Settings {
   posterDensity: 'large' | 'standard' | 'compact'
   /** 可选：javdb.com 登录 Cookie（某些网络/登录态下搜索需带 Cookie） */
   javdbCookie: string
-  /** 数据源：auto 自动降级（JavDB→JavBus→JavLibrary）/ javdb 只用 JavDB / javbus 只用 JavBus / javlibrary 只用 JavLibrary（调试用） */
-  dataSource: 'auto' | 'javdb' | 'javbus' | 'javlibrary'
+  /** 数据源：auto 自动降级（Javapi→Javinfo→JavDB→JavBus→JavLibrary）/ javapi 只用本地 Javapi / javinfo 只用 Javinfo / javdb 只用 JavDB / javbus 只用 JavBus / javlibrary 只用 JavLibrary（调试用） */
+  dataSource: 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+  /** 本地自托管 javapi 服务地址（如 http://127.0.0.1:8080），留空则跳过该源 */
+  javapiUrl: string
+  /** 本地自托管 javapi 的 API key（启动时 AUTH_API_KEYS 指定的值） */
+  javapiKey: string
+  /** javinfo.dev 聚合 API key（app.javinfo.dev 注册领取免费额度，按量计费） */
+  javinfoKey: string
   /** 代理模式（取代旧版单一 javdbProxy 字符串） */
   proxyMode: ProxyMode
   /** 代理主机（IP 或域名），system 模式可留空 */
@@ -151,6 +160,7 @@ export interface Settings {
   privacyDefaultOn: boolean
   /** 扫描富集并发数（1-8：ffprobe 探测 / 截帧等） */
   scanConcurrency: number
+  /** 扫描最小文件大小（MB）；0 = 不限。小于该值的视频不进入媒体库（过滤短视频/广告） */
   /** 隐私锁密码哈希（SHA-256 salt+password）；为空表示未上锁 */
   lockHash?: string
   /** 隐私锁随机盐（十六进制），与 lockHash 配套 */
@@ -206,6 +216,9 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'cinema',
   posterDensity: 'standard',
   javdbCookie: '',
+  javinfoKey: '',
+  javapiUrl: 'http://127.0.0.1:8080',
+  javapiKey: '',
   proxyMode: 'none',
   proxyHost: '',
   proxyPort: '',
@@ -229,10 +242,12 @@ export const DEFAULT_SETTINGS: Settings = {
   noticeDismissed: false
 }
 
-/** 默认海报来源优先级：手动 > 同名图 > javdb > javbus > 截帧 > 占位 */
+/** 默认海报来源优先级：手动 > 同名图 > javapi（本地免费）> javinfo > javdb > javbus > 截帧 > 占位 */
 export const DEFAULT_IMAGE_PRIORITY: ImageSource[] = [
   'manual',
   'sidecar',
+  'javapi',
+  'javinfo',
   'javdb',
   'javbus',
   'ffmpeg',

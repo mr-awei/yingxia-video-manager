@@ -17,6 +17,9 @@ interface Props {
   /** 随机推荐（每日刷新 + 手动刷新） */
   recommend: DisplayEntry[]
   onRefreshRecommend: () => void
+  /** 全库随机（跨媒体库，独立刷新） */
+  allRandom: DisplayEntry[]
+  onRefreshAllRandom: () => void
   /** 顶栏 Hero：独立洗牌队列驱动，整库参与、不重复、点一次换一次 */
   hero?: DisplayEntry
   onHeroNext: () => void
@@ -106,7 +109,7 @@ function Row({
   )
 }
 
-export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag, onDelete, viewMode, onSetView }: Props) {
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, allRandom, onRefreshAllRandom, hero, onHeroNext, onPickTag, onDelete, viewMode, onSetView }: Props) {
   // 首页只支持竖屏 / 横屏两种卡片，文件名模式自动回退到横屏
   const aspect = viewMode === 'grid-portrait' ? 'portrait' : 'landscape'
   // 合并刷新：点 Hero 刷新或随机推荐行刷新，两者一起换一批
@@ -152,7 +155,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
   }
 
   const heroV = hero?.video
-  const heroSrc = heroV?.posterPath ? posterUrl(heroV.posterPath) : null
+  const heroSrc = heroV?.posterPath ? posterUrl(heroV.posterPath, heroV.coverVersion) : null
 
   return (
     <div className="h-full overflow-auto thin-scroll p-5 animate-fadeIn" style={{ contain: 'layout' }}>
@@ -214,9 +217,12 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
 
           {/* 内容：左下，标题字号大，行高紧凑 */}
           <div className="relative h-full flex items-end p-7 gap-6">
-            <div className={`${aspect === 'landscape' ? 'w-52 h-36' : 'w-36 h-52'} shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02]`}>
+            <div className={`${aspect === 'landscape' ? 'w-52 h-36' : 'w-36 h-52'} shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02] relative`}>
               {heroSrc ? (
-                <img src={heroSrc} alt={heroV.title} className="h-full w-full object-cover poster-img" />
+                <>
+                  <img src={heroSrc} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-40" />
+                  <img src={heroSrc} alt={heroV.title} className="relative h-full w-full object-contain poster-img" />
+                </>
               ) : (
                 <div className="h-full w-full flex flex-col items-center justify-center gap-2" style={{ background: placeholderGradient(heroV.title) }}>
                 <div className="w-16 h-16 rounded-2xl bg-white/25 ring-1 ring-white/40 backdrop-blur-md flex items-center justify-center text-2xl font-bold text-white leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] shadow-xl shadow-black/40"
@@ -288,6 +294,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
+      <Row title="全库随机" icon="layers" entries={allRandom} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshAllRandom} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />

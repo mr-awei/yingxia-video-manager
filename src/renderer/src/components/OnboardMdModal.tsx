@@ -80,12 +80,12 @@ ${codes.join('，')}`
     window.setTimeout(() => setCopied((c) => (c === which ? null : c)), 1600)
   }
 
-  /** 导出番号清单为 txt（弹保存对话框，可选辅助） */
-  async function handleExportTxt() {
+  /** 导出番号清单（弹保存对话框；txt 兼容旧版，xlsx 生成 Excel 工作簿） */
+  async function handleExport(format: 'txt' | 'xlsx') {
     if (!library) return
     setExporting(true)
     try {
-      const r = await api.libraryExportCodes(library.id)
+      const r = await api.libraryExportCodes(library.id, format)
       if (r.ok && r.path) setExportedPath(r.path)
     } finally {
       setExporting(false)
@@ -159,7 +159,7 @@ ${codes.join('，')}`
               <h3 className="text-white font-semibold text-sm">加载番号（自动）</h3>
             </div>
             <p className="text-white/55 text-[13px] leading-relaxed mb-3">
-              已自动扫描本库全部视频的「番号」（以中文逗号分隔）。可直接一键复制发给 AI，或另存为 txt 文件。
+              已自动扫描本库全部视频的「番号」（以中文逗号分隔）。可直接一键复制发给 AI，或导出为 txt / Excel 文件。
             </p>
 
             {loadingCodes ? (
@@ -184,11 +184,19 @@ ${codes.join('，')}`
                   </button>
                   <button
                     className="text-[12px] text-white/50 hover:text-white inline-flex items-center gap-1 disabled:opacity-50"
-                    onClick={handleExportTxt}
+                    onClick={() => handleExport('txt')}
                     disabled={exporting}
                   >
                     <Icon name="download" size={13} />
-                    {exporting ? '导出中…' : '导出番号列表为 txt'}
+                    {exporting ? '导出中…' : '导出 txt'}
+                  </button>
+                  <button
+                    className="text-[12px] text-emerald-400/90 hover:text-emerald-400 inline-flex items-center gap-1 disabled:opacity-50"
+                    onClick={() => handleExport('xlsx')}
+                    disabled={exporting}
+                  >
+                    <Icon name="download" size={13} />
+                    {exporting ? '导出中…' : '导出 Excel'}
                   </button>
                   {exportedPath ? (
                     <span className="text-white/35 text-[11px] truncate flex-1 min-w-[120px]">

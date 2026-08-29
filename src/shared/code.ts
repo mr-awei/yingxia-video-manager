@@ -49,7 +49,11 @@ export function isDomestic(folderName: string, fileName?: string): boolean {
  *    - 带分隔符：SONE-560 / SONE_560 / HUNTA-468CD2
  *    - 无分隔符：KSJK013 / ALDN606（旧版正则只认带分隔符，导致这类搜不到）
  *  先剥离中文字符/全角/括号/广告前缀，避免「【中文字幕】KSJK013」污染搜索词。 */
-const CODE_RE = /\b([A-Z]{2,}(?:[-_]\d+|\d+)(?:[A-Z0-9]{0,6})?)\b/
+// 2026-08-29 合并朋友分支：正则兼容无分隔符番号（KSJK013 / MIDE123 等「字母+数字」连写）——
+// 优先匹配带分隔符（SONE-560），否则匹配「≥2 字母 + 含 ≥2 位数字」的连续串；
+// 纯英文单词（HELLO）、纯数字、中文标题均不命中 → 返回 ''（只提非中文番号）。
+const CODE_RE = /\b([A-Z]{2,}(?:[-_][A-Z0-9]+|[A-Z0-9]*\d{2,}))\b/
+
 export function extractCode(input: string): string {
   const t = (input ?? '').trim()
   if (!t) return ''

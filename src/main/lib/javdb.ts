@@ -18,20 +18,22 @@ const UA =
 
 // 代理出口统一由 src/main/lib/proxy.ts 提供（getDispatcher），支持 http/https/socks4/socks5/system。
 
-/** 番号提取：支持带分隔符（SONE-560 / IPZZ-586 / FSDSS-322）与无分隔符（KSJK013 / ALDN606）。
- *  先剥离中文/全角/广告前缀（【中文字幕】KSJK013 → KSJK-013），再提取第一个番号 token。 */
-const CODE_RE = /\b[A-Z]{2,}(?:[-_]\d+|\d+)(?:[A-Z0-9]{0,6})?\b/
+/** 番号提取：优先「2+ 大写字母 + 分隔符(-/_) + 字母数字」（SONE-560 / IPZZ-586 / FSDSS-322），
+ *  兼容无分隔符连写（KSJK013 / MIDE123，「≥2 字母 + 含 ≥2 位数字」）。
+ *  先剥离中文/全角/广告前缀（【中文字幕】KSJK013 → KSJK-013），归一为「字母-数字」标准形态；
+ *  找不到返回 ''（只提非中文番号）——中文标题不再被整段当作搜索词发出。 */
+const CODE_RE = /\b[A-Z]{2,}(?:[-_][A-Z0-9]+|[A-Z0-9]*\d{2,})\b/
 
 /**
  * 从任意输入字符串（title / 文件名 / 整段描述）中提取第一个番号；
- * 找不到则返回原始输入大写。保证 javdb 搜索只带番号、不带描述。
+ * 找不到返回空串。保证 javdb 搜索只带番号、不带描述。
  */
 export function extractCode(input: string): string {
   const t = (input ?? '').trim()
   // 去掉中文/全角/括号等非 ASCII（避免「【中文字幕】KSJK013」污染搜索词）
   const ascii = t.replace(/[^\x21-\x7E]+/g, ' ')
   const m = ascii.toUpperCase().match(CODE_RE)
-  if (!m) return t.toUpperCase()
+  if (!m) return ''
   const norm = m[0].replace(/_/g, '-')
   // 归一为标准「字母-数字」形态：KSJK013 → KSJK-013；SONE-560CD2 → SONE-560
   const mm = norm.match(/^([A-Z]{2,})(?:-)?(\d+)/)

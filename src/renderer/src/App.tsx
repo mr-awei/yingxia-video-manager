@@ -156,13 +156,17 @@ export default function App() {
   /** 命令面板 ⌘K */
   /** 随机推荐：手动刷新 nonce（每日刷新由种子里的日期自动驱动） */
   const [recommendNonce, setRecommendNonce] = useState(0)
+  /** 全库随机（跨媒体库）：手动刷新 nonce */
+  const [allRandomNonce, setAllRandomNonce] = useState(0)
+  /** 所有媒体库的 reconcile 缓存（全库随机数据源；key = libraryId） */
+  const [allReconciles, setAllReconciles] = useState<Record<string, ReconcileResult>>({})
 
   // ---- Hero 独立洗牌队列：整库全部影片入队，点一次取下一个，走完一轮自动重新洗牌 ----
-  const [heroQueue, setHeroQueue] = useState<DisplayEntry[]>([])
+  // 队列只存 video.id 列表（ref）；渲染时按最新 reconcile 实时映射 → 收藏/详情等 reconcile 更新不重建队列、顺序稳定
+  const heroQueueRef = useRef<string[]>([])
+  const heroBuiltLibRef = useRef<string | null>(null)
   const [heroIdx, setHeroIdx] = useState(0)
-  const heroQueueRef = useRef<DisplayEntry[]>([])
   const heroIdxRef = useRef(0)
-  heroQueueRef.current = heroQueue
   heroIdxRef.current = heroIdx
 
   useEffect(() => {
@@ -222,6 +226,7 @@ export default function App() {
       .then((res) => {
         if (!alive) return
         setReconcile(res)
+        setAllReconciles((prev) => ({ ...prev, [libraryId]: res }))
         if (res.stats.missing > 0 || res.stats.unlisted > 0) setReconcileOpen(true)
       })
       .catch(() => {
@@ -296,9 +301,25 @@ export default function App() {
     autoRescanDone.current = true
     for (const l of libraries) {
       if (l.id === libraryId) continue
-      void api.libraryReconcile(l.id).catch(() => {})
+      void api
+        .libraryReconcile(l.id)
+        .then((res) => setAllReconciles((prev) => ({ ...prev, [l.id]: res })))
+        .catch(() => {})
     }
   }, [settings, libraries, libraryId])
+
+  // 首页全库随机：确保所有媒体库都有 reconcile 缓存（autoRescan 可能关闭，这里进入首页时补齐缺失库）
+  useEffect(() => {
+    if (view !== 'home') return
+    if (libraries.length === 0) return
+    for (const l of libraries) {
+      if (allReconciles[l.id]) continue
+      void api
+        .libraryReconcile(l.id)
+        .then((res) => setAllReconciles((prev) => ({ ...prev, [l.id]: res })))
+        .catch(() => {})
+    }
+  }, [view, libraries, allReconciles])
 
   // JavDB 批量抓取：每抓到一张实时刷新该卡片的封面
   useEffect(() => {
@@ -315,7 +336,9 @@ export default function App() {
                         video: {
                           ...e.video,
                           posterPath,
-                          posterSource: (posterSource ?? 'javdb') as ImageSource
+                          posterSource: (posterSource ?? 'javdb') as ImageSource,
+                          // 同上：文件内容可能已覆盖，自增版本强制列表端刷新
+                          coverVersion: (e.video.coverVersion ?? 0) + 1
                         }
                       }
                     : e
@@ -606,36 +629,76 @@ export default function App() {
     return { fav, recent, unrated, nocover, unlisted }
   }, [reconcile])
 
-  // 随机推荐：整库真随机洗牌（每次点击 nonce 变化即重新 Fisher-Yates 洗牌整页）。
-  // 改用 Math.random 而非确定性 hash 洗牌，保证「点一次必换一次、绝不原地不动」，
-  // 且整库所有影片都参与循环（无海报影片也会以占位符形式出现）。
+  // 随机推荐：整库真随机洗牌。洗牌顺序（video.id 列表）缓存到 ref，
+  // 只有 recommendNonce（点「换一批」）变化才重新洗牌；reconcile 更新（收藏/详情等）只实时映射最新数据、顺序不变。
+  const recommendOrderRef = useRef<{ nonce: number; ids: string[] }>({ nonce: -1, ids: [] })
   const recommend = useMemo<DisplayEntry[]>(() => {
     const list = (reconcile?.entries ?? []).filter((e) => e.video)
     if (list.length === 0) return []
-    return shuffleEntries(list).slice(0, 14)
+    const byId = new Map(list.map((e) => [e.video!.id, e]))
+    const order = recommendOrderRef.current
+    if (order.nonce !== recommendNonce || order.ids.length === 0) {
+      const q = shuffleEntries(list).slice(0, 14)
+      recommendOrderRef.current = { nonce: recommendNonce, ids: q.map((e) => e.video!.id) }
+    }
+    // 按缓存顺序映射最新数据：收藏/详情变化后卡片状态实时更新，但顺序（随机结果）保持不变
+    return recommendOrderRef.current.ids
+      .map((id) => byId.get(id))
+      .filter((e): e is DisplayEntry => !!e)
   }, [reconcile, recommendNonce])
 
-  // 库内容变化（扫描 / 切换库 / 补齐信息）→ 用整库全部影片重建 hero 洗牌队列（Fisher-Yates 乱序）
-  useEffect(() => {
-    const all = (reconcile?.entries ?? []).filter((e) => e.video)
-    if (all.length === 0) {
-      setHeroQueue([])
-      heroQueueRef.current = []
-      setHeroIdx(0)
-      return
+  // 全库随机（跨媒体库）：合并所有库的 reconcile 缓存，洗牌顺序缓存到 ref，
+  // 只有 allRandomNonce（点「换一批」）变化才重新洗牌；缓存更新只实时映射、顺序不变。
+  const allRandomOrderRef = useRef<{ nonce: number; ids: string[] }>({ nonce: -1, ids: [] })
+  const allRandom = useMemo<DisplayEntry[]>(() => {
+    // 仅一个媒体库时与「随机推荐」重叠，隐藏全库随机行
+    if (libraries.length <= 1) return []
+    const list: DisplayEntry[] = []
+    for (const res of Object.values(allReconciles)) {
+      for (const e of res.entries) {
+        // 当前库优先用最新 reconcile 数据（收藏/详情状态实时），其他库用缓存
+        if (e.video && e.video.libraryId === libraryId) {
+          const cur = (reconcile?.entries ?? []).find((c) => c.video?.id === e.video?.id)
+          if (cur) {
+            list.push(cur)
+            continue
+          }
+        }
+        if (e.video) list.push(e)
+      }
     }
-    const q = shuffleEntries(all)
-    setHeroQueue(q)
-    heroQueueRef.current = q
-    setHeroIdx(0)
-  }, [reconcile])
+    if (list.length === 0) return []
+    const byId = new Map(list.map((e) => [e.video!.id, e]))
+    const order = allRandomOrderRef.current
+    if (order.nonce !== allRandomNonce || order.ids.length === 0) {
+      const q = shuffleEntries(list).slice(0, 14)
+      allRandomOrderRef.current = { nonce: allRandomNonce, ids: q.map((e) => e.video!.id) }
+    }
+    return allRandomOrderRef.current.ids
+      .map((id) => byId.get(id))
+      .filter((e): e is DisplayEntry => !!e)
+  }, [allReconciles, reconcile, libraryId, allRandomNonce, libraries])
 
-  // Hero：从独立队列取当前项（整库参与、不重复、点一次换一次）；队列未就绪时回退到随机推荐首条 / 首个影片
-  const hero =
-    heroQueue[heroIdx] ??
-    recommend[0] ??
-    (reconcile?.entries ?? []).filter((e) => e.video)[0] ??
-    undefined
+  // 库内容变化（扫描 / 切换库 / 补齐信息）→ 用整库全部影片重建 hero 洗牌队列（Fisher-Yates 乱序）
+  // 仅当 reconcile 归属当前库（切库时旧库数据会先到达，等新库 reconcile 到位再重建）
+  useEffect(() => {
+    if (heroBuiltLibRef.current === libraryId) return
+    if (reconcile?.libraryId !== libraryId) return
+    const all = (reconcile?.entries ?? []).filter((e) => e.video)
+    if (all.length === 0) return
+    heroQueueRef.current = shuffleEntries(all).map((e) => e.video!.id)
+    heroBuiltLibRef.current = libraryId
+    setHeroIdx(0)
+  }, [reconcile, libraryId])
+
+  // Hero：从独立队列取当前项，渲染时用最新 reconcile 实时映射（收藏/详情变化不换片，顺序稳定）
+  const hero = useMemo<DisplayEntry | undefined>(() => {
+    const all = (reconcile?.entries ?? []).filter((e) => e.video)
+    if (all.length === 0) return undefined
+    const byId = new Map(all.map((e) => [e.video!.id, e]))
+    const id = heroQueueRef.current[heroIdx]
+    return (id ? byId.get(id) : undefined) ?? all[0] ?? undefined
+  }, [reconcile, heroIdx])
 
   // 点一次 → 取下一项；走到队尾自动重新洗牌（并避免与上一轮尾项重复）
   const onHeroNext = useCallback(() => {
@@ -649,10 +712,10 @@ export default function App() {
     const all = (reconcile?.entries ?? []).filter((e) => e.video)
     if (all.length <= 1) return
     const nq = shuffleEntries(all)
-    const lastCode = q[q.length - 1]?.code
-    if (nq[0]?.code === lastCode && nq.length > 1) nq.push(nq.shift()!)
-    setHeroQueue(nq)
-    heroQueueRef.current = nq
+    const lastId = q[q.length - 1]
+    const ids = nq.map((e) => e.video!.id)
+    if (ids[0] === lastId && ids.length > 1) ids.push(ids.shift()!)
+    heroQueueRef.current = ids
     setHeroIdx(0)
   }, [reconcile])
 
@@ -725,7 +788,7 @@ export default function App() {
           title: '检测到可能的同系列视频',
           ok: 0,
           failed: 0,
-          bySource: { javdb: 0, javbus: 0 },
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
           reasons: warns.slice(0, 8).map((c) => `${c}${warns.length > 8 ? '…' : ''}`),
           stopped: false,
           remaining: 0
@@ -764,6 +827,7 @@ export default function App() {
     try {
       const res = await api.libraryReconcile(id)
       setReconcile(res)
+      setAllReconciles((prev) => ({ ...prev, [id]: res }))
       if (res.stats.missing > 0 || res.stats.unlisted > 0) setReconcileOpen(true)
     } catch {
       /* 忽略 */
@@ -879,14 +943,25 @@ export default function App() {
   }, [])
 
   const handlePosterFetched = useCallback(
-    (videoId: string, posterPath: string, previewPaths?: string[]) => {
+    (videoId: string, posterPath: string, previewPaths?: string[], posterSource?: string) => {
       setReconcile((prev) =>
         prev
           ? {
               ...prev,
               entries: prev.entries.map((e) =>
                 e.video && e.video.id === videoId
-                  ? { ...e, video: { ...e.video, posterPath, posterSource: 'ffmpeg', previewPaths } }
+                  ? {
+                      ...e,
+                      video: {
+                        ...e.video,
+                        posterPath,
+                        posterSource: (posterSource ?? 'ffmpeg') as ImageSource,
+                        // 保留原预览帧：设为封面等回调若不传 previewPaths，不能把已有的截帧预览清掉
+                        previewPaths: previewPaths ?? e.video.previewPaths,
+                        // 自增版本号：posterPath 可能不变（如 <id>.jpg 被覆盖），列表端靠它让 lm:// URL 带 ?v= 强制刷新
+                        coverVersion: (e.video.coverVersion ?? 0) + 1
+                      }
+                    }
                   : e
               )
             }
@@ -984,7 +1059,7 @@ export default function App() {
     tone?: 'ok' | 'warn' | 'err'
     ok: number
     failed: number
-    bySource: { javdb: number; javbus: number }
+    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
     reasons: string[]
     stopped: boolean
     remaining: number
@@ -995,6 +1070,8 @@ export default function App() {
     const total = data.ok + data.failed
     const jd = data.bySource.javdb
     const jb = data.bySource.javbus
+    const ji = data.bySource.javinfo ?? 0
+    const jp = data.bySource.javapi ?? 0
     const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
     const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
     const detail = (
@@ -1004,7 +1081,7 @@ export default function App() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
               <span className="text-[10px] text-white/65 font-mono tabular-nums">
-                JavDB {jd} · JavBus {jb} · 失败 {data.failed}
+                Javapi {jp} · Javinfo {ji} · JavDB {jd} · JavBus {jb} · 失败 {data.failed}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex">
@@ -1055,7 +1132,7 @@ export default function App() {
         tone,
         ok: res.ok,
         failed: res.failed,
-        bySource: { javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
+        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
         reasons,
         stopped: res.stopped ?? false,
         remaining: res.remaining ?? 0
@@ -1067,7 +1144,7 @@ export default function App() {
         tone: 'err',
         ok: 0,
         failed: 0,
-        bySource: { javdb: 0, javbus: 0 },
+        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
         reasons: [`请求异常：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0
@@ -1142,9 +1219,23 @@ export default function App() {
               }
             : prev
         )
+        // 同步全库随机缓存（收藏状态在跨媒体库行也实时）
+        setAllReconciles((prev) => {
+          const cur = prev[libraryId]
+          if (!cur) return prev
+          return {
+            ...prev,
+            [libraryId]: {
+              ...cur,
+              entries: cur.entries.map((e) =>
+                e.video && e.video.id === id ? { ...e, video: updated } : e
+              )
+            }
+          }
+        })
       }
     },
-    [reconcile]
+    [reconcile, libraryId]
   )
 
   // ---------- 导航 ----------
@@ -1461,6 +1552,8 @@ export default function App() {
               onBrowse={(s) => onNav('browse', s)}
               recommend={recommend}
               onRefreshRecommend={() => setRecommendNonce((n) => n + 1)}
+              allRandom={allRandom}
+              onRefreshAllRandom={() => setAllRandomNonce((n) => n + 1)}
               hero={hero}
               onHeroNext={onHeroNext}
               onPickTag={handlePickTag}
