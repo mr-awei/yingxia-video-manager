@@ -237,9 +237,29 @@ export default function App() {
 
   // 扫描进度（主进程推送）
   useEffect(() => {
-    api.onScanProgress((p) =>
+    api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
-    )
+      // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
+      const err = (p as { introError?: { kind: string; message: string; triedPaths: string[] } }).introError
+      if (err) {
+        const titles: Record<string, string> = {
+          'not-configured': '媒体库根目录无片单 Excel',
+          'parse-failed': '片单 Excel 解析失败',
+          'auto-find-failed': '自动查找片单失败'
+        }
+        const title = titles[err.kind] ?? '片单加载失败'
+        // 用纯文本（多行）展示 message + triedPaths，让用户能直接看到是哪个路径坏了
+        const tried = err.triedPaths?.length
+          ? `\n\n已尝试：\n${err.triedPaths.map((t) => '· ' + t).join('\n')}`
+          : ''
+        toast({
+          title,
+          text: err.message + tried,
+          tone: 'warn',
+          duration: 0 // 不自动消失，用户看完手动关
+        })
+      }
+    })
   }, [])
 
   // 进度条卡死保险：done===total 时 2.5s 后自动清空（处理 runReconcile 收尾时不再推事件的边界情况）

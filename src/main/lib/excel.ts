@@ -2,6 +2,7 @@ import type { IntroDoc, IntroItem } from '../../shared/types'
 import { normalizeCode } from '../../shared/code'
 // SheetJS：读取 xlsx。xlsx 解析是主进程侧依赖（electron-builder 打进 app.asar）。
 import * as XLSX from 'xlsx'
+import { promises as fs, readFileSync } from 'node:fs'
 
 /**
  * 解析「收藏整理」Excel 片单（唯一片单权威来源）。
@@ -35,11 +36,17 @@ function toScore(v: unknown): number | undefined {
 /**
  * 解析 Excel 片单文件。
  * @returns IntroDoc；文件缺失/无有效数据时返回 null（由调用方回退 md）
+ *
+ * 2026-08-30 修复：v2.2.3 用的 `XLSX.readFile(filePath)` 在 Windows 中文路径下静默失败
+ * （mjs 版 v0.18.5 的 readFileSync 对非 ASCII 路径处理不当，会抛 "Cannot access file"）。
+ * 改成读 buffer 再喂 XLSX.read —— 经过实测 `E:\新建文件夹\收藏整理_2026.xlsx` 成功解析。
  */
 export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null> {
   let wb: XLSX.WorkBook
   try {
-    wb = XLSX.readFile(filePath)
+    // 先 readFile 拿 buffer，再喂给 XLSX.read —— 绕开 xlsx mjs readFileSync 中文路径 bug
+    const buf = await fs.readFile(filePath)
+    wb = XLSX.read(buf, { type: 'buffer' })
   } catch (e) {
     console.error(`[excel] 读取失败 ${filePath}:`, (e as Error)?.message || e)
     return null
@@ -164,7 +171,9 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
 /** 供 UI 提示的解析信息（调试/日志） */
 export function excelSheetNames(filePath: string): string[] {
   try {
-    const wb = XLSX.readFile(filePath)
+    // 同样用 buffer 读取，绕开 xlsx mjs readFileSync 中文路径 bug
+    const buf = readFileSync(filePath)
+    const wb = XLSX.read(buf, { type: 'buffer' })
     return wb.SheetNames
   } catch {
     return []

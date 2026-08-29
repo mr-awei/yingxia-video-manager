@@ -1,5 +1,36 @@
 # 更新日志（Changelog）
 
+## v2.2.4（2026-08-30）
+
+**核心修复（用户反馈："代码有问题导致我收录了说没收录 + 弹窗不能藏起问题 + 万一没 Excel 怎么办"）**
+
+### 1. P0：修 `parseIntroExcel` 中文路径读取（用户 84 部全部"未收录"根因）
+- v2.2.3 用的 `XLSX.readFile(filePath)` 在 Windows 中文路径下**静默失败**——SheetJS v0.18.5 mjs 的 `readFileSync` 对非 ASCII 路径处理不当，会抛 `Cannot access file E:/新建文件夹/收藏整理_2026.xlsx`。
+- 改成 `await fs.readFile(filePath)` + `XLSX.read(buf, { type: 'buffer' })`，绕开 xlsx mjs readFileSync 中文路径 bug。
+- 实测：`E:\新建文件夹\收藏整理_2026.xlsx`（35KB / 74 部片单）buffer 解析成功 → keyMatches 76/76 命中。
+- 同步修 `excelSheetNames`（同样用 buffer）。
+
+### 2. P0：恢复「片单加载失败」弹窗（不再静默吞错）
+- v2.2.3 的 `autoFindIntroExcel` 在 `parseIntroExcel` 返回 null 时**静默 catch**，让用户以为"片单不存在"——实际可能是片单存在但读取失败。
+- v2.2.4 改造：
+  - `readIntroDoc` 返回 `IntroLookupResult`（含 `doc` 和 `error`），区分 `not-configured` / `parse-failed` / `auto-find-failed`。
+  - `autoFindIntroExcel` 同样返回结构化结果，记录 triedPaths。
+  - `reconcileLibrary` 通过 onProgress 顺路把 `introError` 推到 renderer，弹 Toast 提示（title / message / 已尝试的路径列表），**不自动消失**让用户看到。
+- 用户友好优先：找不到 → 告诉用户"在哪找不到"；找到了但解析失败 → 告诉用户"哪个文件坏了"。
+
+### 3. P1：无 Excel 片单兜底：自动后台抓元数据
+- 用户原话："万一哪天用户真没有excel怎么办"。
+- reconcile `else` 分支：遍历时收集 `needFetchAfter`（没 javdbDetail 且非国产片）。
+- 7 天内抓过且失败的跳过（`video.lastMetaFetchAt` 字段），抓到的写回 `video.javdbDetail` 让 UI 立刻按 genres 自动归类。
+- 用 `settings.scanConcurrency` 控制并发（默认 2），与 scanLibrary 行为一致。
+- `fetchDetailSmart` 抽到独立模块 `javdb-smart.ts`（避免 ipc ↔ reconcile 循环依赖）。
+
+### 4. 技术债
+- `MovieDetailResult` / `SmartFetchState` / `fetchDetailSmart` 从 ipc.ts 抽出到 `javdb-smart.ts`，让 reconcile.ts 也能调（无循环依赖）。
+- Video 类型加 `lastMetaFetchAt?: number`（兜底抓取 7 天去重用）。
+
+---
+
 ## v2.2.3（2026-08-30）
 
 **核心修复（用户反馈"问题依旧存在 + 两个截帧角标 + 标签两份 + 控制台大量报错"）**

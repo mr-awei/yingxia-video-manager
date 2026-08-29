@@ -57,6 +57,9 @@ export interface Video {
   previewPaths?: string[]
   /** 国产片：纯中文文件夹且无番号，不自动抓取元数据，仅用 ffmpeg 截帧 */
   domestic?: boolean
+  /** v2.2.4：reconcile else 分支自动抓 javdb 元数据时的最后尝试时间戳；
+   *  7 天内抓过且失败的跳过，避免反复浪费 JavDB 配额。缺失字段 = 从未抓过 */
+  lastMetaFetchAt?: number
 }
 
 /** javdb 视频详情页抓取的元数据 */

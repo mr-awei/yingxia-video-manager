@@ -14,53 +14,109 @@ import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type Video
 import { resolvePoster, generatePreviewSet } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic, normalizeCode } from '../../shared/code'
+import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
 
-async function readIntroDoc(library: Library): Promise<IntroDoc | null> {
+/**
+ * 片单加载结果（含错误信息）。reconcile.ts 把 error 透传给 ipc.ts，
+ * 由 ipc.ts 通过 webContents.send 推到 renderer 弹 Toast——
+ * "不能藏起问题"是 v2.2.4 的硬性要求：找不到 Excel / 解析失败都要明确告知用户。
+ */
+export type IntroLookupResult =
+  | { doc: IntroDoc; error?: undefined }
+  | {
+      doc: null
+      error: { kind: 'not-configured' | 'parse-failed' | 'auto-find-failed'; message: string; triedPaths: string[] }
+    }
+
+async function readIntroDoc(library: Library): Promise<IntroLookupResult> {
   // 仅使用 Excel 片单（已全面切换到 Excel 格式）
   if (library.introExcelPath) {
-    return await parseIntroExcel(library.introExcelPath)
+    // 用户显式配了：直接解析
+    const doc = await parseIntroExcel(library.introExcelPath)
+    if (doc) return { doc }
+    return {
+      doc: null,
+      error: {
+        kind: 'parse-failed',
+        message: `配置的片单 Excel 解析失败或为空：${library.introExcelPath}`,
+        triedPaths: [library.introExcelPath]
+      }
+    }
   }
   // v2.2.3 修复：library 没显式配 introExcelPath 时，**自动扫描库根目录找 .xlsx**——用户友好，
   // 避免「明明片单就在库里却因没配字段而全部归未收录」的体验。匹配规则：
   // 1) 优先匹配根目录下含「品番」列的工作簿（顺序按文件名排序）
   // 2) 只在库根（不递归子目录）扫，避免误匹配到无关 xlsx
-  return await autoFindIntroExcel(library.folderPath)
+  const result = await autoFindIntroExcel(library.folderPath)
+  if (result.doc) return { doc: result.doc }
+  return {
+    doc: null,
+    error: {
+      kind: result.kind ?? 'not-configured',
+      message: result.message,
+      triedPaths: result.triedPaths
+    }
+  }
 }
 
-/** 在媒体库根目录自动查找 Excel 片单：
- *  - 只扫一层（不递归）
- *  - 优先选择含「品番」列的工作簿
- *  - 多个匹配时按文件名排序取第一个
- *  - 没找到返回 null（让 reconcile 走 else 自动归类分支）
- *  - 找到时打 console.log 方便用户排查
+/**
+ * 在媒体库根目录自动查找 Excel 片单。
+ * v2.2.4 改造：返回结构化结果（含失败原因），不再静默吞错——
+ * 「藏起问题」是这次回归测试中用户明确反对的设计。
  */
-async function autoFindIntroExcel(folderPath: string): Promise<IntroDoc | null> {
+async function autoFindIntroExcel(
+  folderPath: string
+): Promise<
+  | { doc: IntroDoc; kind?: undefined; message?: undefined; triedPaths?: undefined }
+  | { doc: null; kind: 'not-configured' | 'parse-failed'; message: string; triedPaths: string[] }
+> {
   let entries: import('node:fs').Dirent[]
   try {
     entries = await fs.readdir(folderPath, { withFileTypes: true })
-  } catch {
-    return null
+  } catch (e) {
+    return {
+      doc: null,
+      kind: 'not-configured',
+      message: `无法读取媒体库根目录：${folderPath}（${(e as Error)?.message || e}）`,
+      triedPaths: [folderPath]
+    }
   }
   const xlsxFiles = entries
     .filter((e) => e.isFile())
     .map((e) => e.name)
     .filter((n) => /\.(xlsx|xls)$/i.test(n))
     .sort((a, b) => a.localeCompare(b, 'zh'))
-  if (xlsxFiles.length === 0) return null
+  if (xlsxFiles.length === 0) {
+    return {
+      doc: null,
+      kind: 'not-configured',
+      message: `媒体库根目录未找到任何 .xlsx/.xls 片单文件：${folderPath}`,
+      triedPaths: [folderPath]
+    }
+  }
   // 依次尝试每个 xlsx，找到第一个「品番列可解析」的
+  const triedPaths: string[] = []
   for (const name of xlsxFiles) {
     const fullPath = path.join(folderPath, name)
+    triedPaths.push(fullPath)
     try {
       const doc = await parseIntroExcel(fullPath)
       if (doc && doc.categories.length > 0) {
-        console.log(`[reconcile] 自动使用库根 Excel 片单: ${fullPath}（${doc.categories.reduce((n, c) => n + c.items.length, 0)} 部）`)
-        return doc
+        const total = doc.categories.reduce((n, c) => n + c.items.length, 0)
+        console.log(`[reconcile] 自动使用库根 Excel 片单: ${fullPath}（${total} 部 / ${doc.categories.length} 类）`)
+        return { doc }
       }
-    } catch {
-      // 单文件解析失败不影响整体
+    } catch (e) {
+      // 单文件解析失败不影响整体，但记录到消息里——让用户能直接看到是哪个文件坏了
+      console.warn(`[reconcile] 解析 ${fullPath} 失败:`, (e as Error)?.message || e)
     }
   }
-  return null
+  return {
+    doc: null,
+    kind: 'parse-failed',
+    message: `媒体库根目录下 ${xlsxFiles.length} 个 Excel 文件均无法解析出有效片单（已尝试：${triedPaths.map((p) => path.basename(p)).join('、')}）`,
+    triedPaths
+  }
 }
 
 interface FileEntry {
@@ -202,9 +258,22 @@ async function ensureVideo(
 export async function reconcileLibrary(
   library: Library,
   settings: Settings,
-  onProgress?: (p: { libraryId: string; total: number; done: number; current?: string }) => void
+  onProgress?: (p: { libraryId: string; total: number; done: number; current?: string; introError?: { kind: string; message: string; triedPaths: string[] } }) => void
 ): Promise<ReconcileResult> {
-  const doc = await readIntroDoc(library)
+  const introLookup = await readIntroDoc(library)
+  const doc = introLookup.doc
+
+  // 片单加载失败：v2.2.4 硬性要求——必须告知用户，不能再静默吞错。
+  // 通过 onProgress 顺带把 introError 推给 renderer（与 scanProgress 同管道，
+  // renderer 看到 kind/introError 字段就弹 Toast）。
+  if (introLookup.error) {
+    onProgress?.({
+      libraryId: library.id,
+      total: 0,
+      done: 0,
+      introError: introLookup.error
+    })
+  }
 
   // 与 scanLibrary 一致：按设置过滤小文件（短视频/广告样片）
   const minSizeBytes = Math.max(0, Math.floor(settings.scanMinSizeMB ?? 0)) * 1024 * 1024
@@ -297,6 +366,10 @@ export async function reconcileLibrary(
     // 无元数据的仍归「未分类」（order 0）。
     // 2026-08-30 修复：原 path.basename(f) 含扩展名（SONE-280.mp4），传给 ensureVideo 后写入 video.title，
     // EntryCard 显示就是 `SONE-280.mp4`。先剥扩展名。
+    // v2.2.4 兜底：用户明确担忧"万一哪天用户真没有excel怎么办"——
+    //   对所有没 javdbDetail 的视频，后台异步按 settings.customSourceOrder 抓一次，
+    //   7 天内抓过且失败的跳过（避免反复消耗 JavDB 配额），抓到的写回 video 让 UI 立刻变好看。
+    const needFetchAfter: Video[] = []
     for (const f of allFiles) {
       // v2.2.3 P0 修复：原 else 分支没用 used 记账，导致下方 L297「未收录」循环重复 push 同 filePath →
       // 同 code 两条 entry → HomeView `key={e.code}` duplicate key 警告（用户截图「未收录 84 + 未分类 79」）。
@@ -311,6 +384,9 @@ export async function reconcileLibrary(
         { code: titleNoExt, description: '', tags: [] },
         changes
       )
+      if (!video.domestic && !video.javdbDetail) {
+        needFetchAfter.push(video)
+      }
       const d = video.javdbDetail
       const hasGenres = !!d && !!d.genres && d.genres.length > 0
       const srcName = d?.source === 'javbus' ? 'JavBus' : d?.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'
@@ -326,6 +402,51 @@ export async function reconcileLibrary(
         video
       })
       matched++
+    }
+
+    // 后台异步抓元数据（fire-and-forget，不阻塞 reconcile 返回）
+    if (needFetchAfter.length > 0) {
+      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
+      const now = Date.now()
+      const toFetch = needFetchAfter.filter((v) => {
+        const last = v.lastMetaFetchAt
+        return !last || now - last > SEVEN_DAYS
+      })
+      const skipped = needFetchAfter.length - toFetch.length
+      if (skipped > 0) {
+        console.log(`[reconcile] 无片单兜底抓取：跳过 ${skipped} 部（7 天内已抓过且失败）`)
+      }
+      if (toFetch.length > 0) {
+        const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
+        const state = createSmartFetchState()
+        let idx = 0
+        console.log(`[reconcile] 无片单兜底抓取：启动 ${toFetch.length} 部 / 并发 ${conc}`)
+        void (async () => {
+          const worker = async () => {
+            while (idx < toFetch.length) {
+              const v = toFetch[idx++]
+              if (state.stop) return
+              try {
+                const r = await fetchDetailSmart(v.title, settings, state)
+                if (r.detail) {
+                  await updateVideo(v.id, {
+                    javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },
+                    lastMetaFetchAt: now
+                  })
+                  console.log(`[reconcile] 兜底抓取成功 ${v.title}（${r.source}）`)
+                } else {
+                  // 抓不到（不是网络错误也可能是源里没这部）也要标 lastMetaFetchAt，避免下次立即重试
+                  await updateVideo(v.id, { lastMetaFetchAt: now })
+                }
+              } catch (e) {
+                console.warn(`[reconcile] 兜底抓取异常 ${v.title}:`, (e as Error)?.message || e)
+                await updateVideo(v.id, { lastMetaFetchAt: now }).catch(() => {})
+              }
+            }
+          }
+          await Promise.all(Array.from({ length: Math.min(conc, toFetch.length) }, () => worker()))
+        })()
+      }
     }
   }
 
