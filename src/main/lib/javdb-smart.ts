@@ -179,6 +179,9 @@ export async function fetchDetailSmart(
     settings.customSourceOrder && settings.customSourceOrder.length === 5
       ? settings.customSourceOrder
       : DEFAULT_SOURCE_ORDER
+  // v2.2.9：每次抓取开头打印当前生效的顺序 + 番号，让用户能在 userData/logs/main.log 里
+  // 直接看到"这次跑的是 javdb→javbus→..."而不是猜（之前的 [search]/[javbus] log 滚动太快看不清顺序）
+  console.log(`[smart] ${code} order=${order.join('→')}`)
   // v2.2.6 修复：完整记录每个源的结果（"跳过" / "无结果" / "抓到了" / "网络失败"），
   // 让用户清楚看到 5 个源都跑了哪些、为什么最终失败。errors 数组合并到最终的 return error。
   const srcResults: Array<{ src: string; status: 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }> = []
@@ -192,6 +195,7 @@ export async function fetchDetailSmart(
           if (javapi) {
             state.javapiFails = 0
             srcResults.push({ src, status: 'hit' })
+            console.log(`[smart] ${code} HIT ${src}`)  // v2.2.9：每次命中打 log
             return { detail: javapi, source: 'javapi' }
           }
           srcResults.push({ src, status: 'no-result' })
@@ -216,6 +220,7 @@ export async function fetchDetailSmart(
           if (javinfo) {
             state.javinfoFails = 0
             srcResults.push({ src, status: 'hit' })
+            console.log(`[smart] ${code} HIT ${src}`)
             return { detail: javinfo, source: 'javinfo' }
           }
           srcResults.push({ src, status: 'no-result' })
@@ -240,6 +245,7 @@ export async function fetchDetailSmart(
           if (javdb) {
             state.javdbFails = 0
             srcResults.push({ src, status: 'hit' })
+            console.log(`[smart] ${code} HIT ${src}`)
             return { detail: javdb, source: 'javdb' }
           }
           srcResults.push({ src, status: 'no-result' })
@@ -263,6 +269,7 @@ export async function fetchDetailSmart(
         if (javbus) {
           state.javbusFails = 0
           srcResults.push({ src, status: 'hit' })
+          console.log(`[smart] ${code} HIT ${src}`)
           return { detail: javbus, source: 'javbus' }
         }
         srcResults.push({ src, status: 'no-result' })
@@ -282,6 +289,7 @@ export async function fetchDetailSmart(
         const javlibrary = await fetchJavLibraryDetail(code, settings)
         if (javlibrary) {
           srcResults.push({ src, status: 'hit' })
+          console.log(`[smart] ${code} HIT ${src}`)
           return { detail: javlibrary, source: 'javlibrary' }
         }
         srcResults.push({ src, status: 'no-result' })
@@ -303,5 +311,7 @@ export async function fetchDetailSmart(
       return r.detail ? `${r.src}=${label}(${r.detail})` : `${r.src}=${label}`
     })
     .join('；')
+  // v2.2.9：所有源都失败时打印完整 summary（让 userData/logs/main.log 里有清晰抓取记录）
+  console.log(`[smart] ${code} FAILED: ${summary}`)
   return { detail: null, error: summary || '未知原因' }
 }

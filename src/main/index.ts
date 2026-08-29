@@ -42,6 +42,34 @@ function attachRendererLog(win: BrowserWindow): void {
   win.webContents.on('did-fail-load', (_e, code, desc, url) => write('did-fail-load', `${code} ${desc} ${url}`))
 }
 
+/**
+ * v2.2.9：把 main 进程自己的 console.log/error 落盘到 logs/main.log，
+ * 否则 dev 模式 main 输出在 terminal 滚动看不到、生产包彻底看不到。
+ * 跟 renderer console 不同（renderer console 由 attachRendererLog 接 webContents.console-message），
+ * main 自己的 console.log 要劫持 console 对象写入。
+ */
+let mainLogFile = ''
+function attachMainLog(): void {
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs')
+    mkdirSync(logDir, { recursive: true })
+    mainLogFile = path.join(logDir, 'main.log')
+    appendFileSync(mainLogFile, `\n===== main process session ${new Date().toISOString()} =====\n`)
+  } catch {
+    return
+  }
+  const writeAndCall = (orig: (...a: unknown[]) => void) => (...args: unknown[]) => {
+    const line = args
+      .map((a) => (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a) } catch { return String(a) } })()))
+      .join(' ')
+    try { appendFileSync(mainLogFile, `[${new Date().toISOString()}] ${line}\n`) } catch { /* 忽略 */ }
+    orig.apply(console, args)
+  }
+  console.log = writeAndCall(console.log) as typeof console.log
+  console.error = writeAndCall(console.error) as typeof console.error
+  console.warn = writeAndCall(console.warn) as typeof console.warn
+}
+
 
 /** 注册 lm:// 协议，让渲染进程安全加载本地图片（海报/侧车图/手动图） */
 function registerLocalMedia(): void {
@@ -171,6 +199,10 @@ app.on('window-all-closed', () => {
 app.whenReady().then(() => {
   // 隐藏默认应用菜单（打包后才出现 File/Edit/View/Window/Help，应用内无窗口菜单，无需保留）
   Menu.setApplicationMenu(null)
+
+  // v2.2.9：把 main 进程自己的 console.log/error/warn 落盘到 logs/main.log
+  // （之前只在 terminal / 用户看不到；现在 dev 模式 + 生产包都能在 userData/logs/main.log 看完整抓取过程）
+  attachMainLog()
 
   registerLocalMedia()
   registerIpc()

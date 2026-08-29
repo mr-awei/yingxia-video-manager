@@ -1,5 +1,33 @@
 # 更新日志（Changelog）
 
+## v2.2.9（2026-08-30）
+
+**main 进程 console.log 落盘 + fetchDetailSmart 总览 log（用户问"怎么还是走的 javbus"）**
+
+用户反馈日志里"全是 javbus 输出，没 javdb"，担心 customSourceOrder 没生效。实测是 v2.2.8 main 进程 console.log 走 terminal 滚动看不到 + fetchDetailSmart 没打印总览。但 `[search] AVOP-127 getText FAILED`（javdb.ts 自己的 log）证明 javdb 真的先跑了、失败后降级 javbus。
+
+### 1. P0：main 进程 console.log 落盘
+- 之前只 `attachRendererLog` 接 renderer 进程的 console-message，**main 进程自己 console.log 不落盘**。
+- v2.2.9 加 `attachMainLog`：劫持 console.log / console.error / console.warn，写到 `userData/logs/main.log` 同时保持原 terminal 输出。
+- 之前排查"为什么走 javbus"只能看 dev 模式 terminal 滚动；现在直接打开 `C:\Users\19218\AppData\Roaming\影匣\logs\main.log` 就能看完整抓取过程。
+
+### 2. P0：fetchDetailSmart 加总览 log
+- 开头：`[smart] ${code} order=${order.join('→')}` —— 每次抓取直接打印**当前生效的顺序**（"javdb→javbus→javapi→javinfo→javlibrary"），用户能立刻确认顺序对不对
+- 命中：`[smart] ${code} HIT ${src}` —— 哪个源 hit 一目了然
+- 全失败：`[smart] ${code} FAILED: ${完整 5 源结果}` —— 一行看完全部 5 源结果
+
+### 3. 用户的 customSourceOrder 现状
+- data.json 里 `settings.customSourceOrder: ["javdb","javbus","javapi","javinfo","javlibrary"]`（v2.2.6 拖拽保存的）
+- fetchDetailSmart v2.2.4 起就完全按 customSourceOrder 降级，**v2.2.8 实际抓取行为是按这个顺序**的
+- javdb 抓不到（`[search] getText FAILED`）→ 降级 javbus 命中 → 这是**预期降级行为**而不是 bug
+
+### 用户装上 v2.2.9 后
+- dev 模式：Ctrl+C 关闭 `npm run dev` 再重启（main 进程才会加载新代码，HMR 只更新 renderer）
+- 生产包：安装新 v2.2.9 后
+- 点「批量补齐」后 → 打开 `%APPDATA%\影匣\logs\main.log` → 能看到完整的 `[smart] ... order=...` + `[smart] ... HIT javbus` / `FAILED ...` 记录
+
+---
+
 ## v2.2.8（2026-08-30）
 
 **海报抓取也跟随自定义采集顺序（用户问："真实采集顺序是否也跟着自定义采集顺序改变了？"）**
