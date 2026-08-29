@@ -169,6 +169,8 @@ export interface AppApi {
   videoGeneratePreviews(id: string): Promise<Video | null>
   /** 无封面时截 1 帧视频画面作为封面（懒加载兜底），成功返回本地路径并回填视频记录，失败/无 ffmpeg 返回 null */
   videoFrameFallback(id: string): Promise<string | null>
+  /** 把某张截帧预览帧设为封面：复制为 <id>.jpg 并更新记录（posterSource='ffmpeg'），成功返回更新后的视频 */
+  videoSetPreviewAsCover(id: string, previewPath: string): Promise<Video | null>
   /**
    * 分享：扫描视频所在文件夹的 .torrent 文件，转换为磁链，并把第一个磁链复制到剪贴板
    */

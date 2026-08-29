@@ -48,6 +48,7 @@ const api: AppApi = {
   updateCheck: () => ipcRenderer.invoke(IPC.updateCheck),
   videoGeneratePreviews: (id) => ipcRenderer.invoke(IPC.videoGeneratePreviews, id),
   videoFrameFallback: (id) => ipcRenderer.invoke(IPC.videoFrameFallback, id),
+  videoSetPreviewAsCover: (id, previewPath) => ipcRenderer.invoke(IPC.videoSetPreviewAsCover, id, previewPath),
   onScanProgress: (cb) => {
     ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
   },

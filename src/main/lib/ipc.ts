@@ -1462,4 +1462,24 @@ export function registerIpc(): void {
     await frameLog(`[videoFrameFallback] ok id=${id} source=${r.source} poster=${r.posterPath}`)
     return r.posterPath
   })
+
+  // ---------- 截帧预览帧 → 设为封面：把某张预览帧复制为 <id>.jpg 并更新记录 ----------
+  ipcMain.handle(IPC.videoSetPreviewAsCover, async (_e, id: string, previewPath: string) => {
+    const v = await repo.getVideo(id)
+    if (!v) throw new Error('视频不存在')
+    const settings = await repo.getSettings()
+    // 校验该预览帧是有效图片（防坏图/不存在）
+    if (!(await isCoverUsable(previewPath, settings))) return null
+    // 复制到标准封面文件 <id>.jpg（独立于预览图生命周期，预览图清理不影响封面）
+    const coverPath = path.join(postersCacheDir(), `${id}.jpg`)
+    await fs.copyFile(previewPath, coverPath)
+    await frameLog(`[videoSetPreviewAsCover] id=${id} poster=${path.basename(previewPath)}`)
+    const updated = await repo.updateVideo(id, { posterSource: 'ffmpeg', posterPath: coverPath })
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) {
+        w.webContents.send(IPC.javdbFetched, { videoId: id, posterPath: coverPath, posterSource: 'ffmpeg' })
+      }
+    }
+    return updated
+  })
 }
