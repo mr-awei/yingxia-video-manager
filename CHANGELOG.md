@@ -1,5 +1,31 @@
 # 更新日志（Changelog）
 
+## v2.2.5（2026-08-30）
+
+**控制台大量 ENOENT 报错修复（用户反馈"控制台大量报错"）**
+
+v2.2.4 升级时 installer 清掉了 posters 目录里的旧 .jpg（`<video.id>_preview_X.jpg` ffmpeg 截帧命名），但 data.json 里的 `video.previewPaths` 还指向这些不存在的文件。hover 视频 / 打开详情页时，渲染 15 张 preview 触发 15 次 `lm://` 协议 ENOENT，main 进程 console.warn 刷屏。
+
+实测：22 部 video / 共 330 个 dead preview 路径在控制台刷屏。
+
+### 1. P0：`lm` 协议 ENOENT 静默
+- `src/main/index.ts`：ENOENT 时 `console.debug`（生产不可见、dev 模式可见），其他错误仍 console.warn
+- 仍返回 404，让渲染端 `<img onError>` 走占位图
+- 刷屏瞬间消失
+
+### 2. P0：reconcile 自动清理 dead previewPaths
+- `src/main/lib/reconcile.ts` 新加 `cleanupDeadPreviewPaths()`，每次 reconcile 完成后扫一遍所有 video
+- `fs.existsSync` 检查，删掉不存在的条目
+- 全删完的 `previewPaths = undefined`（让 UI 走「无预览」分支，不再尝试加载）
+- 改动合并进 `changes` 数组，由末尾 `applyVideoChanges` 一次性落盘
+- 不刷屏、不弹窗：这是修复性的清理，不是用户该被打扰的事件
+
+### 3. v2.2.5 仍未做（留给 patch 2）
+- 不补 ffmpeg 重新截帧：hover 已有 javbus 抓的 cover 顶着用，preview 帧下次手动点"重新生成预览"时再生成
+- 让 v2.2.5 保持最小变更，降低风险
+
+---
+
 ## v2.2.4（2026-08-30）
 
 **核心修复（用户反馈："代码有问题导致我收录了说没收录 + 弹窗不能藏起问题 + 万一没 Excel 怎么办"）**

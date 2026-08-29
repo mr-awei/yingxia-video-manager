@@ -525,12 +525,55 @@ export async function reconcileLibrary(
   }
 
   onProgress?.({ libraryId: library.id, total: mdCount + allFiles.length, done: mdCount + allFiles.length })
+
+  // v2.2.5 修复：清理 dead previewPaths —— 上一次升级/installer 可能清掉了 posters 目录里的旧 .jpg，
+  // 但 data.json 里的 video.previewPaths 仍指向这些不存在的文件 → hover/详情页 lm:// ENOENT 刷屏。
+  // 这里扫一遍 fs.existsSync 删孤儿，并把改动合并进 changes 一次性落盘。
+  await cleanupDeadPreviewPaths(changes)
+
   return {
     libraryId: library.id,
     entries,
     unlisted,
     stats: { mdCount, matched, missing, unlisted: unlisted.length },
     generatedAt: Date.now()
+  }
+}
+
+/**
+ * v2.2.5：清理所有 video.previewPaths 里的死引用。
+ * - 任何 previewPath 文件不存在的，从 video.previewPaths 里删掉
+ * - 删空后 video.previewPaths = undefined（让 UI 走「无预览」分支）
+ * - 改动合并进 changes 数组，由 reconcileLibrary 末尾的 applyVideoChanges 一次性落盘
+ * - 不刷屏、不弹窗：这是修复性的清理操作，不是用户该被打扰的事件
+ */
+async function cleanupDeadPreviewPaths(changes: VideoChange[]): Promise<void> {
+  const videos = await listVideos({})
+  let cleaned = 0
+  for (const v of videos) {
+    if (!v.previewPaths || v.previewPaths.length === 0) continue
+    const alive = v.previewPaths.filter((p) => {
+      try {
+        return fs.existsSync(p)
+      } catch {
+        return false
+      }
+    })
+    if (alive.length === v.previewPaths.length) continue
+    cleaned++
+    // 合并：先查 changes 里是否已有该 video 的 update，有就改它
+    const existing = changes.find((c) => c.type === 'update' && c.video.id === v.id)
+    if (existing && existing.type === 'update') {
+      existing.video.previewPaths = alive.length > 0 ? alive : undefined
+    } else {
+      changes.push({
+        type: 'update',
+        video: { ...v, previewPaths: alive.length > 0 ? alive : undefined }
+      })
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`[reconcile] 清理 dead previewPaths：${cleaned} 部`)
   }
 }
 

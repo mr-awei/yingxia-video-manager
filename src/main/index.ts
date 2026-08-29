@@ -62,7 +62,15 @@ function registerLocalMedia(): void {
         headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
       })
     } catch (e) {
-      console.warn('[lm] 读取失败:', (e as Error).message)
+      // v2.2.5 修复：ENOENT 是高频场景（poster/预览帧常被清理、data.json 残留旧路径），
+      // 之前 console.warn 刷屏「控制台大量报错」。改成 console.debug（生产不可见、dev 模式可见），
+      // 仍然返回 404，让渲染端 img onError 走占位图占位。
+      const msg = (e as Error).message ?? String(e)
+      if (msg.startsWith('ENOENT')) {
+        console.debug('[lm] 文件不存在（已静默）:', msg)
+      } else {
+        console.warn('[lm] 读取失败:', msg)
+      }
       return new Response('not found', { status: 404 })
     }
   })
