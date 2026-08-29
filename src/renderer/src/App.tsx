@@ -133,6 +133,10 @@ export default function App() {
   // 隐私护盾：一键模糊所有预览图（防截图泄露成人内容），持久化到 localStorage
   const [privacy, setPrivacy] = useState<boolean>(() => localStorage.getItem('vm-privacy') === '1')
   const [progress, setProgress] = useState<{ total: number; done: number; current?: string } | null>(null)
+  // v2.2.10：实时抓取日志（"javdb 网络失败 → 降级 javbus" 这类过程，右下角浮层滚动展示）
+  const [fetchLogs, setFetchLogs] = useState<
+    Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
+  >([])
 
   // ---- 新增：导航 / 视图状态 ----
   /** 主导航：home 首页概览 / browse 浏览 */
@@ -239,6 +243,11 @@ export default function App() {
   useEffect(() => {
     api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
+      // v2.2.10：实时抓取事件 → 追加到右下角抓取日志浮层（保留最近 60 条）
+      const fe = (p as { fetchEvent?: { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string } }).fetchEvent
+      if (fe) {
+        setFetchLogs((prev) => [...prev.slice(-59), fe])
+      }
       // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
       const err = (p as { introError?: { kind: string; message: string; triedPaths: string[] } }).introError
       if (err) {
@@ -267,7 +276,11 @@ export default function App() {
   useEffect(() => {
     if (progress && progress.total > 0 && progress.done >= progress.total) {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
-      clearTimer.current = window.setTimeout(() => setProgress(null), 2500)
+      clearTimer.current = window.setTimeout(() => {
+        setProgress(null)
+        // v2.2.10：批量补齐结束 → 抓取过程浮层自动收起
+        setFetchLogs([])
+      }, 2500)
     }
     return () => {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
@@ -1851,8 +1864,69 @@ export default function App() {
         onClose={handleNoticeConfirm}
       />
 
+      {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
+      <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
+
     </div>
     </ToastProvider>
+  )
+}
+
+/** v2.2.10：实时抓取过程浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"这类过程提示 */
+interface FetchLogItem {
+  code: string
+  src: string
+  status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
+  detail?: string
+}
+function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss: () => void }) {
+  if (logs.length === 0) return null
+  const SOURCE_LABEL: Record<string, string> = {
+    javapi: 'Javapi', javinfo: 'Javinfo', javdb: 'JavDB', javbus: 'JavBus', javlibrary: 'JavLibrary'
+  }
+  const line = (l: FetchLogItem) => {
+    const label = SOURCE_LABEL[l.src] ?? l.src
+    switch (l.status) {
+      case 'trying':
+        return { text: `→ 尝试 ${label}…`, cls: 'text-white/55' }
+      case 'hit':
+        return { text: `✓ ${label} 命中`, cls: 'text-emerald-400' }
+      case 'skipped':
+        return { text: `· ${label} 跳过${l.detail ? `（${l.detail}）` : ''}`, cls: 'text-white/35' }
+      case 'no-result':
+        return { text: `· ${label} 无结果`, cls: 'text-amber-400/80' }
+      case 'network-failed':
+        return { text: `✗ ${label} 网络失败${l.detail ? `（${l.detail.slice(0, 40)}）` : ''}`, cls: 'text-red-400/85' }
+    }
+  }
+  return (
+    <div className="fixed bottom-4 right-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
+        <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+          抓取过程（按数据源顺序降级）
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="w-5 h-5 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center text-xs"
+          title="关闭"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-[10.5px] leading-relaxed">
+        {logs.map((l, i) => {
+          const { text, cls } = line(l)
+          return (
+            <div key={i} className={`truncate ${cls}`} title={l.detail}>
+              <span className="text-white/30 mr-1.5">[{l.code}]</span>
+              {text}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

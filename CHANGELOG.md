@@ -1,5 +1,39 @@
 # 更新日志（Changelog）
 
+## v2.2.10（2026-08-30）
+
+**UI 实时显示数据源降级过程（用户："用户界面也应该能看到类似'javdb 失败了 → 降级 javbus'的提示，而不只是后台能看到"）**
+
+### P0：实时抓取过程浮层（右下角）
+- `ScanProgress` 加 `fetchEvent` 字段（code / src / status / detail）
+- `fetchDetailSmart` 加第 4 参 `onEvent` 回调，每个源尝试一次推一条：
+  - `trying` → 尝试前
+  - `hit` → 命中（绿色 ✓）
+  - `skipped` → 跳过（未配置 key / 已被禁用）
+  - `no-result` → 无结果（琥珀色）
+  - `network-failed` → 网络失败（红色 ✗，含错误详情）
+- 三条入口全接上事件：
+  - 批量补齐（`libraryFetchJavdbAll`）
+  - 单点补齐（`videoFetchJavdbDetail`）
+  - reconcile 无片单兜底（`fetchDetailSmart` 兜底抓取）
+- renderer 右下角浮层滚动展示（保留最近 60 条），批量补齐结束后 2.5s 自动收起，可手动 ✕ 关闭
+
+### 效果
+批量补齐时右下角实时显示：
+```
+→ 尝试 JavDB…
+✗ JavDB 网络失败（fetch failed）
+→ 尝试 JavBus…
+✓ JavBus 命中
+```
+用户直接看到"javdb 失败了 → 降级 javbus"，不再需要翻 main.log。
+
+### 技术债
+- `fetchMovieDetail` 加第 4 参 onEvent 透传
+- `reconcileLibrary` onProgress 类型加 fetchEvent 字段
+
+---
+
 ## v2.2.9（2026-08-30）
 
 **main 进程 console.log 落盘 + fetchDetailSmart 总览 log（用户问"怎么还是走的 javbus"）**

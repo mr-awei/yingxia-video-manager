@@ -310,12 +310,16 @@ function detectUrgency(notes: string, minimumVersion?: string, currentVersion?: 
   return 'normal'
 }
 
-async function fetchMovieDetail(code: string, settings: Settings): Promise<MovieDetailResult> {
+async function fetchMovieDetail(
+  code: string,
+  settings: Settings,
+  onEvent?: (e: { code: string; src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }) => void
+): Promise<MovieDetailResult> {
   // v2.2.6：fetchDetailSmart 已统一处理所有 5 个源（含顺序、降级、错误信息），
   // 这里保留 wrapper 是为了让 videoFetchJavdbDetail 等老调用方零改动；
   // fetchDetailSmart 内部会按 settings.dataSource / customSourceOrder 自动分支。
   const state = createSmartFetchState()
-  return await fetchDetailSmart(code, settings, state)
+  return await fetchDetailSmart(code, settings, state, onEvent)
 }
 
 function emitProgress(p: ScanProgress): void {
@@ -556,7 +560,10 @@ export function registerIpc(): void {
     // 搜索源：title → folderName → fileName
     const code = (v.title || v.folderName || v.fileName || '').trim()
     if (!code) return null
-    const mr = await fetchMovieDetail(code, settings)
+    // v2.2.10：单点补齐也推 fetchEvent（右下角浮层实时显示"javdb 失败 → 降级 javbus"）
+    const mr = await fetchMovieDetail(code, settings, (e) => {
+      emitProgress({ libraryId: v.libraryId, total: 1, done: 0, current: v.title, fetchEvent: e })
+    })
     if (!mr.detail) return { ok: false as const, error: mr.error || '未获取到数据' }
     await repo.updateVideo(id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
     // **列表/详情封面同步**：详情抓取成功且有真实封面，但视频当前是 ffmpeg 截帧 / 占位 / 无封面时，
@@ -707,7 +714,10 @@ export function registerIpc(): void {
         } else if (force || detailStale) {
           madeRequest = true
           // 智能抓取：JavDB 连续失败自动切 JavBus；JavBus 也连续失败自动停止
-          const mr = await fetchDetailSmart(fetchCode, settings, smartState)
+          // v2.2.10：onEvent 把每次源尝试推给 renderer（UI 实时显示"javdb 失败 → 降级 javbus"）
+          const mr = await fetchDetailSmart(fetchCode, settings, smartState, (e) => {
+            emitProgress({ libraryId, total: videos.length, done, current: v.title, fetchEvent: e })
+          })
           if (mr.detail) {
             if (base) seriesCache.set(base, mr.detail)
             await repo.updateVideo(v.id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })

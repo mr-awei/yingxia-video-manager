@@ -258,7 +258,14 @@ async function ensureVideo(
 export async function reconcileLibrary(
   library: Library,
   settings: Settings,
-  onProgress?: (p: { libraryId: string; total: number; done: number; current?: string; introError?: { kind: string; message: string; triedPaths: string[] } }) => void
+  onProgress?: (p: {
+    libraryId: string
+    total: number
+    done: number
+    current?: string
+    introError?: { kind: string; message: string; triedPaths: string[] }
+    fetchEvent?: { code: string; src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }
+  }) => void
 ): Promise<ReconcileResult> {
   const introLookup = await readIntroDoc(library)
   const doc = introLookup.doc
@@ -427,7 +434,10 @@ export async function reconcileLibrary(
               const v = toFetch[idx++]
               if (state.stop) return
               try {
-                const r = await fetchDetailSmart(v.title, settings, state)
+                const r = await fetchDetailSmart(v.title, settings, state, (fe) => {
+                  // v2.2.10：兜底抓取也把事件推给 renderer（走 onProgress 同管道）
+                  onProgress?.({ libraryId: library.id, total: toFetch.length, done: idx, current: v.title, fetchEvent: fe })
+                })
                 if (r.detail) {
                   await updateVideo(v.id, {
                     javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },

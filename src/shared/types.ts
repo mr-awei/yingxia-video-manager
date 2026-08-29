@@ -208,6 +208,13 @@ export interface ScanProgress {
   total: number
   done: number
   current?: string
+  /** v2.2.10：实时抓取事件（每个源尝试一次推一条），渲染层可显示"javdb 失败 → 降级 javbus"这类过程提示 */
+  fetchEvent?: {
+    code: string
+    src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+    status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
+    detail?: string
+  }
 }
 
 export interface OpenResult {

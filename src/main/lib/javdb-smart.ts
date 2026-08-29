@@ -116,14 +116,24 @@ export const DEFAULT_SOURCE_ORDER: Array<'javapi' | 'javinfo' | 'javdb' | 'javbu
   'javlibrary'
 ]
 
+/** v2.2.10：抓取事件回调（每次源尝试推一条），供 UI 实时展示"javdb 失败 → 降级 javbus" */
+export interface SmartFetchEvent {
+  code: string
+  src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+  status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
+  detail?: string
+}
+
 export async function fetchDetailSmart(
   code: string,
   settings: Settings,
-  state: SmartFetchState
+  state: SmartFetchState,
+  onEvent?: (e: SmartFetchEvent) => void
 ): Promise<MovieDetailResult> {
   const mode = settings.dataSource ?? 'auto'
   const errors: string[] = []
   const onError = (m: string) => errors.push(m)
+  const ev = (e: Omit<SmartFetchEvent, 'code'>) => onEvent?.({ code, ...e })
   if (mode === 'javapi') {
     try {
       const javapi = await fetchJavapiDetail(code, settings, onError)
@@ -190,17 +200,22 @@ export async function fetchDetailSmart(
     if (src === 'javapi') {
       if (hasJavapiConfig(settings) && !state.javapiDisabled) {
         const errs: string[] = []
+        ev({ src, status: 'trying' })
         try {
           const javapi = await fetchJavapiDetail(code, settings, (m) => errs.push(m))
           if (javapi) {
             state.javapiFails = 0
             srcResults.push({ src, status: 'hit' })
+            ev({ src, status: 'hit' })
             console.log(`[smart] ${code} HIT ${src}`)  // v2.2.9：每次命中打 log
             return { detail: javapi, source: 'javapi' }
           }
           srcResults.push({ src, status: 'no-result' })
+          ev({ src, status: 'no-result' })
         } catch (e) {
-          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
+          const d = (e as Error)?.message || String(e)
+          srcResults.push({ src, status: 'network-failed', detail: d })
+          ev({ src, status: 'network-failed', detail: d })
         }
         if (errs.length > 0) {
           state.javapiFails++
@@ -210,22 +225,29 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        srcResults.push({ src, status: 'skipped', detail: '未配置本地 Javapi（设置 → 数据源）' })
+        const d = '未配置本地 Javapi（设置 → 数据源）'
+        srcResults.push({ src, status: 'skipped', detail: d })
+        ev({ src, status: 'skipped', detail: d })
       }
     } else if (src === 'javinfo') {
       if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
         const errs: string[] = []
+        ev({ src, status: 'trying' })
         try {
           const javinfo = await fetchJavinfoDetail(code, settings, (m) => errs.push(m))
           if (javinfo) {
             state.javinfoFails = 0
             srcResults.push({ src, status: 'hit' })
+            ev({ src, status: 'hit' })
             console.log(`[smart] ${code} HIT ${src}`)
             return { detail: javinfo, source: 'javinfo' }
           }
           srcResults.push({ src, status: 'no-result' })
+          ev({ src, status: 'no-result' })
         } catch (e) {
-          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
+          const d = (e as Error)?.message || String(e)
+          srcResults.push({ src, status: 'network-failed', detail: d })
+          ev({ src, status: 'network-failed', detail: d })
         }
         if (errs.length > 0) {
           state.javinfoFails++
@@ -235,22 +257,29 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        srcResults.push({ src, status: 'skipped', detail: '未配置 Javinfo key' })
+        const d = '未配置 Javinfo key'
+        srcResults.push({ src, status: 'skipped', detail: d })
+        ev({ src, status: 'skipped', detail: d })
       }
     } else if (src === 'javdb') {
       if (!state.javdbDisabled) {
         const errs: string[] = []
+        ev({ src, status: 'trying' })
         try {
           const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m))
           if (javdb) {
             state.javdbFails = 0
             srcResults.push({ src, status: 'hit' })
+            ev({ src, status: 'hit' })
             console.log(`[smart] ${code} HIT ${src}`)
             return { detail: javdb, source: 'javdb' }
           }
           srcResults.push({ src, status: 'no-result' })
+          ev({ src, status: 'no-result' })
         } catch (e) {
-          srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
+          const d = (e as Error)?.message || String(e)
+          srcResults.push({ src, status: 'network-failed', detail: d })
+          ev({ src, status: 'network-failed', detail: d })
         }
         if (errs.length > 0) {
           state.javdbFails++
@@ -260,21 +289,28 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        srcResults.push({ src, status: 'skipped', detail: 'JavDB 已被本轮禁用' })
+        const d = 'JavDB 已被本轮禁用'
+        srcResults.push({ src, status: 'skipped', detail: d })
+        ev({ src, status: 'skipped', detail: d })
       }
     } else if (src === 'javbus') {
       const errs: string[] = []
+      ev({ src, status: 'trying' })
       try {
         const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m))
         if (javbus) {
           state.javbusFails = 0
           srcResults.push({ src, status: 'hit' })
+          ev({ src, status: 'hit' })
           console.log(`[smart] ${code} HIT ${src}`)
           return { detail: javbus, source: 'javbus' }
         }
         srcResults.push({ src, status: 'no-result' })
+        ev({ src, status: 'no-result' })
       } catch (e) {
-        srcResults.push({ src, status: 'network-failed', detail: (e as Error)?.message || String(e) })
+        const d = (e as Error)?.message || String(e)
+        srcResults.push({ src, status: 'network-failed', detail: d })
+        ev({ src, status: 'network-failed', detail: d })
       }
       if (errs.length > 0) {
         state.javbusFails++
@@ -285,16 +321,20 @@ export async function fetchDetailSmart(
       }
     } else {
       // javlibrary：不计数（数据与 javdb/javbus 重叠度高，纯兜底，静默）
+      ev({ src, status: 'trying' })
       try {
         const javlibrary = await fetchJavLibraryDetail(code, settings)
         if (javlibrary) {
           srcResults.push({ src, status: 'hit' })
+          ev({ src, status: 'hit' })
           console.log(`[smart] ${code} HIT ${src}`)
           return { detail: javlibrary, source: 'javlibrary' }
         }
         srcResults.push({ src, status: 'no-result' })
+        ev({ src, status: 'no-result' })
       } catch {
         srcResults.push({ src, status: 'network-failed' })
+        ev({ src, status: 'network-failed' })
       }
     }
   }
