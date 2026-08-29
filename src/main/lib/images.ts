@@ -70,11 +70,22 @@ async function generateFrame(video: Video, settings: Settings): Promise<string |
   if (!exe) return null
   const out = frameCachePath(video)
   await fs.mkdir(postersCacheDir(), { recursive: true })
-  const ss = video.durationSec ? Math.max(5, Math.floor(video.durationSec * 0.3)) : 30
+  // ffmpeg `thumbnail` 滤镜：分析 N 帧后自动选最具代表性的一帧（避免黑场/静帧/淡入淡出）。
+  // 官方推荐做法：https://ffmpeg.org/ffmpeg-filters.html#thumbnail-1
+  // n=100 覆盖常见短片；超长片（>2h）按比例放大 n 但封顶 200 避免太慢
+  const dur = video.durationSec ?? 0
+  const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
   return new Promise<string | null>((resolve) => {
     const p = spawn(
       exe,
-      ['-y', '-ss', String(ss), '-i', video.path, '-frames:v', '1', '-q:v', '3', out],
+      [
+        '-y',
+        '-i', video.path,
+        '-vf', `thumbnail=n=${n},scale=480:-1`,
+        '-frames:v', '1',
+        '-q:v', '2',
+        out
+      ],
       { windowsHide: true }
     )
     p.on('error', () => resolve(null))
@@ -239,16 +250,33 @@ export async function generatePreviewSet(
   }
   await fs.mkdir(postersCacheDir(), { recursive: true })
   const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
-  const coverSec = Math.max(5, Math.floor(dur * (0.2 + Math.random() * 0.2)))
   const coverPath = frameCachePath(video)
+  // 封面：用 thumbnail 滤镜（官方推荐，自动选最具代表性帧）避免黑场/静帧
+  const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
   const previewItems = Array.from({ length: PREVIEW_COUNT }, (_, i) => {
     const frac = 0.06 + ((i + 0.5) / PREVIEW_COUNT) * 0.88
     return { i, sec: Math.max(5, Math.floor(dur * frac)) }
   })
-  const coverOk = await spawnFrameAt(exe, video.path, coverSec, coverPath)
-  const previewsOk = await mapLimit(previewItems, 4, (it) =>
-    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
-  )
+  // 并行：封面用 thumbnail 滤镜；预览图按时间点散布
+  const [coverOk, previewsOk] = await Promise.all([
+    new Promise<boolean>((resolve) => {
+      const p = spawn(
+        exe,
+        [
+          '-y',
+          '-i', video.path,
+          '-vf', `thumbnail=n=${n},scale=480:-1`,
+          '-frames:v', '1',
+          '-q:v', '2',
+          coverPath
+        ],
+        { windowsHide: true }
+      )
+      p.on('error', () => resolve(false))
+      p.on('close', (code) => resolve(code === 0))
+    }),
+    mapLimit(previewItems, 4, (it) => spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i)))
+  ])
   const previewPaths = previewsOk
     .map((ok, i) => (ok ? previewPathFor(video, i) : null))
     .filter((p): p is string => p !== null)

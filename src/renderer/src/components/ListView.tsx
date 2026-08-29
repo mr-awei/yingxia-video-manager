@@ -189,6 +189,12 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                 {isMissing ? (
                   <span className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-[9px] font-bold">缺失</span>
                 ) : null}
+                {v?.posterSource === 'ffmpeg' ? (
+                  <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-violet-500/90 backdrop-blur-sm text-[9px] text-white font-medium flex items-center gap-0.5">
+                    <Icon name="film" size={8} />
+                    截帧
+                  </span>
+                ) : null}
               </div>
 
               {/* 主信息 */}

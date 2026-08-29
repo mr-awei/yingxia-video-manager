@@ -178,10 +178,21 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               <Icon name="heart" size={10} className="fill-current" />
             </span>
           ) : null}
-          {/* 数据来源角标：仅 JavBus 显示（无角标 = JavDB） */}
+          {/* 数据来源角标：JavBus / JavLibrary / FFmpeg 截帧；无角标 = JavDB（默认） */}
           {entry.video?.javdbDetail?.source === 'javbus' ? (
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
               JavBus
+            </span>
+          ) : null}
+          {entry.video?.javdbDetail?.source === 'javlibrary' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-sky-500/90 backdrop-blur-sm text-[10px] text-white font-bold">
+              JavLibrary
+            </span>
+          ) : null}
+          {entry.video?.posterSource === 'ffmpeg' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-violet-500/90 backdrop-blur-sm text-[10px] text-white font-medium flex items-center gap-1">
+              <Icon name="film" size={9} />
+              截帧
             </span>
           ) : null}
         </div>
