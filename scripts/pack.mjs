@@ -1,19 +1,21 @@
 /**
  * 打包入口（npm run pack 第二步，build 之后调用）。
  *
- * 每次打包自动在 release/ 下新建一个带时间戳的全新输出目录：
- *   release/2026-08-29-2156/影匣 Setup 1.9.3.exe
- * 旧目录永不复用 → 彻底规避 win-unpacked\resources\app.asar
- * 被进程/杀软锁住无法删除导致的打包失败（ERR_ELECTRON_BUILDER_CANNOT_EXECUTE）。
+ * 输出目录放在 WorkBuddy 工作区之外（~/yingxia-release/<时间戳>），
+ * WorkBuddy 的索引/监视服务扫描不到 → app.asar 永远不会被占用，
+ * 彻底根治 win-unpacked\resources\app.asar 被锁导致无法删除/打包失败。
  */
 import { execSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const pad = (n) => String(n).padStart(2, '0')
 const d = new Date()
 const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
-const out = path.join('release', stamp)
+// 输出根目录：用户主目录下，绝对在 WorkBuddy 工作区树之外（与项目目录无关）
+const outRoot = path.join(os.homedir(), 'yingxia-release')
+const out = path.join(outRoot, stamp)
 mkdirSync(out, { recursive: true })
 console.log(`[pack] 输出目录：${out}`)
 
