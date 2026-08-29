@@ -17,6 +17,9 @@ interface Props {
   /** 随机推荐（每日刷新 + 手动刷新） */
   recommend: DisplayEntry[]
   onRefreshRecommend: () => void
+  /** 全库随机（跨媒体库，独立刷新） */
+  allRandom: DisplayEntry[]
+  onRefreshAllRandom: () => void
   /** 顶栏 Hero：独立洗牌队列驱动，整库参与、不重复、点一次换一次 */
   hero?: DisplayEntry
   onHeroNext: () => void
@@ -106,7 +109,7 @@ function Row({
   )
 }
 
-export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, hero, onHeroNext, onPickTag, onDelete, viewMode, onSetView }: Props) {
+export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onBrowse, recommend, onRefreshRecommend, allRandom, onRefreshAllRandom, hero, onHeroNext, onPickTag, onDelete, viewMode, onSetView }: Props) {
   // 首页只支持竖屏 / 横屏两种卡片，文件名模式自动回退到横屏
   const aspect = viewMode === 'grid-portrait' ? 'portrait' : 'landscape'
   // 合并刷新：点 Hero 刷新或随机推荐行刷新，两者一起换一批
@@ -291,6 +294,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
+      <Row title="全库随机" icon="layers" entries={allRandom} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshAllRandom} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
       <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
