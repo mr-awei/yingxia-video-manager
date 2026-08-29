@@ -1,5 +1,39 @@
 # 更新日志（Changelog）
 
+## v2.2.8（2026-08-30）
+
+**海报抓取也跟随自定义采集顺序（用户问："真实采集顺序是否也跟着自定义采集顺序改变了？"）**
+
+### 验证结论
+- 元数据抓取（单点补齐 / 批量补齐 / reconcile 兜底）**早就是**按 `settings.customSourceOrder` 降级（v2.2.4 起，v2.2.6 统一了入口）。
+- 但**海报抓取** `fetchJavdbPosterForVideo` 是漏网：它直接调 `searchJavdb`，**不读 customSourceOrder**——用户把 JavDB 排最后、或 JavDB 被 Cloudflare 风控 403 时，海报仍硬试 JavDB 而失败。
+
+### 修复
+- `javdb-smart.ts` 新加 `fetchPosterSmart(video, settings)`：按 `settings.customSourceOrder` 依次降级抓海报——
+  - javdb: `searchJavdb` → `cacheRemoteImage(posterUrl)`
+  - javbus: `fetchJavBusDetail` → detail.cover（内部已下载本地）
+  - javlibrary: `fetchJavLibraryDetail` → detail.cover
+  - javinfo: 需配 key → `fetchJavinfoDetail` → detail.cover
+  - javapi: 需配 config → `fetchJavapiDetail` → detail.cover
+  - 命中第一个有 cover 的源即返回本地路径
+- `ipc.ts` 3 处 `fetchJavdbPosterForVideo` 调用全改成 `fetchPosterSmart`：
+  - `videoFetchJavdbPoster`（手动"抓海报"）
+  - 批量补齐的封面步骤
+  - `videoSwitchPoster` 的"数据源图"切换兜底
+- `DEFAULT_SOURCE_ORDER` 抽到模块底部 export（fetchDetailSmart 和 fetchPosterSmart 共用，消除重复定义）
+
+### 现在全链路一致
+| 场景 | 读 customSourceOrder |
+|---|---|
+| 单点补齐详情 | ✅ |
+| 批量补齐详情 | ✅ |
+| reconcile 无片单兜底 | ✅ |
+| 单点抓海报 | ✅（v2.2.8 修） |
+| 批量补齐封面 | ✅（v2.2.8 修） |
+| 切换数据源封面 | ✅（v2.2.8 修） |
+
+---
+
 ## v2.2.7（2026-08-30）
 
 **文案随顺序联动（用户反馈："都已经支持自定义采集顺序了，采集逻辑和文案也要跟着变"）**

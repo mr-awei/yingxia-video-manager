@@ -11,10 +11,11 @@
  */
 import { fetchJavapiDetail, hasJavapiConfig } from './javapi'
 import { fetchJavinfoDetail, hasJavinfoKey } from './javinfo'
-import { fetchJavdbDetail } from './javdb'
+import { fetchJavdbDetail, searchJavdb, cacheRemoteImage } from './javdb'
 import { fetchJavBusDetail } from './javbus'
 import { fetchJavLibraryDetail } from './javlibrary'
-import type { JavdbDetail, Settings } from '../../shared/types'
+import { extractBaseCode, extractCode } from '../../shared/code'
+import type { JavdbDetail, Settings, Video } from '../../shared/types'
 
 export interface MovieDetailResult {
   detail: JavdbDetail | null
@@ -56,6 +57,64 @@ export function createSmartFetchState(): SmartFetchState {
     stop: false
   }
 }
+
+/**
+ * 按 settings.customSourceOrder 依次降级抓取**海报**（只下载封面图，不写 detail）。
+ * v2.2.8 修复：原 fetchJavdbPosterForVideo 只硬走 JavDB search，不读用户自定义顺序——
+ * 用户把 JavDB 排后面或 JavDB 被风控时，海报抓取仍硬试 JavDB 而失败。
+ *
+ * 各源返回约定：
+ * - javdb.searchJavdb → { posterUrl }（远程 URL，需 cacheRemoteImage）
+ * - javbus/javlibrary/javinfo/javapi fetchXxxDetail → detail.cover（内部已下载到本地）
+ * 命中第一个有 cover 的源即返回本地路径。
+ */
+export async function fetchPosterSmart(video: Video, settings: Settings): Promise<string | null> {
+  const rawCode = extractCode(video.title || video.folderName || video.fileName || '')
+  const code = extractBaseCode(rawCode) || rawCode
+  if (!code) return null
+  const order =
+    settings.customSourceOrder && settings.customSourceOrder.length === 5
+      ? settings.customSourceOrder
+      : DEFAULT_SOURCE_ORDER
+  for (const src of order) {
+    try {
+      if (src === 'javdb') {
+        const hit = await searchJavdb(code, settings)
+        if (hit?.posterUrl) {
+          const local = await cacheRemoteImage(hit.posterUrl, `javdb-${hit.code.replace(/[^A-Za-z0-9]/g, '')}`, settings)
+          if (local) return local
+        }
+      } else if (src === 'javbus') {
+        const d = await fetchJavBusDetail(code, settings)
+        if (d?.cover) return d.cover // fetchJavBusDetail 内部已下载到本地
+      } else if (src === 'javlibrary') {
+        const d = await fetchJavLibraryDetail(code, settings)
+        if (d?.cover) return d.cover
+      } else if (src === 'javinfo') {
+        if (hasJavinfoKey(settings)) {
+          const d = await fetchJavinfoDetail(code, settings)
+          if (d?.cover) return d.cover
+        }
+      } else if (src === 'javapi') {
+        if (hasJavapiConfig(settings)) {
+          const d = await fetchJavapiDetail(code, settings)
+          if (d?.cover) return d.cover
+        }
+      }
+    } catch {
+      /* 单源失败继续下一个 */
+    }
+  }
+  return null
+}
+
+export const DEFAULT_SOURCE_ORDER: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = [
+  'javapi',
+  'javinfo',
+  'javdb',
+  'javbus',
+  'javlibrary'
+]
 
 export async function fetchDetailSmart(
   code: string,
@@ -115,14 +174,7 @@ export async function fetchDetailSmart(
   }
   // ---- auto：按自定义/推荐优先级降级 ----
   // 推荐顺序（信息全面度 / 获取难度 / 风控）：Javapi → Javinfo → JavDB → JavBus → JavLibrary
-  // 用户可在设置里自定义 1-5 优先级（customSourceOrder）
-  const DEFAULT_SOURCE_ORDER: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = [
-    'javapi',
-    'javinfo',
-    'javdb',
-    'javbus',
-    'javlibrary'
-  ]
+  // 用户可在设置里自定义 1-5 优先级（customSourceOrder）；DEFAULT_SOURCE_ORDER 已在模块底部 export
   const order =
     settings.customSourceOrder && settings.customSourceOrder.length === 5
       ? settings.customSourceOrder

@@ -11,7 +11,6 @@ import { openVideo } from './player'
 import { resolvePoster, generatePreviewSet, frameLog } from './images'
 import { postersCacheDir } from './images'
 import { cacheRemoteImage } from './javdb'
-import { fetchJavdbPosterForVideo } from './javdb'
 import { extractBaseCode, extractCode } from '../../shared/code'
 import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
@@ -22,7 +21,7 @@ import { previewRenames, applyRenames } from './rename'
 import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
-import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
+import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
 
 /**
  * 多源详情聚合：JavDB（最准，已有 Cookie）→ JavBus（自动绕过年龄验证）。
@@ -538,7 +537,8 @@ export function registerIpc(): void {
     const v = await repo.getVideo(id)
     if (!v) throw new Error('视频不存在')
     const settings = await repo.getSettings()
-    const localPath = await fetchJavdbPosterForVideo(v, settings)
+    // v2.2.8：海报抓取也按 customSourceOrder 降级（原来硬走 JavDB）
+    const localPath = await fetchPosterSmart(v, settings)
     if (!localPath) return null
     // 替换前验证图片有效性：下载损坏/截断的坏图不替换（避免黑屏）
     if (!(await isCoverUsable(localPath, settings))) {
@@ -655,8 +655,8 @@ export function registerIpc(): void {
         //    本地缓存命中即可；重抓只会浪费 JavDB/JavBus 请求额度并加剧 403。
         if (!v.posterPath || v.posterSource === 'placeholder') {
           madeRequest = true
-          // JavDB 抓封面 → 失败则 ffmpeg 批量截帧兜底（1 封面 + 15 预览图，保证真实画面 + 横屏预览墙素材）
-          const javdbPoster = await fetchJavdbPosterForVideo(v, settings)
+          // v2.2.8：海报抓取按 customSourceOrder 降级（原来硬走 JavDB）→ 失败则 ffmpeg 批量截帧兜底
+          const javdbPoster = await fetchPosterSmart(v, settings)
           let localPath: string | null = javdbPoster
           let source: ImageSource = 'javdb'
           let previews: string[] | undefined
@@ -1068,8 +1068,8 @@ export function registerIpc(): void {
           /* 继续尝试下一个 */
         }
       }
-      // 无缓存 → 从数据源抓封面
-      const fetched = await fetchJavdbPosterForVideo(v, settings)
+      // 无缓存 → 从数据源抓封面（v2.2.8：按 customSourceOrder 降级）
+      const fetched = await fetchPosterSmart(v, settings)
       if (!fetched) return { ok: false, error: '数据源封面获取失败（无网络或数据源无此片）' }
       await repo.updateVideo(id, { posterPath: fetched, posterSource: 'javdb' })
       return { ok: true, posterPath: fetched, posterSource: 'javdb' }
