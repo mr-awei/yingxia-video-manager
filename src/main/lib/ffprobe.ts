@@ -42,3 +42,34 @@ export async function probeVideo(videoPath: string, settings: Settings): Promise
     return null
   }
 }
+
+/**
+ * 用 ffprobe 读取图片分辨率。
+ * 用于「真实封面替换前验证」：javapi/javdb 下载的封面可能是损坏/截断/空内容的坏图
+ * （文件存在但 ffprobe 读不出尺寸），必须验证通过才允许替换现有封面。
+ * 失败（缺失/损坏/ffprobe 不可用）一律返回 null。
+ */
+export async function probeImage(
+  imagePath: string,
+  settings: Settings
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const ffprobe = (await resolveFfprobeExe(settings)) || 'ffprobe'
+    const stdout = await new Promise<string>((resolve, reject) => {
+      execFile(
+        ffprobe,
+        ['-v', 'quiet', '-print_format', 'json', '-show_streams', imagePath],
+        { maxBuffer: 8 * 1024 * 1024, timeout: 10000 },
+        (err, out) => (err ? reject(err) : resolve(out))
+      )
+    })
+    const data = JSON.parse(stdout) as { streams?: Array<Record<string, any>> }
+    const vs = (data.streams ?? []).find((s) => s.codec_type === 'video')
+    if (vs?.width && vs?.height) {
+      return { width: Number(vs.width), height: Number(vs.height) }
+    }
+    return null
+  } catch {
+    return null
+  }
+}

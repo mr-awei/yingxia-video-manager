@@ -20,7 +20,7 @@ import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
-import { probeVideo } from './ffprobe'
+import { probeVideo, probeImage } from './ffprobe'
 import { previewRenames, applyRenames } from './rename'
 import { watchLibraryMd, unwatchLibraryMd, syncMdWatchers } from './mdWatcher'
 import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
@@ -44,6 +44,24 @@ interface MovieDetailResult {
  * 直接复用即可；若个别源返回 http(s) URL 则用 cacheRemoteImage 下载。
  * 返回 null 表示无可用封面（不覆盖原 posterPath）。
  */
+/**
+ * 封面替换前的图片有效性验证：ffprobe 能读出分辨率且不小于阈值。
+ * javapi/javdb 下载的封面可能是损坏/截断/空内容的坏图（文件存在但 ffprobe 读不出尺寸），
+ * 直接替换会覆盖现有 ffmpeg 截帧导致黑屏，必须验证通过才允许替换。
+ */
+async function isCoverUsable(filePath: string, settings: Settings): Promise<boolean> {
+  const dim = await probeImage(filePath, settings)
+  if (!dim) return false
+  // 正常 JAV 封面至少几百像素；<100px 视为坏图/占位
+  return dim.width >= 100 && dim.height >= 100
+}
+
+/**
+ * 把详情里的 cover 转成可写 posterPath 的本地路径。
+ * javdb.ts / javbus.ts 返回的 detail.cover 已是**本地缓存路径**（内部已下载到磁盘），
+ * 直接复用即可；若个别源返回 http(s) URL 则用 cacheRemoteImage 下载。
+ * **替换前必须通过 isCoverUsable 验证（分辨率正常），验证失败返回 null（不覆盖原 posterPath）。**
+ */
 async function resolveDetailCover(
   detail: JavdbDetail,
   videoId: string,
@@ -54,17 +72,32 @@ async function resolveDetailCover(
   if (isLocal) {
     try {
       await fs.access(detail.cover)
+      if (!(await isCoverUsable(detail.cover, settings))) {
+        // 损坏的本地封面：删除坏文件（避免后续复用），不替换
+        await fs.unlink(detail.cover).catch(() => {})
+        return null
+      }
       return detail.cover
     } catch {
       return null
     }
   }
-  // http(s) URL → 下载本地
-  return cacheRemoteImage(
+  // http(s) URL → 下载本地。key 用 `cover-<CODE>` 而非 videoId：
+  // 避免与 ffmpeg 截帧封面 <videoId>.jpg 同名冲突（下载坏图会覆盖掉可用截帧）。
+  const coverKey = detail.code ? `cover-${detail.code.toUpperCase()}` : videoId
+  const local = await cacheRemoteImage(
     detail.cover,
-    videoId,
+    coverKey,
     settings,
-    detail.source === 'javbus' ? 'https://www.seedmm.bond' : detail.source === 'javinfo' ? 'https://api.javinfo.dev' : 'https://javdb.com'  ).catch(() => null)
+    detail.source === 'javbus' ? 'https://www.seedmm.bond' : detail.source === 'javinfo' ? 'https://api.javinfo.dev' : 'https://javdb.com'
+  ).catch(() => null)
+  if (!local) return null
+  // 下载后验证分辨率：损坏/全黑/截断的图不替换（避免用坏图覆盖现有 ffmpeg 截帧）
+  if (!(await isCoverUsable(local, settings))) {
+    await fs.unlink(local).catch(() => {})
+    return null
+  }
+  return local
 }
 
 /**
@@ -722,6 +755,11 @@ export function registerIpc(): void {
     const settings = await repo.getSettings()
     const localPath = await fetchJavdbPosterForVideo(v, settings)
     if (!localPath) return null
+    // 替换前验证图片有效性：下载损坏/截断的坏图不替换（避免黑屏）
+    if (!(await isCoverUsable(localPath, settings))) {
+      await fs.unlink(localPath).catch(() => {})
+      return null
+    }
     return repo.updateVideo(id, { posterSource: 'javdb', posterPath: localPath })
   })
 
@@ -837,6 +875,11 @@ export function registerIpc(): void {
           let localPath: string | null = javdbPoster
           let source: ImageSource = 'javdb'
           let previews: string[] | undefined
+          // 替换前验证图片有效性：下载损坏/截断的坏图视为失败 → 走 ffmpeg 截帧兜底
+          if (localPath && !(await isCoverUsable(localPath, settings))) {
+            await fs.unlink(localPath).catch(() => {})
+            localPath = null
+          }
           if (!localPath) {
             const set = await generatePreviewSet(v, settings).catch(() => null)
             if (set?.coverPath) {
@@ -1399,17 +1442,15 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.videoFrameFallback, async (_e, id: string) => {
     const v = await repo.getVideo(id)
     if (!v || !v.path) return null
-    // 已有可用的封面文件（含历史生成的截帧）直接复用，避免重复截帧
+    const settings = await repo.getSettings()
+    // 已有可用的封面文件（含历史生成的截帧）直接复用，避免重复截帧；
+    // **必须验证是有效图片**：损坏的 jpg（文件在但 ffprobe 读不出尺寸）会黑屏，
+    // 删除坏文件后重新截帧/解析，否则前端一直显示坏图
     if (v.posterPath) {
-      try {
-        await fs.access(v.posterPath)
-        return v.posterPath
-      } catch {
-        /* 缓存文件丢失，重新生成 */
-      }
+      if (await isCoverUsable(v.posterPath, settings)) return v.posterPath
+      await fs.unlink(v.posterPath).catch(() => {})
     }
     await frameLog(`[videoFrameFallback] start id=${id} path=${v.path}`)
-    const settings = await repo.getSettings()
     const lib = (await repo.listLibraries()).find((l) => l.id === v.libraryId) ?? defaultLibrary()
     // resolvePoster 会按 imagePriority 依次尝试：侧车图 → 已缓存抓取 → ffmpeg 截帧，最终兜底占位
     const r = await resolvePoster(v, lib, settings, { allowFfmpeg: true })
