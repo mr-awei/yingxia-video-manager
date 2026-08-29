@@ -3,8 +3,9 @@ productName: 影匣
 copyright: Copyright © 2026
 
 directories:
-  # 输出目录：旧 dist 曾被文件占用无法清理（沙箱 safe-delete 拦截），换新目录避免冲突
-  output: dist-20260829
+  # 输出目录：统一到 release/，每次打包（pack 脚本）自动新建 release/<YYYY-MM-DD-HHmm> 子目录，
+  # 旧目录永不复用 → 彻底规避 win-unpacked\resources\app.asar 被进程/杀软锁住导致打包失败的问题
+  output: release
   buildResources: build
 
 files:

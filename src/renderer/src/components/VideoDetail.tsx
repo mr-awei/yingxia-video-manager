@@ -368,8 +368,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 数据来源 {d.source === 'javbus' ? 'JavBus' : d.source === 'javinfo' ? 'Javinfo' : d.source === 'javapi' ? 'Javapi' : 'JavDB'}
               </span>
             ) : null}
-            {/* 截帧封面标识：无真实封面，展示的是视频画面里截的一帧 */}
-            {isFrameFallback ? (
+            {/* 截帧封面标识：无真实封面，展示的是视频画面里截的一帧（d.cover 有真实封面时不显示） */}
+            {isFrameFallback && !(d?.cover && isLocal(d.cover)) ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 bg-fuchsia-500/15 text-fuchsia-400 ring-1 ring-fuchsia-500/30">
                 <Icon name="film" size={11} className="fill-current" />
                 截帧封面（视频画面一帧，非真实封面）

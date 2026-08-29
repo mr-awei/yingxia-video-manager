@@ -52,12 +52,24 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const closeTimer = useRef<number | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const isMissing = entry.kind === 'missing'
-  // 真实封面（posterPath）；无封面或封面加载失败时由 ffmpeg 截帧兜底
-  const originalSrc = entry.video ? posterUrl(entry.video.posterPath) : null
+  const v0 = entry.video
+  // 真实封面优先于 ffmpeg 截帧：
+  // ① 抓详情缓存的本地海报（javdbDetail.cover）→ ② 非截帧来源的 posterPath → ③ ffmpeg 截帧 posterPath
+  const detailCover = v0?.javdbDetail?.cover && !/^https?:\/\//.test(v0.javdbDetail.cover) ? v0.javdbDetail.cover : null
+  const realPoster =
+    v0?.posterPath && v0.posterSource && v0.posterSource !== 'ffmpeg' && v0.posterSource !== 'placeholder'
+      ? v0.posterPath
+      : null
+  const poster = detailCover ?? realPoster ?? v0?.posterPath ?? null
+  const originalSrc = poster ? posterUrl(poster) : null
   const hasValidSrc = originalSrc && !imgError ? originalSrc : null
-  const { fallbackPoster, isFrameFallback } = useFrameFallback(entry.video, hasValidSrc)
+  const { fallbackPoster } = useFrameFallback(entry.video, hasValidSrc)
   const src = hasValidSrc ?? fallbackPoster
   const showPoster = !!src
+  // 「截帧」标识：仅当实际展示的是视频画面一帧（新截帧兜底，或 posterPath 为 ffmpeg 截帧且无真实封面）
+  const isFrameFallback = src
+    ? src === fallbackPoster || (!detailCover && !realPoster && v0?.posterSource === 'ffmpeg')
+    : false
   const score = entry.score ?? entry.video?.rating
   const v = hoverVideo(entry)
   const isFavorite = !!entry.video?.favorite
@@ -113,6 +125,11 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
       window.removeEventListener('keydown', onKey)
     }
   }, [preview])
+
+  // 组件实例复用（虚拟墙无 key）：切换视频时重置封面加载失败状态，避免旧错误状态影响新封面显示
+  useEffect(() => {
+    setImgError(false)
+  }, [entry.video?.id])
 
   // 卸载清理 timer
   useEffect(() => {

@@ -68,6 +68,32 @@ async function resolveDetailCover(
 }
 
 /**
+ * 删除该视频的 ffmpeg 截帧预览图（<videoId>_preview_<n>.jpg）。
+ * 封面文件 <videoId>.jpg 会被真实封面下载覆盖复用，不删；只清截帧预览图，
+ * 避免「真实封面 + 截帧预览」同时在磁盘/记录里残留。
+ */
+async function removeFfmpegPreviewFiles(videoId: string): Promise<void> {
+  try {
+    const dir = postersCacheDir()
+    const entries = await fs.readdir(dir)
+    const prefix = `${videoId}_preview_`
+    for (const f of entries) {
+      const lower = f.toLowerCase()
+      if (lower.startsWith(prefix) && lower.endsWith('.jpg')) {
+        await fs.unlink(path.join(dir, f)).catch(() => {})
+      }
+    }
+  } catch {
+    /* 缓存目录不存在 */
+  }
+}
+
+/** 从详情里取本地化的真实预览图（截图已缓存到本地，跳过远程 URL） */
+function localSamples(detail: JavdbDetail | null | undefined): string[] {
+  return (detail?.samples ?? []).filter((s) => !!s && !/^https?:\/\//.test(s))
+}
+
+/**
  * 把数据源详情回填到 Video 顶层字段（无 md 视频用得上）。
  * - actors：演员名单
  * - year / rating：缺失时从详情补全
@@ -711,14 +737,25 @@ export function registerIpc(): void {
     if (!mr.detail) return { ok: false as const, error: mr.error || '未获取到数据' }
     await repo.updateVideo(id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
     // **列表/详情封面同步**：详情抓取成功且有真实封面，但视频当前是 ffmpeg 截帧 / 占位 / 无封面时，
-    // 用 detail.cover 覆盖（否则列表页还是错误的视频帧）
+    // 用 detail.cover 覆盖（否则列表页还是错误的视频帧）；同时删除旧的 ffmpeg 截帧预览图，
+    // 预览图换成真实截图（本地），避免「真实封面 + 截帧」同时残留
     const coverLocal = await resolveDetailCover(mr.detail, id, settings)
+    const patch: Partial<Video> = {}
     if (coverLocal) {
-      await repo.updateVideo(id, { posterSource: mr.detail.source ?? 'javdb', posterPath: coverLocal })
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) {
-          w.webContents.send(IPC.javdbFetched, { videoId: id, posterPath: coverLocal, posterSource: mr.detail.source ?? 'javdb' })
-        }
+      patch.posterSource = mr.detail.source ?? 'javdb'
+      patch.posterPath = coverLocal
+      patch.previewPaths = localSamples(mr.detail)
+      await removeFfmpegPreviewFiles(id)
+    }
+    await repo.updateVideo(id, patch)
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) {
+        w.webContents.send(IPC.javdbFetched, {
+          videoId: id,
+          posterPath: coverLocal,
+          posterSource: mr.detail.source ?? 'javdb',
+          previewPaths: coverLocal ? localSamples(mr.detail) : undefined
+        })
       }
     }
     return { ok: true as const, detail: mr.detail, source: mr.source ?? ('javdb' as const) }
@@ -847,17 +884,27 @@ export function registerIpc(): void {
             if (base) seriesCache.set(base, mr.detail)
             await repo.updateVideo(v.id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
             // **关键**：如果之前的封面是 ffmpeg 兜底（无 JavDB 海报时），但 detail.cover 有真实海报
-            // （JavBus 来源常见），用 detail.cover 下载本地海报覆盖错误的截帧，保证列表/详情一致
+            // （JavBus 来源常见），用 detail.cover 下载本地海报覆盖错误的截帧，保证列表/详情一致；
+            // 同时删除旧的 ffmpeg 截帧预览图，预览图换成真实截图（本地）
             if (
               mr.detail.cover &&
               (v.posterSource === 'ffmpeg' || v.posterSource === 'placeholder' || !v.posterPath)
             ) {
               const coverLocal = await resolveDetailCover(mr.detail, v.id, settings)
               if (coverLocal) {
-                await repo.updateVideo(v.id, { posterSource: mr.detail.source ?? 'javbus', posterPath: coverLocal })
+                const patch: Partial<Video> = { posterSource: mr.detail.source ?? 'javbus', posterPath: coverLocal }
+                const samples = localSamples(mr.detail)
+                if (samples.length) patch.previewPaths = samples
+                await removeFfmpegPreviewFiles(v.id)
+                await repo.updateVideo(v.id, patch)
                 for (const w of BrowserWindow.getAllWindows()) {
                   if (!w.isDestroyed()) {
-                    w.webContents.send(IPC.javdbFetched, { videoId: v.id, posterPath: coverLocal, posterSource: mr.detail.source ?? 'javbus' })
+                    w.webContents.send(IPC.javdbFetched, {
+                      videoId: v.id,
+                      posterPath: coverLocal,
+                      posterSource: mr.detail.source ?? 'javbus',
+                      previewPaths: samples.length ? samples : undefined
+                    })
                   }
                 }
               }

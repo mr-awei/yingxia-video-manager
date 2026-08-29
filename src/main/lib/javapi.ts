@@ -13,6 +13,13 @@ import { extractBaseCode } from '../../shared/code'
 
 const DEFAULT_URL = 'http://127.0.0.1:8080'
 
+/**
+ * javapi 首次查询需要聚合 8 个上游视频站，实测耗时约 90s（之后 5 分钟内存缓存秒回）。
+ * 超时必须 > 聚合耗时，否则请求被客户端 abort（"This operation was aborted"）。
+ * 120s：90s 聚合 + 30s 余量。
+ */
+const JAVAPI_TIMEOUT_MS = 120_000
+
 /** 本地 javapi 已配置（URL + Key 都填了才算） */
 export function hasJavapiConfig(settings: Settings): boolean {
   return !!(settings.javapiKey && settings.javapiKey.trim()) && !!(settings.javapiUrl && settings.javapiUrl.trim())
@@ -52,7 +59,7 @@ async function lookupMovie(
 ): Promise<JavapiMovie | null> {
   const base = (settings.javapiUrl || DEFAULT_URL).trim().replace(/\/+$/, '')
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 15000)
+  const timer = setTimeout(() => ctrl.abort(), JAVAPI_TIMEOUT_MS)
   try {
     // 本地服务直连，不走代理（本机回环不存在风控问题）
     const res = await fetch(`${base}/api/v1/search?code=${encodeURIComponent(code)}`, {
@@ -86,8 +93,11 @@ async function lookupMovie(
     console.log(`[javapi] ${code} title=${(data.movie.title || '').slice(0, 40)}`)
     return data.movie
   } catch (e) {
-    // 本地服务未启动 / 端口不对 / 超时
-    onError?.(`本地 Javapi 连接失败（${base}）：${(e as Error)?.message || e}`)
+    // 本地服务未启动 / 端口不对 / 超时（首次聚合约 90s，超时为 120s）
+    onError?.(
+      `本地 Javapi 连接失败（${base}）：${(e as Error)?.message || e}` +
+        ((e as Error)?.name === 'AbortError' ? '（首次查询需聚合约 90 秒，请耐心等待）' : '')
+    )
     return null
   } finally {
     clearTimeout(timer)
