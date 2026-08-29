@@ -88,8 +88,19 @@ async function generateFrame(video: Video, settings: Settings): Promise<string |
       ],
       { windowsHide: true }
     )
-    p.on('error', () => resolve(null))
+    // 超时兜底：thumbnail 全片分析较慢，30s 未结束强制 kill
+    const timer = setTimeout(() => {
+      try {
+        p.kill('SIGKILL')
+      } catch {}
+      resolve(null)
+    }, FRAME_TIMEOUT_MS)
+    p.on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
     p.on('close', async (code) => {
+      clearTimeout(timer)
       if (code === 0) {
         try {
           await fs.access(out)
@@ -181,6 +192,8 @@ function previewPathFor(video: Video, i: number): string {
 }
 
 /** 单次截帧：在指定秒数处截取一帧 */
+const FRAME_TIMEOUT_MS = 30_000 // 单次截帧超时：ffmpeg 子进程 30s 未结束则 kill（防长视频/异常文件卡死）
+
 function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
   const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
   void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
@@ -188,12 +201,23 @@ function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string):
     const p = spawn(exe, args, { windowsHide: true })
     let done = false
     let stderr = ''
+    // 超时兜底：30s 未结束强制 kill
+    const timer = setTimeout(() => {
+      if (done) return
+      done = true
+      void frameLog(`[spawnFrameAt] timeout kill exe=${exe} sec=${sec}`)
+      try {
+        p.kill('SIGKILL')
+      } catch {}
+      resolve(false)
+    }, FRAME_TIMEOUT_MS)
     p.stderr?.on('data', (chunk) => {
       stderr += String(chunk)
     })
     p.on('error', (err) => {
       if (!done) {
         done = true
+        clearTimeout(timer)
         void frameLog(`[spawnFrameAt] error exe=${exe} err=${err.message}`)
         resolve(false)
       }
@@ -201,6 +225,7 @@ function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string):
     p.on('close', async (code) => {
       if (done) return
       done = true
+      clearTimeout(timer)
       const errTail = stderr.slice(-400).replace(/\s+/g, ' ')
       if (code === 0) {
         try {

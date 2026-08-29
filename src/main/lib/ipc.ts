@@ -806,9 +806,12 @@ export function registerIpc(): void {
     void (async () => {
       try {
         const all = await repo.listVideos({})
-        const noPoster = all.filter(
-          (v) => v.libraryId === libraryId && (!v.posterPath || v.posterSource === 'placeholder')
-        )
+        const noPoster = all
+          .filter(
+            (v) => v.libraryId === libraryId && (!v.posterPath || v.posterSource === 'placeholder')
+          )
+          // 批次上限：单轮补齐最多后台截 200 部，其余留待下次
+          .slice(0, 200)
         if (noPoster.length === 0) return
         const conc2 = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         let i2 = 0

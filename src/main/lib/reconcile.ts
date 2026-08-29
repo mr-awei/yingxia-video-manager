@@ -258,7 +258,10 @@ export async function reconcileLibrary(
       }
     }
   } else {
-    // 未配置 md：全部文件作为「未分类」直接展示
+    // 未配置 md / Excel 片单：全部文件直接展示
+    // 需求 B（自动归类）：有数据源元数据（javdbDetail.genres 非空）的视频按 genres 自动归类，
+    // 归入「【JavBus】高清·字幕」这类自动分类（order 9000，未分类 9999 之前）；
+    // 无元数据的仍归「未分类」（order 0）。
     for (const f of allFiles) {
       const video = await ensureVideo(
         f,
@@ -267,10 +270,14 @@ export async function reconcileLibrary(
         { code: path.basename(f), description: '', tags: [] },
         changes
       )
+      const d = video.javdbDetail
+      const hasGenres = !!d && !!d.genres && d.genres.length > 0
+      const srcName = d?.source === 'javbus' ? 'JavBus' : d?.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'
+      const catName = hasGenres ? `【${srcName}】${d!.genres.join('·')}` : '未分类'
       entries.push({
         kind: 'matched',
-        category: '未分类',
-        order: 0,
+        category: catName,
+        order: hasGenres ? 9000 : 0,
         code: path.basename(f),
         title: path.basename(f, path.extname(f)),
         description: '',
@@ -324,7 +331,11 @@ export async function reconcileLibrary(
 
   // 无封面兜底：数据源抓不到时，对账完成后后台给无海报视频截帧（不阻塞对账返回）
   //（封面缺失视频 → ffmpeg 截帧 → 下次列表/详情直接命中）
-  const missingPoster = entries.filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder')).map((e) => e.video!)
+  const missingPoster = entries
+    .filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder'))
+    .map((e) => e.video!)
+    // 批次上限：单轮对账最多后台截 200 部，其余留待下轮（避免长时间占满并发池）
+    .slice(0, 200)
   if (missingPoster.length > 0) {
     const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
     let idx = 0
