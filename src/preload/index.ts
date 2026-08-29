@@ -24,6 +24,7 @@ const api: AppApi = {
   videoShareTorrents: (id) => ipcRenderer.invoke(IPC.videoShareTorrents, id),
   videoDeleteFile: (id) => ipcRenderer.invoke(IPC.videoDeleteFile, id),
   videoInspectForDelete: (id) => ipcRenderer.invoke(IPC.videoInspectForDelete, id),
+  videoSwitchPoster: (id, source) => ipcRenderer.invoke(IPC.videoSwitchPoster, id, source),
   libraryPreviewRenames: (libraryId) => ipcRenderer.invoke(IPC.libraryPreviewRenames, libraryId),
   libraryApplyRenames: (libraryId, items) =>
     ipcRenderer.invoke(IPC.libraryApplyRenames, libraryId, items),

@@ -1,6 +1,6 @@
 {
   "name": "local-video-manager",
-  "version": "1.9.3",
+  "version": "2.0.0",
   "description": "本地视频管理工具 - 海报墙式影库，悬停看简介，点击看详情，本地播放器打开",
   "type": "module",
   "main": "out/main/index.js",
@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "socks": "^2.8.9",
-    "undici": "^6.28.0"
+    "undici": "^6.28.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@esbuild/win32-x64": "^0.28.2",

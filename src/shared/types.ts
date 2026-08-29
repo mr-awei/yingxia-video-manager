@@ -1,19 +1,21 @@
 // 跨主进程/渲染进程的共享类型定义（纯接口，无 Node/DOM 依赖）
 
-export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'ffmpeg' | 'placeholder'
+export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'javlibrary' | 'ffmpeg' | 'placeholder'
 export type SortKey = 'title' | 'year' | 'added' | 'lastPlayed' | 'random' | 'score'
 /** 浏览页视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */
 export type ViewMode = 'grid-portrait' | 'grid-landscape' | 'list-filename'
 /** 更新检查源 */
 export type UpdateSource = 'github' | 'gitee'
 
-/** 媒体库：对应一个被扫描的本地文件夹 + 一个简介 md 文件 */
+/** 媒体库：对应一个被扫描的本地文件夹 + 一个简介 md 或 Excel 片单文件 */
 export interface Library {
   id: string
   name: string
   folderPath: string
   /** 简介 md 文件路径（分类/简介/标签的权威来源）；为空则仅按文件夹展示 */
   introMdPath?: string
+  /** Excel 片单文件路径（替代 md 作为权威来源；与 introMdPath 二选一，优先 Excel） */
+  introExcelPath?: string
   /** 海报图片来源优先级链，越靠前优先级越高 */
   imagePriority: ImageSource[]
   createdAt: number
@@ -36,6 +38,8 @@ export interface Video {
   /** 解析后的海报本地路径（缓存文件或手动指定文件） */
   posterPath?: string
   posterSource?: ImageSource
+  /** FFmpeg 截帧生成的封面路径（与 posterPath 独立保存，供「数据源图/FFmpeg 截图」自由切换） */
+  posterPathFfmpeg?: string
   durationSec?: number
   fileSize?: number
   /** ffprobe 读取的视频技术参数（编码/分辨率/码率等） */
@@ -78,8 +82,8 @@ export interface JavdbDetail {
   samples: string[]
   /** 解析器版本标记：v2 = zip 配对解析器（2026-08-26 修复男演员混入）。旧数据无此字段。 */
   parseVer?: number
-  /** 数据来源：javdb / javbus（旧数据无此字段，默认视为 javdb） */
-  source?: 'javdb' | 'javbus'
+  /** 数据来源：javdb / javbus / javlibrary（旧数据无此字段，默认视为 javdb） */
+  source?: 'javdb' | 'javbus' | 'javlibrary'
   fetchedAt: number
 }
 
@@ -115,8 +119,8 @@ export interface Settings {
   posterDensity: 'large' | 'standard' | 'compact'
   /** 可选：javdb.com 登录 Cookie（某些网络/登录态下搜索需带 Cookie） */
   javdbCookie: string
-  /** 数据源：auto 自动降级（JavDB→JavBus）/ javdb 只用 JavDB / javbus 只用 JavBus（调试用） */
-  dataSource: 'auto' | 'javdb' | 'javbus'
+  /** 数据源：auto 自动降级（JavDB→JavBus→JavLibrary）/ javdb 只用 JavDB / javbus 只用 JavBus / javlibrary 只用 JavLibrary（调试用） */
+  dataSource: 'auto' | 'javdb' | 'javbus' | 'javlibrary'
   /** 代理模式（取代旧版单一 javdbProxy 字符串） */
   proxyMode: ProxyMode
   /** 代理主机（IP 或域名），system 模式可留空 */
@@ -133,6 +137,8 @@ export interface Settings {
   fetchConcurrency: number
   /** JavDB 批量抓取每条之间的间隔毫秒（限速，降低封禁风险，默认 600） */
   fetchIntervalMs: number
+  /** 扫描时跳过小于该体积（MB）的视频文件（过滤短视频/广告样片；0 = 不过滤） */
+  scanMinSizeMB: number
   /** 开机自启 */
   launchAtLogin: boolean
   /** 启动时自动对账当前库 */
@@ -207,6 +213,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoRescan: false,
   fetchConcurrency: 2,
   fetchIntervalMs: 600,
+  scanMinSizeMB: 100,
   launchAtLogin: false,
   scanOnStartup: true,
   minimizeToTray: false,

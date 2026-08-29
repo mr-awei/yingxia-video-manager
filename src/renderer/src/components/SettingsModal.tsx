@@ -814,15 +814,16 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name="database" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">数据源</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">auto 自动降级（JavDB → JavBus，连续失败自动切换）；手动指定可单独调试某个源。</div>
+                  <div className="text-white/40 text-xs mb-3">auto 自动降级（JavDB → JavBus → JavLibrary，连续失败自动切换）；手动指定可单独调试某个源。</div>
                   <SegmentedControl
                     value={draft.dataSource ?? 'auto'}
                     options={[
                       { value: 'auto', label: '自动' },
                       { value: 'javdb', label: 'JavDB' },
-                      { value: 'javbus', label: 'JavBus' }
+                      { value: 'javbus', label: 'JavBus' },
+                      { value: 'javlibrary', label: 'JavLibrary' }
                     ]}
-                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javdb' | 'javbus' })}
+                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javdb' | 'javbus' | 'javlibrary' })}
                   />
                 </Card>
 
@@ -1029,6 +1030,17 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       value={String(draft.scanConcurrency ?? 2)}
                       options={['1', '2', '3', '4', '6', '8'].map((n) => ({ value: n, label: `${n} 并发` }))}
                       onChange={(v) => setDraft({ ...draft, scanConcurrency: Number(v) })}
+                    />
+                  </FieldRow>
+                  <FieldRow label="跳过小体积文件" hint="扫描时过滤小于该体积（MB）的视频，避免广告样片/短视频混入主列表；0 = 不过滤。">
+                    <input
+                      className={`${inputCls} w-24`}
+                      type="number"
+                      min={0}
+                      value={draft.scanMinSizeMB ?? 100}
+                      onChange={(e) =>
+                        setDraft({ ...draft, scanMinSizeMB: Math.max(0, Number(e.target.value) || 0) })
+                      }
                     />
                   </FieldRow>
                 </Card>

@@ -210,6 +210,14 @@ export interface AppApi {
     otherFileCount?: number
     error?: string
   }>
+  /**
+   * 切换封面来源：'data' = 数据源图（javdb/javbus/javlibrary 缓存，没有则抓取）；
+   * 'ffmpeg' = FFmpeg 随机截帧图（没有则生成）。两套图片独立保存，可自由来回切换。
+   */
+  videoSwitchPoster(
+    id: string,
+    source: 'data' | 'ffmpeg'
+  ): Promise<{ ok: boolean; posterPath?: string; posterSource?: string; error?: string }>
   onScanProgress(cb: (p: ScanProgress) => void): void
   /** 监听：简介 md 文件变化（需自动重新对账） */
   onMdChanged(cb: (libraryId: string) => void): void

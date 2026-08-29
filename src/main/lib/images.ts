@@ -124,11 +124,16 @@ export async function resolvePoster(
         break
       }
       case 'javdb':
-        // 只复用已抓取的 javdb 缓存；抓取动作由「从 JavDB 获取封面 / 批量补全」显式触发
-        if (video.posterSource === 'javdb' && video.posterPath) {
+      case 'javbus':
+      case 'javlibrary':
+        // 只复用已抓取的数据源缓存；抓取动作由「从数据源获取封面 / 批量补全」显式触发
+        if (
+          (video.posterSource === 'javdb' || video.posterSource === 'javbus' || video.posterSource === 'javlibrary') &&
+          video.posterPath
+        ) {
           try {
             await fs.access(video.posterPath)
-            return { source: 'javdb', posterPath: video.posterPath }
+            return { source: video.posterSource, posterPath: video.posterPath }
           } catch {
             /* 缓存丢失，继续 */
           }

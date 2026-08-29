@@ -28,7 +28,7 @@ function cleanTitle(name: string): string {
   return s.replace(/\s{2,}/g, ' ').trim()
 }
 
-export async function* walk(dir: string): AsyncGenerator<string> {
+export async function* walk(dir: string, minSizeBytes = 0): AsyncGenerator<string> {
   let entries
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
@@ -38,10 +38,21 @@ export async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of entries) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      yield* walk(full)
+      yield* walk(full, minSizeBytes)
     } else if (entry.isFile()) {
       const ext = path.extname(full).toLowerCase()
-      if (VIDEO_EXTS.has(ext)) yield full
+      if (VIDEO_EXTS.has(ext)) {
+        // 大小过滤：跳过小于 minSizeBytes 的文件（过滤短视频/广告样片；0 = 不过滤）
+        if (minSizeBytes > 0) {
+          try {
+            const st = await fs.stat(full)
+            if (st.size < minSizeBytes) continue
+          } catch {
+            continue
+          }
+        }
+        yield full
+      }
     }
   }
 }
@@ -56,8 +67,9 @@ export async function scanLibrary(
   settings: Settings,
   onProgress?: (p: ScanProgress) => void
 ): Promise<Video[]> {
+  const minSizeBytes = Math.max(0, Math.floor(settings.scanMinSizeMB ?? 0)) * 1024 * 1024
   const allFiles: string[] = []
-  for await (const f of walk(library.folderPath)) allFiles.push(f)
+  for await (const f of walk(library.folderPath, minSizeBytes)) allFiles.push(f)
   const total = allFiles.length
   let done = 0
 

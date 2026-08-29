@@ -14,6 +14,7 @@ import { cacheRemoteImage } from './javdb'
 import { fetchJavdbPosterForVideo, fetchJavdbDetail } from './javdb'
 import { extractBaseCode, extractCode } from '../../shared/code'
 import { fetchJavBusDetail } from './javbus'
+import { fetchJavLibraryDetail } from './javlibrary'
 import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
@@ -31,7 +32,7 @@ import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-t
 interface MovieDetailResult {
   detail: JavdbDetail | null
   /** 命中来源（success 时） */
-  source?: 'javdb' | 'javbus'
+  source?: 'javdb' | 'javbus' | 'javlibrary'
   /** 全部失败时的原因描述 */
   error?: string
 }
@@ -161,6 +162,8 @@ async function cleanVideoCacheFiles(video: Video): Promise<{ removed: number; ke
       prefixes.add(`javdb-sample-${code}`)
       prefixes.add(`javbus-cover-${code}`)
       prefixes.add(`javbus-sample-${code}`)
+      prefixes.add(`javlibrary-cover-${code}`)
+      prefixes.add(`javlibrary-sample-${code}`)
     }
 
     // 其他视频仍在引用的缓存文件（同系列多分集共享）——不可删
@@ -255,7 +258,7 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
   const mode = settings.dataSource ?? 'auto'
   const errors: string[] = []
   const onError = (m: string) => errors.push(m)
-  // 手动指定源：只走该源（调试 JavBus/JavDB 用）
+  // 手动指定源：只走该源（调试 JavBus/JavDB/JavLibrary 用）
   if (mode === 'javdb') {
     try {
       const javdb = await fetchJavdbDetail(code, settings, onError)
@@ -274,7 +277,16 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
     }
     return { detail: null, error: errors.length ? errors.join('；') : 'JavBus 未返回结果' }
   }
-  // auto：JavDB → JavBus 降级
+  if (mode === 'javlibrary') {
+    try {
+      const javlibrary = await fetchJavLibraryDetail(code, settings, onError)
+      if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+    } catch (e) {
+      errors.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errors.length ? errors.join('；') : 'JavLibrary 未返回结果' }
+  }
+  // auto：JavDB → JavBus → JavLibrary 降级
   try {
     const javdb = await fetchJavdbDetail(code, settings, onError)
     if (javdb) return { detail: javdb, source: 'javdb' }
@@ -287,7 +299,13 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
   } catch (e) {
     errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
   }
-  return { detail: null, error: errors.length ? errors.join('；') : '两个数据源均未返回结果' }
+  try {
+    const javlibrary = await fetchJavLibraryDetail(code, settings, onError)
+    if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+  } catch (e) {
+    errors.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
+  }
+  return { detail: null, error: errors.length ? errors.join('；') : '三个数据源均未返回结果' }
 }
 
 interface SmartFetchState {
@@ -303,8 +321,11 @@ const JAVDB_CONSECUTIVE_LIMIT = 3
 const JAVBUS_CONSECUTIVE_LIMIT = 3
 
 /**
- * 批量智能抓取：JavDB 连续失败 N 部 → 自动禁用 JavDB（本轮只走 JavBus，不再浪费请求）；
- * JavDB 禁用后 JavBus 也连续失败 N 部 → 停止整个批量（继续没有意义）。
+ * 批量智能抓取：JavDB 连续**网络失败** N 部 → 自动禁用 JavDB（本轮只走 JavBus，不再浪费请求）；
+ * JavDB 禁用后 JavBus 也连续**网络失败** N 部 → 停止整个批量（继续没有意义）。
+ * 注意：「搜索无结果 / 无法识别番号」属正常结果（该番号数据源确实没有），**不计数、不触发停止**——
+ * 只有真正的网络/会话异常（请求失败、超时、年龄验证失败等）才累计失败次数，
+ * 避免「IP 没被封、只是数据源没这个番号」时批量被误停。
  */
 async function fetchDetailSmart(
   code: string,
@@ -312,59 +333,74 @@ async function fetchDetailSmart(
   state: SmartFetchState
 ): Promise<MovieDetailResult> {
   const mode = settings.dataSource ?? 'auto'
-  const errors: string[] = []
-  const onError = (m: string) => errors.push(m)
   if (mode === 'javdb') {
+    const errs: string[] = []
     try {
-      const javdb = await fetchJavdbDetail(code, settings, onError)
+      const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m))
       if (javdb) return { detail: javdb, source: 'javdb' }
     } catch (e) {
-      errors.push(`JavDB 异常：${(e as Error)?.message || e}`)
+      errs.push(`JavDB 异常：${(e as Error)?.message || e}`)
     }
-    return { detail: null, error: errors.length ? errors.join('；') : 'JavDB 未返回结果' }
+    return { detail: null, error: errs.length ? errs.join('；') : 'JavDB 未返回结果' }
   }
   if (mode === 'javbus') {
+    const errs: string[] = []
     try {
-      const javbus = await fetchJavBusDetail(code, settings, onError)
+      const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m))
       if (javbus) return { detail: javbus, source: 'javbus' }
     } catch (e) {
-      errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
+      errs.push(`JavBus 异常：${(e as Error)?.message || e}`)
     }
-    return { detail: null, error: errors.length ? errors.join('；') : 'JavBus 未返回结果' }
+    return { detail: null, error: errs.length ? errs.join('；') : 'JavBus 未返回结果' }
   }
+  // ---- auto：JavDB（未禁）→ 网络失败才计数，达阈值禁用 → JavBus ----
+  const javdbErrs: string[] = []
   if (!state.javdbDisabled) {
     try {
-      const javdb = await fetchJavdbDetail(code, settings, onError)
+      const javdb = await fetchJavdbDetail(code, settings, (m) => javdbErrs.push(m))
       if (javdb) {
         state.javdbFails = 0
         return { detail: javdb, source: 'javdb' }
       }
     } catch (e) {
-      errors.push(`JavDB 异常：${(e as Error)?.message || e}`)
+      javdbErrs.push(`JavDB 异常：${(e as Error)?.message || e}`)
     }
-    state.javdbFails++
-    if (state.javdbFails >= JAVDB_CONSECUTIVE_LIMIT) {
-      state.javdbDisabled = true
-      console.log(`[batch] JavDB 连续失败 ${state.javdbFails} 部，本轮自动切换 JavBus`)
+    // 仅网络失败计数；「无结果」不计数
+    if (javdbErrs.length > 0) {
+      state.javdbFails++
+      if (state.javdbFails >= JAVDB_CONSECUTIVE_LIMIT) {
+        state.javdbDisabled = true
+        console.log(`[batch] JavDB 连续网络失败 ${state.javdbFails} 部，本轮自动切换 JavBus`)
+      }
     }
   }
+  const javbusErrs: string[] = []
   try {
-    const javbus = await fetchJavBusDetail(code, settings, onError)
+    const javbus = await fetchJavBusDetail(code, settings, (m) => javbusErrs.push(m))
     if (javbus) {
       state.javbusFails = 0
       return { detail: javbus, source: 'javbus' }
     }
   } catch (e) {
-    errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
+    javbusErrs.push(`JavBus 异常：${(e as Error)?.message || e}`)
   }
-  if (state.javdbDisabled) {
+  // 仅当 javdb 已禁用（纯 javbus 兜底阶段）且 javbus 网络失败才计数
+  if (state.javdbDisabled && javbusErrs.length > 0) {
     state.javbusFails++
     if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
       state.stop = true
-      errors.push(`JavBus 连续失败 ${state.javbusFails} 部，已自动停止`)
+      javbusErrs.push(`JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止`)
     }
   }
-  return { detail: null, error: errors.length ? errors.join('；') : '未知原因' }
+  // javlibrary 最后兜底（不计数；JavLibrary 数据与 javdb/javbus 重叠度高，作为补充源）
+  try {
+    const javlibrary = await fetchJavLibraryDetail(code, settings)
+    if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+  } catch {
+    /* 静默 */
+  }
+  const allErrs = [...javdbErrs, ...javbusErrs]
+  return { detail: null, error: allErrs.length ? allErrs.join('；') : '未知原因' }
 }
 
 function emitProgress(p: ScanProgress): void {
@@ -641,7 +677,7 @@ export function registerIpc(): void {
     let done = 0
     let ok = 0
     let failed = 0
-    const bySource: { javdb: number; javbus: number } = { javdb: 0, javbus: 0 }
+    const bySource: { javdb: number; javbus: number; javlibrary: number } = { javdb: 0, javbus: 0, javlibrary: 0 }
     const failures: Array<{ title: string; reason: string }> = []
     const smartState: SmartFetchState = { javdbDisabled: false, javdbFails: 0, javbusFails: 0, stop: false }
     // 系列去重：同 base code 只抓一次，其余分集复用（HUNTA-468CD1/CD2 → 抓一次）
@@ -1041,6 +1077,67 @@ export function registerIpc(): void {
     }
   })
 
+  // ---------- 封面来源切换：数据源图（javdb/javbus/javlibrary）↔ FFmpeg 截帧图 ----------
+  // 两套图独立保存：posterPathFfmpeg 始终存 FFmpeg 截帧封面；
+  // 切换到 'ffmpeg' → posterPath=截帧图；切换到 'data' → 优先用数据源缓存图，没有则抓取。
+  ipcMain.handle(IPC.videoSwitchPoster, async (_e, id: string, source: 'data' | 'ffmpeg') => {
+    try {
+      const v = await repo.getVideo(id)
+      if (!v) return { ok: false, error: '视频不存在' }
+      const settings = await repo.getSettings()
+
+      if (source === 'ffmpeg') {
+        // 1) 已有 FFmpeg 截帧封面 → 直接切换
+        if (v.posterPathFfmpeg) {
+          try {
+            await fs.access(v.posterPathFfmpeg)
+            await repo.updateVideo(id, { posterPath: v.posterPathFfmpeg, posterSource: 'ffmpeg' })
+            return { ok: true, posterPath: v.posterPathFfmpeg, posterSource: 'ffmpeg' }
+          } catch {
+            /* 文件丢失，重新生成 */
+          }
+        }
+        // 2) 生成 FFmpeg 截帧（封面 + 预览图），并持久化两处
+        const set = await generatePreviewSet(v, settings)
+        if (!set?.coverPath) return { ok: false, error: 'FFmpeg 截帧失败（检查 ffmpeg 是否可用）' }
+        await repo.updateVideo(id, {
+          posterPath: set.coverPath,
+          posterSource: 'ffmpeg',
+          posterPathFfmpeg: set.coverPath,
+          previewPaths: set.previewPaths
+        })
+        return { ok: true, posterPath: set.coverPath, posterSource: 'ffmpeg' }
+      }
+
+      // source === 'data'：优先复用数据源缓存图（javdb-cover-CODE / javbus-cover-CODE / javlibrary-cover-CODE）
+      const code = v.javdbDetail?.code
+      const cacheCandidates: string[] = []
+      if (code) {
+        cacheCandidates.push(
+          path.join(postersCacheDir(), `javdb-cover-${code}.jpg`),
+          path.join(postersCacheDir(), `javbus-cover-${code}.jpg`),
+          path.join(postersCacheDir(), `javlibrary-cover-${code}.jpg`)
+        )
+      }
+      for (const p of cacheCandidates) {
+        try {
+          await fs.access(p)
+          await repo.updateVideo(id, { posterPath: p, posterSource: 'javdb' })
+          return { ok: true, posterPath: p, posterSource: 'javdb' }
+        } catch {
+          /* 继续尝试下一个 */
+        }
+      }
+      // 无缓存 → 从数据源抓封面
+      const fetched = await fetchJavdbPosterForVideo(v, settings)
+      if (!fetched) return { ok: false, error: '数据源封面获取失败（无网络或数据源无此片）' }
+      await repo.updateVideo(id, { posterPath: fetched, posterSource: 'javdb' })
+      return { ok: true, posterPath: fetched, posterSource: 'javdb' }
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? '切换失败' }
+    }
+  })
+
   // ---------- ffprobe 技术参数 ----------
   ipcMain.handle(IPC.videoProbe, async (_e, id: string) => {
     const v = await repo.getVideo(id)
@@ -1209,6 +1306,8 @@ export function registerIpc(): void {
     if (set.coverPath) {
       patch.posterSource = 'ffmpeg'
       patch.posterPath = set.coverPath
+      // 独立保存 FFmpeg 截帧封面，供「数据源图 / FFmpeg 截图」自由切换
+      patch.posterPathFfmpeg = set.coverPath
     }
     if (set.previewPaths.length) patch.previewPaths = set.previewPaths
     await frameLog(`[videoGeneratePreviews] update id=${id} cover=${set.coverPath ?? 'none'} previews=${set.previewPaths.length}`)

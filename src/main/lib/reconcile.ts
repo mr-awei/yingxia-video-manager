@@ -10,12 +10,19 @@ import type {
   Video
 } from '../../shared/types'
 import { parseIntroMd } from './parser'
+import { parseIntroExcel } from './excel'
 import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
 import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic } from '../../shared/code'
 
 async function readIntroDoc(library: Library): Promise<IntroDoc | null> {
+  // Excel 片单优先（用户已切换到 Excel 格式）
+  if (library.introExcelPath) {
+    const doc = await parseIntroExcel(library.introExcelPath)
+    if (doc) return doc
+    // Excel 解析失败时回退 md
+  }
   if (!library.introMdPath) return null
   try {
     const content = await fs.readFile(library.introMdPath, 'utf-8')
@@ -166,8 +173,10 @@ export async function reconcileLibrary(
 ): Promise<ReconcileResult> {
   const doc = await readIntroDoc(library)
 
+  // 与 scanLibrary 一致：按设置过滤小文件（短视频/广告样片）
+  const minSizeBytes = Math.max(0, Math.floor(settings.scanMinSizeMB ?? 0)) * 1024 * 1024
   const allFiles: string[] = []
-  for await (const f of walk(library.folderPath)) allFiles.push(f)
+  for await (const f of walk(library.folderPath, minSizeBytes)) allFiles.push(f)
   const fileEntries = collectFiles(allFiles)
   const used = new Set<string>()
 

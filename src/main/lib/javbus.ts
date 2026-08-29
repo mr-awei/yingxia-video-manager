@@ -180,7 +180,8 @@ export async function fetchJavBusDetail(
   // JavBus 上没有 HUNTA-468CD2，只有 HUNTA-468，必须剥后缀。
   const codeNorm = extractBaseCode(extractCode(code)) || extractCode(code)
   if (!codeNorm) {
-    onError?.('无法从文件名/标题识别番号')
+    // 「无法识别番号」属正常结果（数据源确实无对应），不触发 onError——
+    // 让批量对账把「无结果」与「网络失败」区分开（网络失败才累计停止）。
     return null
   }
   const cookie = await ensureJavBusAgeCookie(settings)
@@ -190,7 +191,7 @@ export async function fetchJavBusDetail(
   }
   const detailUrl = await searchDetailUrl(codeNorm, settings, cookie)
   if (!detailUrl) {
-    onError?.(`JavBus 搜索无结果：${codeNorm}`)
+    // 「搜索无结果」正常静默（同「无法识别番号」）
     return null
   }
   const html = await getText(detailUrl, settings, cookie)

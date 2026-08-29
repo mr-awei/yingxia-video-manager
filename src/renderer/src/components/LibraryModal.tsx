@@ -19,6 +19,7 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
   const [name, setName] = useState('')
   const [folderPath, setFolderPath] = useState('')
   const [introMdPath, setIntroMdPath] = useState('')
+  const [introExcelPath, setIntroExcelPath] = useState('')
   const [saving, setSaving] = useState(false)
 
   const adding = !library
@@ -28,6 +29,7 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
       setName(library?.name ?? '')
       setFolderPath(library?.folderPath ?? '')
       setIntroMdPath(library?.introMdPath ?? '')
+      setIntroExcelPath(library?.introExcelPath ?? '')
       setSaving(false)
     }
   }, [open, library])
@@ -48,6 +50,10 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
     const p = await api.dialogSelectFile()
     if (p) setIntroMdPath(p)
   }
+  async function pickExcel() {
+    const p = await api.dialogSelectFile()
+    if (p && /\.(xlsx|xls)$/i.test(p)) setIntroExcelPath(p)
+  }
 
   async function save() {
     if (saving) return
@@ -55,7 +61,7 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
     if (!folderPath.trim()) return
     setSaving(true)
     try {
-      const ok = await onSave({ name: name.trim() || folderPath, folderPath, introMdPath })
+      const ok = await onSave({ name: name.trim() || folderPath, folderPath, introMdPath, introExcelPath })
       if (!ok) setSaving(false)
       // 成功时弹窗由 App 层关闭
     } catch {
@@ -191,6 +197,30 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
               还没有 md？按内置规范让 AI 帮你生成 →
             </button>
           ) : null}
+        </label>
+
+        <label className="block mb-5">
+          <div className="text-white/80 text-sm mb-1">
+            Excel 片单文件
+            <span className="text-white/40 ml-1.5 text-xs">（可选 · 优先于 md）</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              placeholder="选择「收藏整理_2026.xlsx」这类片单（品番/分类/评分/简介/标签）"
+              value={introExcelPath}
+              onChange={(e) => setIntroExcelPath(e.target.value)}
+            />
+            <button
+              className="shrink-0 px-3 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
+              onClick={pickExcel}
+            >
+              浏览…
+            </button>
+          </div>
+          <div className="text-white/40 text-xs mt-1">
+            已配置 Excel 时优先按 Excel 片单对账；md 仅作兜底。Excel 需含「品番」列（如 收藏整理_2026.xlsx 的「片单」工作表）。
+          </div>
         </label>
 
         <div className="flex justify-between items-center">

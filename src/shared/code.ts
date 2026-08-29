@@ -44,11 +44,23 @@ export function isDomestic(folderName: string, fileName?: string): boolean {
 
 /** 从任意字符串（文件名/标题/整段描述）提取第一个番号；找不到返回空串。
  *  与 main 侧 javdb.ts 的 extractCode 语义不同：此处「提取不到」返回 ''，
- *  避免把无番号的文件名整段复制出去。 */
-const CODE_RE = /\b([A-Z]{2,}[-_][A-Z0-9]+)\b/
+ *  避免把无番号的文件名整段复制出去。
+ *  支持两种形态：
+ *    - 带分隔符：SONE-560 / SONE_560 / HUNTA-468CD2
+ *    - 无分隔符：KSJK013 / ALDN606（旧版正则只认带分隔符，导致这类搜不到）
+ *  先剥离中文字符/全角/括号/广告前缀，避免「【中文字幕】KSJK013」污染搜索词。 */
+const CODE_RE = /\b([A-Z]{2,}(?:[-_]\d+|\d+)(?:[A-Z0-9]{0,6})?)\b/
 export function extractCode(input: string): string {
   const t = (input ?? '').trim()
   if (!t) return ''
-  const m = t.toUpperCase().match(CODE_RE)
-  return m ? m[1].replace('_', '-') : ''
+  // 1) 去掉中文/全角/括号等非 ASCII 部分（保留字母数字连字符下划线点）
+  const ascii = t.replace(/[^\x21-\x7E]+/g, ' ')
+  // 2) 从 ASCII 段中提取第一个番号形态 token（KSJK013 / SONE-560 / ALDN606）
+  const m = ascii.toUpperCase().match(CODE_RE)
+  if (!m) return ''
+  const norm = m[1].replace(/_/g, '-')
+  // 3) 归一为「字母-数字」标准形态（SONE-560CD2 → SONE-560；KSJK013 → KSJK-013）
+  const mm = norm.match(/^([A-Z]{2,})(?:-)?(\d+)/)
+  if (mm) return `${mm[1]}-${mm[2]}`
+  return norm
 }
