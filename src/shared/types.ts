@@ -12,9 +12,7 @@ export interface Library {
   id: string
   name: string
   folderPath: string
-  /** 简介 md 文件路径（分类/简介/标签的权威来源）；为空则仅按文件夹展示 */
-  introMdPath?: string
-  /** Excel 片单文件路径（替代 md 作为权威来源；与 introMdPath 二选一，优先 Excel） */
+  /** Excel 片单文件路径（片单/分类/简介/标签的权威来源）；为空则仅按文件夹展示 */
   introExcelPath?: string
   /** 海报图片来源优先级链，越靠前优先级越高 */
   imagePriority: ImageSource[]
@@ -158,6 +156,8 @@ export interface Settings {
   defaultSort: SortKey
   /** 隐私护盾默认开启（启动时自动进入隐私模式） */
   privacyDefaultOn: boolean
+  /** 删除密码锁：开启后删除视频/媒体库需输入密码验证（防误删/防小孩/防陌生人） */
+  lockEnabled: boolean
   /** 扫描富集并发数（1-8：ffprobe 探测 / 截帧等） */
   scanConcurrency: number
   /** 扫描最小文件大小（MB）；0 = 不限。小于该值的视频不进入媒体库（过滤短视频/广告） */
@@ -234,6 +234,7 @@ export const DEFAULT_SETTINGS: Settings = {
   minimizeToTray: false,
   defaultSort: 'title',
   privacyDefaultOn: false,
+  lockEnabled: false,
   scanConcurrency: 4,
   updateSource: 'gitee',
   autoUpdateFrequency: 'off',

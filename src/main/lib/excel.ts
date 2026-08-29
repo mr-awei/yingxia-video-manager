@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx'
  *   数据行：从第 2 行开始；「分类」即分类分组名；「品番」即番号；
  *           「推荐评分」为 0-10 数值；「主题/角色/服装/体型/行为/玩法/场景/剧情/其他」
  *           为逗号/顿号分隔的结构化标签（映射为 IntroItem.tagCategories）。
- * 产出与 `parseIntroMd` 完全同构的 IntroDoc，reconcileLibrary 无需区分数据源。
+ * 产出 IntroDoc（统一作为片单权威源）。
  */
 
 function splitTags(v: unknown): string[] {

@@ -11,14 +11,11 @@ interface Props {
   /** 保存（新建/更新）；返回是否成功 */
   onSave: (patch: Partial<Library>) => Promise<boolean>
   onRemove: () => void
-  /** 打开「新建简介文件向导」（按内置规范生成 md） */
-  onOnboard?: () => void
 }
 
-export default function LibraryModal({ open, library, onClose, onSave, onRemove, onOnboard }: Props) {
+export default function LibraryModal({ open, library, onClose, onSave, onRemove }: Props) {
   const [name, setName] = useState('')
   const [folderPath, setFolderPath] = useState('')
-  const [introMdPath, setIntroMdPath] = useState('')
   const [introExcelPath, setIntroExcelPath] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -28,7 +25,6 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
     if (open) {
       setName(library?.name ?? '')
       setFolderPath(library?.folderPath ?? '')
-      setIntroMdPath(library?.introMdPath ?? '')
       setIntroExcelPath(library?.introExcelPath ?? '')
       setSaving(false)
     }
@@ -46,10 +42,6 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
       if (!name) setName(p.split(/[\\/]/).pop() || p)
     }
   }
-  async function pickMd() {
-    const p = await api.dialogSelectFile()
-    if (p) setIntroMdPath(p)
-  }
   async function pickExcel() {
     const p = await api.dialogSelectFile()
     if (p && /\.(xlsx|xls)$/i.test(p)) setIntroExcelPath(p)
@@ -61,21 +53,11 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
     if (!folderPath.trim()) return
     setSaving(true)
     try {
-      const ok = await onSave({ name: name.trim() || folderPath, folderPath, introMdPath, introExcelPath })
+      const ok = await onSave({ name: name.trim() || folderPath, folderPath, introExcelPath })
       if (!ok) setSaving(false)
       // 成功时弹窗由 App 层关闭
     } catch {
       setSaving(false)
-    }
-  }
-
-  /** 「还没有 md？」：新建模式先保存（App 层保存成功且无 md 时自动打开向导），编辑模式直接进向导 */
-  function handleOnboard() {
-    if (!onOnboard) return
-    if (adding) {
-      if (folderPath.trim()) void save()
-    } else {
-      onOnboard()
     }
   }
 
@@ -115,14 +97,14 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
               </div>
             </div>
             <div className="flex items-start gap-2.5">
-              <span className="w-5 h-5 rounded-md bg-ink-700 text-white/70 text-[11px] font-bold flex items-center justify-center shrink-0 mt-px">2</span>
+              <span className="w-5 h-5 rounded-md bg-brand/20 text-brand text-[11px] font-bold flex items-center justify-center shrink-0 mt-px">2</span>
               <div>
                 <div className="text-white/90 text-[13px]">
-                  选择简介 md 文件
+                  选择 Excel 片单文件
                   <span className="text-white/40 ml-1.5">（可选）</span>
                 </div>
                 <div className="text-white/45 text-[12px] leading-relaxed mt-0.5">
-                  一个写有每部影片「中文简介 / 标签 / 评分 / 分类」的 md 文档。选了它，海报墙就能按分类浏览、悬停看简介；不选也可以，只是没有分类和简介。
+                  一个含每部影片「品番 / 分类 / 简介 / 标签 / 评分」的 Excel 文件。选了它，海报墙就能按分类浏览、悬停看简介；不选也可以，只是没有分类和简介。
                 </div>
               </div>
             </div>
@@ -168,41 +150,8 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
 
         <label className="block mb-5">
           <div className="text-white/80 text-sm mb-1">
-            简介 md 文件
-            <span className="text-white/40 ml-1.5 text-xs">（可选）</span>
-          </div>
-          <div className="flex gap-2">
-            <input
-              className={inputCls}
-              placeholder="选择分类/简介/标签的 md 文件（可留空）"
-              value={introMdPath}
-              onChange={(e) => setIntroMdPath(e.target.value)}
-            />
-            <button
-              className="shrink-0 px-3 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
-              onClick={pickMd}
-            >
-              浏览…
-            </button>
-          </div>
-          <div className="text-white/40 text-xs mt-1">
-            海报墙按该 md 的分类展示，悬停可看简介、标签、评分；对账差异会弹窗提醒。没选的话，视频只有文件名和封面。
-          </div>
-          {onOnboard ? (
-            <button
-              className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-brand hover:text-brand-hover"
-              onClick={handleOnboard}
-            >
-              <Icon name="wand" size={13} />
-              还没有 md？按内置规范让 AI 帮你生成 →
-            </button>
-          ) : null}
-        </label>
-
-        <label className="block mb-5">
-          <div className="text-white/80 text-sm mb-1">
             Excel 片单文件
-            <span className="text-white/40 ml-1.5 text-xs">（可选 · 优先于 md）</span>
+            <span className="text-white/40 ml-1.5 text-xs">（可选）</span>
           </div>
           <div className="flex gap-2">
             <input
@@ -219,7 +168,7 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove,
             </button>
           </div>
           <div className="text-white/40 text-xs mt-1">
-            已配置 Excel 时优先按 Excel 片单对账；md 仅作兜底。Excel 需含「品番」列（如 收藏整理_2026.xlsx 的「片单」工作表）。
+            海报墙按该 Excel 的分类/简介/标签/评分展示，对账差异会弹窗提醒。Excel 需含「品番」列（如 收藏整理_2026.xlsx 的「片单」工作表）。
           </div>
         </label>
 

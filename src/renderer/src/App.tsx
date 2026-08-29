@@ -28,7 +28,6 @@ import HomeSkeleton from './components/HomeSkeleton'
 import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
-import OnboardMdModal from './components/OnboardMdModal'
 import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
 import ConfirmDeleteModal, { type DeletePreview } from './components/ConfirmDeleteModal'
 import UserNoticeModal from './components/UserNoticeModal'
@@ -123,8 +122,6 @@ export default function App() {
   const [noticeOpen, setNoticeOpen] = useState(false)
   /** true = 「添加媒体库」新建表单；false = 库设置编辑模式 */
   const [addingLibrary, setAddingLibrary] = useState(false)
-  /** 新建 md 文件向导（添加媒体库无 md / 库设置「按规范新建」时弹出） */
-  const [onboard, setOnboard] = useState<Library | null>(null)
   const [editing, setEditing] = useState<Video | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [detail, setDetail] = useState<Video | null>(null)
@@ -285,13 +282,6 @@ export default function App() {
   useEffect(() => {
     libraryIdRef.current = libraryId
   }, [libraryId])
-  useEffect(() => {
-    api.onMdChanged((changedId) => {
-      if (changedId === libraryIdRef.current) void runReconcile(changedId)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 启动时自动重扫：所有「非当前」媒体库各跑一次对账（当前库由上方 reconcile 副作用覆盖），仅刷新数据、不切换展示
   const autoRescanDone = useRef(false)
   useEffect(() => {
@@ -900,6 +890,15 @@ export default function App() {
   /** 弹窗确认后：把文件/目录挪到回收站 → 关详情页 → 全库扫描 */
   const confirmDelete = useCallback(async () => {
     if (!deletePreview || deleting) return
+    if (settings.lockHash) {
+      const pwd = window.prompt('该操作受隐私锁保护，请输入密码以继续：')
+      if (pwd == null) return
+      const ok = await api.lockVerify(pwd)
+      if (!ok) {
+        window.alert('密码错误，已取消删除')
+        return
+      }
+    }
     const fileName = deletePreview.fileName
     setDeleting(true)
     try {
@@ -973,7 +972,7 @@ export default function App() {
 
   const handleOpenMissing = useCallback(
     (_entry: DisplayEntry) => {
-      if (currentLibrary?.introMdPath) void api.openPath(currentLibrary.introMdPath)
+      if (currentLibrary?.introExcelPath) void api.openPath(currentLibrary.introExcelPath)
     },
     [currentLibrary]
   )
@@ -984,7 +983,6 @@ export default function App() {
         const lib = await api.libraryAdd({
           name: patch.name?.trim() || patch.folderPath || '未命名媒体库',
           folderPath: patch.folderPath || '',
-          introMdPath: patch.introMdPath ?? '',
           imagePriority: [...DEFAULT_IMAGE_PRIORITY]
         })
         if (!lib) return false
@@ -993,8 +991,6 @@ export default function App() {
         setLibraryOpen(false)
         setAddingLibrary(false)
         await runReconcile(lib.id)
-        // 未选择 md 文件：自动弹出「新建简介文件向导」，引导用户按内置规范生成 md
-        if (!patch.introMdPath) setOnboard(lib)
         return true
       }
       if (!currentLibrary) return false
@@ -1012,6 +1008,15 @@ export default function App() {
 
   const handleRemoveLibrary = useCallback(async () => {
     if (!currentLibrary) return
+    if (settings.lockHash) {
+      const pwd = window.prompt('该操作受隐私锁保护（删除媒体库），请输入密码以继续：')
+      if (pwd == null) return
+      const ok = await api.lockVerify(pwd)
+      if (!ok) {
+        window.alert('密码错误，已取消删除')
+        return
+      }
+    }
     await api.libraryRemove(currentLibrary.id)
     setLibraries((prev) => prev.filter((l) => l.id !== currentLibrary.id))
     setLibraryOpen(false)
@@ -1706,7 +1711,6 @@ export default function App() {
       <ReconcileDialog
         open={reconcileOpen}
         result={reconcile}
-        mdPath={currentLibrary?.introMdPath}
         ignoredUnlistedPaths={settings.ignoredUnlistedPaths}
         onClose={() => setReconcileOpen(false)}
         onOpenFile={(p) => void api.openPath(p)}
@@ -1738,11 +1742,6 @@ export default function App() {
         }}
         onSave={handleSaveLibrary}
         onRemove={handleRemoveLibrary}
-        onOnboard={() => {
-          setLibraryOpen(false)
-          setAddingLibrary(false)
-          setOnboard(currentLibrary)
-        }}
       />
 
       <SettingsModal
@@ -1808,19 +1807,6 @@ export default function App() {
           }}
         />
       ) : null}
-
-      <OnboardMdModal
-        open={!!onboard}
-        library={onboard}
-        onClose={() => setOnboard(null)}
-        onOpenExternal={(u) => void api.openExternal(u)}
-        onOpenSpec={(p) => void api.openPath(p)}
-        onOpenLibrarySettings={() => {
-          setOnboard(null)
-          setAddingLibrary(false)
-          setLibraryOpen(true)
-        }}
-      />
 
       {/* 删除文件二次确认（Impeccable 设计：琥珀=仅删文件 / 红=整目录删） */}
       <ConfirmDeleteModal

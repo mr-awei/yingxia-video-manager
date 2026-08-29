@@ -223,21 +223,6 @@ export interface AppApi {
     source: 'data' | 'ffmpeg'
   ): Promise<{ ok: boolean; posterPath?: string; posterSource?: string; error?: string }>
   onScanProgress(cb: (p: ScanProgress) => void): void
-  /** 监听：简介 md 文件变化（需自动重新对账） */
-  onMdChanged(cb: (libraryId: string) => void): void
-  /** 读取内置《通用评分与简介规范》全文（新建 md 向导）；返回内容与磁盘路径 */
-  specGet(): Promise<{ content: string; path: string }>
-  /** 批量导出媒体库番号清单（弹出保存对话框；txt 同时复制剪贴板）；format 默认 txt，xlsx 生成 Excel 工作簿 */
-  libraryExportCodes(
-    libraryId: string,
-    format?: 'txt' | 'xlsx'
-  ): Promise<{
-    ok: boolean
-    path?: string
-    count: number
-    codes: string[]
-    error?: string
-  }>
   /** 仅扫描媒体库番号清单（不弹保存对话框、不写文件），供向导打开时自动加载 */
   libraryGetCodes(libraryId: string): Promise<{ count: number; codes: string[] }>
 }

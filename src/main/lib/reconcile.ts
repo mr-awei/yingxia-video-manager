@@ -9,7 +9,6 @@ import type {
   UnlistedFile,
   Video
 } from '../../shared/types'
-import { parseIntroMd } from './parser'
 import { parseIntroExcel } from './excel'
 import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type VideoChange } from './repo'
 import { resolvePoster, generatePreviewSet } from './images'
@@ -17,19 +16,9 @@ import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic } from '../../shared/code'
 
 async function readIntroDoc(library: Library): Promise<IntroDoc | null> {
-  // Excel 片单优先（用户已切换到 Excel 格式）
-  if (library.introExcelPath) {
-    const doc = await parseIntroExcel(library.introExcelPath)
-    if (doc) return doc
-    // Excel 解析失败时回退 md
-  }
-  if (!library.introMdPath) return null
-  try {
-    const content = await fs.readFile(library.introMdPath, 'utf-8')
-    return parseIntroMd(content)
-  } catch {
-    return null
-  }
+  // 仅使用 Excel 片单（已全面切换到 Excel 格式）
+  if (!library.introExcelPath) return null
+  return await parseIntroExcel(library.introExcelPath)
 }
 
 interface FileEntry {
@@ -115,7 +104,7 @@ async function ensureVideo(
   const domestic = isDomestic(folderName, path.basename(filePath))
   const existing = await findVideoByPath(filePath)
   if (existing) {
-    // md 为权威来源：简介/标签/评分以 md 为准（仅在变化时记录一次 update，不逐条写盘）
+    // Excel 为权威来源：简介/标签/评分以 Excel 为准（仅在变化时记录一次 update，不逐条写盘）
     if (
       existing.description !== meta.description ||
       JSON.stringify(existing.tags) !== JSON.stringify(meta.tags) ||
@@ -161,7 +150,7 @@ async function ensureVideo(
 }
 
 /**
- * 按简介 md 对账某个媒体库的视频文件夹。
+ * 按 Excel 片单对账某个媒体库的视频文件夹。
  * - md 条目匹配到文件 → matched（含海报/播放信息）
  * - md 有但文件缺失 → missing（提示下载或删除简介）
  * - 文件夹有但 md 未收录 → unlisted（提示更新 md）

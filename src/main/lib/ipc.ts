@@ -23,7 +23,6 @@ import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
 import { probeVideo, probeImage } from './ffprobe'
 import { previewRenames, applyRenames } from './rename'
-import { watchLibraryMd, unwatchLibraryMd, syncMdWatchers } from './mdWatcher'
 import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 
@@ -743,27 +742,22 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
 }
 
 export function registerIpc(): void {
-  // 同步 MD watcher（启动/库变化时）
-  void syncMdWatchers(repo.listLibraries)
 
   // ---------- 媒体库 ----------
   ipcMain.handle(IPC.libraryList, () => repo.listLibraries())
   ipcMain.handle(IPC.libraryAdd, async (_e, input: Omit<Library, 'id' | 'createdAt'>) => {
     const lib = await repo.addLibrary(input)
-    watchLibraryMd(lib)
     return lib
   })
   ipcMain.handle(IPC.libraryRemove, async (_e, id: string) => {
-    unwatchLibraryMd(id)
     await repo.removeLibrary(id)
   })
   ipcMain.handle(IPC.libraryUpdate, async (_e, id: string, patch: Partial<Library>) => {
     const lib = await repo.updateLibrary(id, patch)
-    if (lib) watchLibraryMd(lib)
     return lib
   })
 
-  // ---------- 对账（MD 驱动 + 文件夹对账） ----------
+  // ---------- 对账（Excel 驱动 + 文件夹对账） ----------
   ipcMain.handle(IPC.libraryReconcile, async (_e, libraryId: string) => {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
@@ -1109,16 +1103,17 @@ export function registerIpc(): void {
     })
     return res.canceled ? null : (res.filePaths[0] ?? null)
   })
-  ipcMain.handle(IPC.dialogSelectFile, async () => {
+  ipcMain.handle(IPC.dialogSelectFile, async (_e, opts?: { title?: string; buttonLabel?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+    // 默认选 Excel 片单；调用方可传自定义 filters（如选视频、其他类型）
+    const filters = opts?.filters ?? [
+      { name: 'Excel 工作簿', extensions: ['xlsx', 'xls'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
     const res = await dialog.showOpenDialog({
-      title: '第 2 步 · 选择简介 md 文件（可跳过）',
-      buttonLabel: '选择此文件',
-      message: '这个 md 文件里是每部影片的中文简介、标签、评分和分类。没有的话可以先跳过，之后用内置向导生成。',
+      title: opts?.title ?? '选择文件',
+      buttonLabel: opts?.buttonLabel ?? '选择',
       properties: ['openFile'],
-      filters: [
-        { name: 'Markdown', extensions: ['md', 'markdown', 'txt'] },
-        { name: '所有文件', extensions: ['*'] }
-      ]
+      filters
     })
     return res.canceled ? null : (res.filePaths[0] ?? null)
   })
@@ -1128,80 +1123,6 @@ export function registerIpc(): void {
     } catch {
       // 忽略打开失败
     }
-  })
-
-  // ---------- 内置规范文档（新建 md 文件向导）：读取打包资源中的规范全文 ----------
-  ipcMain.handle(IPC.specGet, () => {
-    const candidates = [
-      path.join(process.resourcesPath, '通用评分与简介规范.md'),
-      path.join(app.getAppPath(), 'src/main/assets/通用评分与简介规范.md'),
-      path.join(app.getAppPath(), '..', 'src/main/assets/通用评分与简介规范.md')
-    ]
-    for (const c of candidates) {
-      try {
-        const content = readFileSync(c, 'utf-8')
-        return { content, path: c }
-      } catch {
-        // 尝试下一个候选路径
-      }
-    }
-    return { content: '', path: '' }
-  })
-
-  // ---------- 批量导出番号清单（新建 md 文件向导第一步；支持 txt / Excel） ----------
-  ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string, format: 'txt' | 'xlsx' = 'txt') => {
-    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
-    if (!lib) return { ok: false, count: 0, codes: [], error: '媒体库不存在' }
-    // 扫描文件夹，收集所有视频文件的「番号」（文件名去扩展名，去重 + 排序）；xlsx 附带文件大小
-    const files: string[] = []
-    for await (const f of walk(lib.folderPath)) files.push(f)
-    const seen = new Set<string>()
-    const entries: { name: string; size?: number }[] = []
-    for (const f of files) {
-      const base = path.basename(f)
-      const ext = path.extname(f)
-      const name = base.slice(0, base.length - ext.length)
-      if (!name) continue
-      const key = name.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      const st = await fs.stat(f).catch(() => null)
-      entries.push({ name, size: st?.size })
-    }
-    entries.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-    const codes = entries.map((e) => e.name)
-    const isXlsx = format === 'xlsx'
-    const res = await dialog.showSaveDialog({
-      title: '导出番号清单',
-      defaultPath: `${lib.name}-番号清单${isXlsx ? '.xlsx' : '.txt'}`,
-      filters: isXlsx
-        ? [{ name: 'Excel 工作簿', extensions: ['xlsx'] }]
-        : [{ name: '文本文件', extensions: ['txt'] }]
-    })
-    if (res.canceled || !res.filePath) return { ok: false, count: codes.length, codes, error: '已取消' }
-    if (isXlsx) {
-      // 动态加载 SheetJS（仅导出场景需要，避免常驻内存）；生成带列宽的表单
-      const XLSX = await import('xlsx')
-      const rows = entries.map((e, i) => ({
-        序号: i + 1,
-        番号: e.name,
-        大小: e.size != null ? `${(e.size / 1024 / 1024).toFixed(1)} MB` : ''
-      }))
-      const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{ wch: 6 }, { wch: 28 }, { wch: 12 }]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, '番号清单')
-      XLSX.writeFile(wb, res.filePath)
-    } else {
-      await fs.writeFile(res.filePath, codes.join('，') + '\n', 'utf-8')
-      // 同时复制到剪贴板，方便直接粘贴给 AI
-      try {
-        clipboard.writeText(codes.join('，'))
-      } catch {
-        // 复制失败不影响文件导出
-      }
-    }
-    return { ok: true, path: res.filePath, count: codes.length, codes }
   })
 
   // ---------- 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载） ----------

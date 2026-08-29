@@ -1,3 +1,26 @@
+# 更新日志（Changelog）
+
+## v2.2.0（2026-08-30）
+
+**全面删除 markdown 片单支持**（用户要求一处不留，已全仓清理）
+- 删除 `src/main/lib/parser.ts`（md 解析器）、`mdWatcher.ts`（md 监听）、`src/renderer/src/components/OnboardMdModal.tsx`（新建 md 向导）三个整文件；
+- 删除 IPC：`specGet`（读取内置规范）、`libraryExportCodes`（导出番号清单）、`onMdChanged`（md 变更事件），含 `shared/ipc.ts` 常量 + `preload/index.ts` 暴露 + `shared/api-types.ts` 类型 + `ipc.ts` handler；
+- `Library.introMdPath` 字段移除；`Settings.library.introExcelPath` 改为唯一的片单权威来源；
+- `LibraryModal` 去掉「简介 md 文件」整块选项 + 「还没有 md？按内置规范让 AI 帮你生成 →」按钮 + `onOnboard` prop；
+- `dialogSelectFile` 通用文件选择器默认 filter 改为 Excel（`xlsx`/`xls`），title/buttonLabel 支持调用方覆盖；
+- `reconcile.ts` 删除 md 兜底分支，仅使用 Excel 片单；
+- 资源 `通用评分与简介规范.md` 仍在 `extraResources` 中保留（项目文档，非片单），未删除；`CHANGELOG.md` 同理保留。
+
+**数据源推荐顺序（已确认 v2.1.0 即为该顺序）**
+- 顺序：Javapi → Javinfo → JavDB → JavBus → JavLibrary；
+- 推荐依据：① Javapi（本地聚合 8 源 + JavDB API，信息最全、无 Cloudflare/IP 风控、免费，但需自托管）；② Javinfo（javinfo.dev 聚合，免风控，按量计费）；③ JavDB（原始最准，但有 Cloudflare 风控）；④ JavBus（备用源，含年龄验证绕过）；⑤ JavLibrary（兜底源，与 javdb/javbus 数据重叠度高）；
+- 用户可手动指定单一源（设置 → 数据源 → 手动选项）。自定义 1-5 优先级拖拽留 v2.3.0。
+
+**新功能：隐私锁删除密码验证**
+- 设置 → 隐私与安全 → 已有「当前状态：已上锁/未上锁」+ 密码输入区（SHA-256 + 随机 salt 哈希存储，明文不落盘）；
+- 开启锁后，删除视频（详情页/卡片/文件列表「删除文件」按钮 → 二次确认 → 走 confirmDelete）和删除媒体库（库设置 → 删除）时，会先弹密码框（window.prompt）要求输入密码；
+- 密码错误或取消则中止删除；连续验证失败不影响下次。
+
 ## v2.1.0（2026-08-29）
 
 **合并朋友分支（github.com/z1006670445/yingxia-video-manager）**
