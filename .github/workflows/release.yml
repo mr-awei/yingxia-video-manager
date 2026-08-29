@@ -45,9 +45,10 @@ jobs:
 
       - name: Package installer (electron-builder, signed)
         # certificateFile/certificatePassword 走 Secret，签名配置不进仓库
-        run: npx electron-builder -c.win.certificateFile=build/yingxia-sign.pfx -c.win.certificatePassword="${{ secrets.CERT_PASSWORD }}"
+        # 证书路径在 electron-builder.yml；密码走 CSC_KEY_PASSWORD env（不落仓库）
+        run: npx electron-builder --win
         env:
-          # Windows 上 electron-builder 打包默认行为一致；若构建工具链下载慢可加 ELECTRON_MIRROR
+          CSC_KEY_PASSWORD: ${{ secrets.CERT_PASSWORD }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
       - name: Upload installer to GitHub Release
