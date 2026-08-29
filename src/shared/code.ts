@@ -44,8 +44,11 @@ export function isDomestic(folderName: string, fileName?: string): boolean {
 
 /** 从任意字符串（文件名/标题/整段描述）提取第一个番号；找不到返回空串。
  *  与 main 侧 javdb.ts 的 extractCode 语义不同：此处「提取不到」返回 ''，
- *  避免把无番号的文件名整段复制出去。 */
-const CODE_RE = /\b([A-Z]{2,}[-_][A-Z0-9]+)\b/
+ *  避免把无番号的文件名整段复制出去。
+ *  2026-08-29：正则兼容无分隔符番号（KSJK013 / MIDE123 等「字母+数字」连写）——
+ *  优先匹配带分隔符（SONE-560），否则匹配「≥2 字母 + 含 ≥2 位数字」的连续串；
+ *  纯英文单词（HELLO）、纯数字、中文标题均不命中 → 返回 ''（只提非中文番号）。 */
+const CODE_RE = /\b([A-Z]{2,}(?:[-_][A-Z0-9]+|[A-Z0-9]*\d{2,}))\b/
 export function extractCode(input: string): string {
   const t = (input ?? '').trim()
   if (!t) return ''

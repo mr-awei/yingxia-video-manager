@@ -11,11 +11,12 @@
     "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "preview": "electron-vite preview",
-    "pack": "node scripts/clean.mjs && npm run build && electron-builder"
+    "pack": "npm run build && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder"
   },
   "dependencies": {
     "socks": "^2.8.9",
-    "undici": "^6.28.0"
+    "undici": "^6.28.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@esbuild/win32-x64": "^0.28.2",

@@ -720,7 +720,7 @@ export default function App() {
           title: '检测到可能的同系列视频',
           ok: 0,
           failed: 0,
-          bySource: { javdb: 0, javbus: 0 },
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
           reasons: warns.slice(0, 8).map((c) => `${c}${warns.length > 8 ? '…' : ''}`),
           stopped: false,
           remaining: 0
@@ -968,7 +968,7 @@ export default function App() {
     tone?: 'ok' | 'warn' | 'err'
     ok: number
     failed: number
-    bySource: { javdb: number; javbus: number }
+    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
     reasons: string[]
     stopped: boolean
     remaining: number
@@ -979,6 +979,8 @@ export default function App() {
     const total = data.ok + data.failed
     const jd = data.bySource.javdb
     const jb = data.bySource.javbus
+    const ji = data.bySource.javinfo ?? 0
+    const jp = data.bySource.javapi ?? 0
     const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
     const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
     const detail = (
@@ -988,7 +990,7 @@ export default function App() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
               <span className="text-[10px] text-white/65 font-mono tabular-nums">
-                JavDB {jd} · JavBus {jb} · 失败 {data.failed}
+                Javapi {jp} · Javinfo {ji} · JavDB {jd} · JavBus {jb} · 失败 {data.failed}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex">
@@ -1039,7 +1041,7 @@ export default function App() {
         tone,
         ok: res.ok,
         failed: res.failed,
-        bySource: { javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
+        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
         reasons,
         stopped: res.stopped ?? false,
         remaining: res.remaining ?? 0
@@ -1051,7 +1053,7 @@ export default function App() {
         tone: 'err',
         ok: 0,
         failed: 0,
-        bySource: { javdb: 0, javbus: 0 },
+        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
         reasons: [`请求异常：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0

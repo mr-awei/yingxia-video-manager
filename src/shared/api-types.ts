@@ -12,7 +12,7 @@ import type {
 
 /** videoFetchJavdbDetail 返回：成功（含详情 + 来源）或失败（含原因） */
 export type FetchDetailResult =
-  | { ok: true; detail: JavdbDetail; source: 'javdb' | 'javbus' }
+  | { ok: true; detail: JavdbDetail; source: 'javapi' | 'javinfo' | 'javdb' | 'javbus' }
   | { ok: false; error: string }
 
 /** 批量补齐（libraryFetchJavdbAll）结果统计 */
@@ -22,7 +22,7 @@ export interface BatchFetchResult {
   /** 失败部数 */
   failed: number
   /** 成功来源分布 */
-  bySource: { javdb: number; javbus: number }
+  bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
   /** 失败明细（标题 + 原因） */
   failures: Array<{ title: string; reason: string }>
   /** 是否因连续失败自动停止 */
@@ -167,6 +167,8 @@ export interface AppApi {
   updateCheck(): Promise<UpdateCheckResult>
   /** 用 ffmpeg 随机截帧生成封面 + 预览图（1 封面 + 15 预览），回填视频记录 */
   videoGeneratePreviews(id: string): Promise<Video | null>
+  /** 无封面时截 1 帧视频画面作为封面（懒加载兜底），成功返回本地路径并回填视频记录，失败/无 ffmpeg 返回 null */
+  videoFrameFallback(id: string): Promise<string | null>
   /**
    * 分享：扫描视频所在文件夹的 .torrent 文件，转换为磁链，并把第一个磁链复制到剪贴板
    */
@@ -215,8 +217,11 @@ export interface AppApi {
   onMdChanged(cb: (libraryId: string) => void): void
   /** 读取内置《通用评分与简介规范》全文（新建 md 向导）；返回内容与磁盘路径 */
   specGet(): Promise<{ content: string; path: string }>
-  /** 批量导出媒体库番号清单为 txt（弹出保存对话框，并复制剪贴板）；返回内容供预览 */
-  libraryExportCodes(libraryId: string): Promise<{
+  /** 批量导出媒体库番号清单（弹出保存对话框；txt 同时复制剪贴板）；format 默认 txt，xlsx 生成 Excel 工作簿 */
+  libraryExportCodes(
+    libraryId: string,
+    format?: 'txt' | 'xlsx'
+  ): Promise<{
     ok: boolean
     path?: string
     count: number

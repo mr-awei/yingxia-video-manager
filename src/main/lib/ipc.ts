@@ -14,6 +14,8 @@ import { cacheRemoteImage } from './javdb'
 import { fetchJavdbPosterForVideo, fetchJavdbDetail } from './javdb'
 import { extractBaseCode, extractCode } from '../../shared/code'
 import { fetchJavBusDetail } from './javbus'
+import { fetchJavinfoDetail, hasJavinfoKey } from './javinfo'
+import { fetchJavapiDetail, hasJavapiConfig } from './javapi'
 import { testProxyConnectivity } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
@@ -31,7 +33,7 @@ import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-t
 interface MovieDetailResult {
   detail: JavdbDetail | null
   /** 命中来源（success 时） */
-  source?: 'javdb' | 'javbus'
+  source?: 'javapi' | 'javinfo' | 'javdb' | 'javbus'
   /** 全部失败时的原因描述 */
   error?: string
 }
@@ -62,8 +64,7 @@ async function resolveDetailCover(
     detail.cover,
     videoId,
     settings,
-    detail.source === 'javbus' ? 'https://www.seedmm.bond' : 'https://javdb.com'
-  ).catch(() => null)
+    detail.source === 'javbus' ? 'https://www.seedmm.bond' : detail.source === 'javinfo' ? 'https://api.javinfo.dev' : 'https://javdb.com'  ).catch(() => null)
 }
 
 /**
@@ -255,7 +256,25 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
   const mode = settings.dataSource ?? 'auto'
   const errors: string[] = []
   const onError = (m: string) => errors.push(m)
-  // 手动指定源：只走该源（调试 JavBus/JavDB 用）
+  // 手动指定源：只走该源（调试 Javapi/Javinfo/JavBus/JavDB 用）
+  if (mode === 'javapi') {
+    try {
+      const javapi = await fetchJavapiDetail(code, settings, onError)
+      if (javapi) return { detail: javapi, source: 'javapi' }
+    } catch (e) {
+      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errors.length ? errors.join('；') : 'Javapi 未返回结果' }
+  }
+  if (mode === 'javinfo') {
+    try {
+      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      if (javinfo) return { detail: javinfo, source: 'javinfo' }
+    } catch (e) {
+      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errors.length ? errors.join('；') : 'Javinfo 未返回结果' }
+  }
   if (mode === 'javdb') {
     try {
       const javdb = await fetchJavdbDetail(code, settings, onError)
@@ -274,7 +293,27 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
     }
     return { detail: null, error: errors.length ? errors.join('；') : 'JavBus 未返回结果' }
   }
-  // auto：JavDB → JavBus 降级
+  // auto：Javapi（本地免费，优先）→ Javinfo（免风控）→ JavDB → JavBus 降级
+  if (hasJavapiConfig(settings)) {
+    try {
+      const javapi = await fetchJavapiDetail(code, settings, onError)
+      if (javapi) return { detail: javapi, source: 'javapi' }
+    } catch (e) {
+      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
+    }
+  } else {
+    errors.push('未配置本地 Javapi，跳过')
+  }
+  if (hasJavinfoKey(settings)) {
+    try {
+      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      if (javinfo) return { detail: javinfo, source: 'javinfo' }
+    } catch (e) {
+      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+    }
+  } else {
+    errors.push('未配置 Javinfo key，跳过')
+  }
   try {
     const javdb = await fetchJavdbDetail(code, settings, onError)
     if (javdb) return { detail: javdb, source: 'javdb' }
@@ -287,10 +326,16 @@ async function fetchMovieDetail(code: string, settings: Settings): Promise<Movie
   } catch (e) {
     errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
   }
-  return { detail: null, error: errors.length ? errors.join('；') : '两个数据源均未返回结果' }
+  return { detail: null, error: errors.length ? errors.join('；') : '三个数据源均未返回结果' }
 }
 
 interface SmartFetchState {
+  /** Javapi 已被连续失败禁用（本轮不再尝试，本地服务可能没起） */
+  javapiDisabled: boolean
+  javapiFails: number
+  /** Javinfo 已被连续失败禁用（本轮不再尝试，保留免费额度） */
+  javinfoDisabled: boolean
+  javinfoFails: number
   /** JavDB 已被连续失败禁用（本轮不再尝试） */
   javdbDisabled: boolean
   javdbFails: number
@@ -299,12 +344,15 @@ interface SmartFetchState {
   stop: boolean
 }
 
+const JAVAPI_CONSECUTIVE_LIMIT = 3
+const JAVINFO_CONSECUTIVE_LIMIT = 3
 const JAVDB_CONSECUTIVE_LIMIT = 3
 const JAVBUS_CONSECUTIVE_LIMIT = 3
 
 /**
- * 批量智能抓取：JavDB 连续失败 N 部 → 自动禁用 JavDB（本轮只走 JavBus，不再浪费请求）；
- * JavDB 禁用后 JavBus 也连续失败 N 部 → 停止整个批量（继续没有意义）。
+ * 批量智能抓取：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus 降级。
+ * 任一源连续失败 N 部 → 本轮自动禁用该源（不再浪费请求）；
+ * Javapi/Javinfo/JavDB 都被禁用后 JavBus 也连续失败 N 部 → 停止整个批量。
  */
 async function fetchDetailSmart(
   code: string,
@@ -314,6 +362,24 @@ async function fetchDetailSmart(
   const mode = settings.dataSource ?? 'auto'
   const errors: string[] = []
   const onError = (m: string) => errors.push(m)
+  if (mode === 'javapi') {
+    try {
+      const javapi = await fetchJavapiDetail(code, settings, onError)
+      if (javapi) return { detail: javapi, source: 'javapi' }
+    } catch (e) {
+      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errors.length ? errors.join('；') : 'Javapi 未返回结果' }
+  }
+  if (mode === 'javinfo') {
+    try {
+      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      if (javinfo) return { detail: javinfo, source: 'javinfo' }
+    } catch (e) {
+      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+    }
+    return { detail: null, error: errors.length ? errors.join('；') : 'Javinfo 未返回结果' }
+  }
   if (mode === 'javdb') {
     try {
       const javdb = await fetchJavdbDetail(code, settings, onError)
@@ -331,6 +397,42 @@ async function fetchDetailSmart(
       errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
     }
     return { detail: null, error: errors.length ? errors.join('；') : 'JavBus 未返回结果' }
+  }
+  if (hasJavapiConfig(settings) && !state.javapiDisabled) {
+    try {
+      const javapi = await fetchJavapiDetail(code, settings, onError)
+      if (javapi) {
+        state.javapiFails = 0
+        return { detail: javapi, source: 'javapi' }
+      }
+    } catch (e) {
+      errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
+    }
+    state.javapiFails++
+    if (state.javapiFails >= JAVAPI_CONSECUTIVE_LIMIT) {
+      state.javapiDisabled = true
+      console.log(`[batch] Javapi 连续失败 ${state.javapiFails} 部，本轮自动切换 Javinfo`)
+    }
+  } else if (!hasJavapiConfig(settings)) {
+    errors.push('未配置本地 Javapi，跳过')
+  }
+  if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
+    try {
+      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      if (javinfo) {
+        state.javinfoFails = 0
+        return { detail: javinfo, source: 'javinfo' }
+      }
+    } catch (e) {
+      errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+    }
+    state.javinfoFails++
+    if (state.javinfoFails >= JAVINFO_CONSECUTIVE_LIMIT) {
+      state.javinfoDisabled = true
+      console.log(`[batch] Javinfo 连续失败 ${state.javinfoFails} 部，本轮自动切换 JavDB`)
+    }
+  } else if (!hasJavinfoKey(settings)) {
+    errors.push('未配置 Javinfo key，跳过')
   }
   if (!state.javdbDisabled) {
     try {
@@ -357,12 +459,13 @@ async function fetchDetailSmart(
   } catch (e) {
     errors.push(`JavBus 异常：${(e as Error)?.message || e}`)
   }
-  if (state.javdbDisabled) {
-    state.javbusFails++
-    if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
-      state.stop = true
-      errors.push(`JavBus 连续失败 ${state.javbusFails} 部，已自动停止`)
-    }
+  // 停止条件：JavBus 是最后兜底源，其连续失败说明整条抓取链已不可用。
+  // 无条件累加失败次数（旧逻辑只在 javdbDisabled 时累加，导致 JavDB 未连续失败
+  // 时 JavBus 一直失败也不停止，批量任务无限空转）。
+  state.javbusFails++
+  if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
+    state.stop = true
+    errors.push(`JavBus 连续失败 ${state.javbusFails} 部，已自动停止`)
   }
   return { detail: null, error: errors.length ? errors.join('；') : '未知原因' }
 }
@@ -631,9 +734,15 @@ export function registerIpc(): void {
       emitProgress({ libraryId, total: 0, done: 0 })
       return 0
     }
-    // 抓取并发数 / 间隔（限速、降风控），Settings 中可配
-    const baseConcurrency = Math.max(1, Math.min(8, Math.floor(settings.fetchConcurrency) || 2))
-    const baseInterval = Math.max(0, Math.floor(settings.fetchIntervalMs) || 600)
+    // 抓取并发数 / 间隔（限速、降风控），Settings 中可配。
+    // 修复：`Math.floor(x) || 默认值` 在 x=0 时会被默认值顶掉（0 无法生效）——
+    // 用显式 Number.isFinite 判断，0 间隔（不限速）可以真正设置为 0。
+    const rawConcurrency = Math.floor(settings.fetchConcurrency)
+    const baseConcurrency = Number.isFinite(rawConcurrency) && rawConcurrency >= 1
+      ? Math.max(1, Math.min(8, rawConcurrency))
+      : 2
+    const rawInterval = Math.floor(settings.fetchIntervalMs)
+    const baseInterval = Number.isFinite(rawInterval) && rawInterval >= 0 ? rawInterval : 600
     // 强制重抓模式：每部都重搜，量极大；并发降到 1、间隔 2 秒，避免触发 JavDB 反爬 (HTTP 403)。
     // 普通补齐保持用户配置的并发/间隔。
     const concurrency = force ? 1 : baseConcurrency
@@ -641,15 +750,17 @@ export function registerIpc(): void {
     let done = 0
     let ok = 0
     let failed = 0
-    const bySource: { javdb: number; javbus: number } = { javdb: 0, javbus: 0 }
+    const bySource: { javapi: number; javinfo: number; javdb: number; javbus: number } = { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 }
     const failures: Array<{ title: string; reason: string }> = []
-    const smartState: SmartFetchState = { javdbDisabled: false, javdbFails: 0, javbusFails: 0, stop: false }
+    const smartState: SmartFetchState = { javapiDisabled: false, javapiFails: 0, javinfoDisabled: false, javinfoFails: 0, javdbDisabled: false, javdbFails: 0, javbusFails: 0, stop: false }
     // 系列去重：同 base code 只抓一次，其余分集复用（HUNTA-468CD1/CD2 → 抓一次）
     const seriesCache = new Map<string, JavdbDetail>()
     let idx = 0
     const worker = async () => {
       while (idx < videos.length && !smartState.stop) {
         const v = videos[idx++]
+        // 本轮是否发过网络请求（封面抓取 / 详情抓取）——有才延时，避免无请求也空等
+        let madeRequest = false
         emitProgress({ libraryId, total: videos.length, done, current: v.title })
 
         // 0) 国产片（纯中文文件夹）：不抓 JavDB/JavBus 元数据，仅用 ffmpeg 截帧（封面 + 15 预览）
@@ -683,6 +794,7 @@ export function registerIpc(): void {
         // 1) 封面：仅缺封面/占位图才抓。force 不重抓海报——海报是图片、URL 基本不变，
         //    本地缓存命中即可；重抓只会浪费 JavDB/JavBus 请求额度并加剧 403。
         if (!v.posterPath || v.posterSource === 'placeholder') {
+          madeRequest = true
           // JavDB 抓封面 → 失败则 ffmpeg 批量截帧兜底（1 封面 + 15 预览图，保证真实画面 + 横屏预览墙素材）
           const javdbPoster = await fetchJavdbPosterForVideo(v, settings)
           let localPath: string | null = javdbPoster
@@ -707,7 +819,6 @@ export function registerIpc(): void {
             }
             ok++
           }
-          await new Promise((r) => setTimeout(r, interval))
         }
 
         // 2) 缺详情或详情陈旧（含远程 URL） → 抓详情
@@ -729,6 +840,7 @@ export function registerIpc(): void {
           const src = seriesHit.source ?? 'javdb'
           bySource[src] = (bySource[src] ?? 0) + 1
         } else if (force || detailStale) {
+          madeRequest = true
           // 智能抓取：JavDB 连续失败自动切 JavBus；JavBus 也连续失败自动停止
           const mr = await fetchDetailSmart(fetchCode, settings, smartState)
           if (mr.detail) {
@@ -757,8 +869,9 @@ export function registerIpc(): void {
             failed++
             failures.push({ title: v.title, reason: mr.error || '未知原因' })
           }
-          await new Promise((r) => setTimeout(r, interval))
         }
+        // 统一限速：本轮发过请求才延时一次（修复旧逻辑封面+详情都抓时延时两次、间隔翻倍）
+        if (madeRequest) await new Promise((r) => setTimeout(r, interval))
         if (smartState.stop) break
         done++
         emitProgress({ libraryId, total: videos.length, done, current: v.title })
@@ -856,15 +969,15 @@ export function registerIpc(): void {
     return { content: '', path: '' }
   })
 
-  // ---------- 批量导出番号清单（新建 md 文件向导第一步） ----------
-  ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string) => {
+  // ---------- 批量导出番号清单（新建 md 文件向导第一步；支持 txt / Excel） ----------
+  ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string, format: 'txt' | 'xlsx' = 'txt') => {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) return { ok: false, count: 0, codes: [], error: '媒体库不存在' }
-    // 扫描文件夹，收集所有视频文件的「番号」（文件名去扩展名，去重 + 排序）
+    // 扫描文件夹，收集所有视频文件的「番号」（文件名去扩展名，去重 + 排序）；xlsx 附带文件大小
     const files: string[] = []
     for await (const f of walk(lib.folderPath)) files.push(f)
     const seen = new Set<string>()
-    const codes: string[] = []
+    const entries: { name: string; size?: number }[] = []
     for (const f of files) {
       const base = path.basename(f)
       const ext = path.extname(f)
@@ -873,21 +986,41 @@ export function registerIpc(): void {
       const key = name.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
-      codes.push(name)
+      const st = await fs.stat(f).catch(() => null)
+      entries.push({ name, size: st?.size })
     }
-    codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    entries.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    const codes = entries.map((e) => e.name)
+    const isXlsx = format === 'xlsx'
     const res = await dialog.showSaveDialog({
       title: '导出番号清单',
-      defaultPath: `${lib.name}-番号清单.txt`,
-      filters: [{ name: '文本文件', extensions: ['txt'] }]
+      defaultPath: `${lib.name}-番号清单${isXlsx ? '.xlsx' : '.txt'}`,
+      filters: isXlsx
+        ? [{ name: 'Excel 工作簿', extensions: ['xlsx'] }]
+        : [{ name: '文本文件', extensions: ['txt'] }]
     })
     if (res.canceled || !res.filePath) return { ok: false, count: codes.length, codes, error: '已取消' }
-    await fs.writeFile(res.filePath, codes.join('，') + '\n', 'utf-8')
-    // 同时复制到剪贴板，方便直接粘贴给 AI
-    try {
-      clipboard.writeText(codes.join('，'))
-    } catch {
-      // 复制失败不影响文件导出
+    if (isXlsx) {
+      // 动态加载 SheetJS（仅导出场景需要，避免常驻内存）；生成带列宽的表单
+      const XLSX = await import('xlsx')
+      const rows = entries.map((e, i) => ({
+        序号: i + 1,
+        番号: e.name,
+        大小: e.size != null ? `${(e.size / 1024 / 1024).toFixed(1)} MB` : ''
+      }))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{ wch: 6 }, { wch: 28 }, { wch: 12 }]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, '番号清单')
+      XLSX.writeFile(wb, res.filePath)
+    } else {
+      await fs.writeFile(res.filePath, codes.join('，') + '\n', 'utf-8')
+      // 同时复制到剪贴板，方便直接粘贴给 AI
+      try {
+        clipboard.writeText(codes.join('，'))
+      } catch {
+        // 复制失败不影响文件导出
+      }
     }
     return { ok: true, path: res.filePath, count: codes.length, codes }
   })
@@ -1213,5 +1346,32 @@ export function registerIpc(): void {
     if (set.previewPaths.length) patch.previewPaths = set.previewPaths
     await frameLog(`[videoGeneratePreviews] update id=${id} cover=${set.coverPath ?? 'none'} previews=${set.previewPaths.length}`)
     return repo.updateVideo(id, patch)
+  })
+
+  // ---------- ffmpeg 单帧兜底：无封面时截 1 帧视频画面作封面（列表懒加载用） ----------
+  ipcMain.handle(IPC.videoFrameFallback, async (_e, id: string) => {
+    const v = await repo.getVideo(id)
+    if (!v || !v.path) return null
+    // 已有可用的封面文件（含历史生成的截帧）直接复用，避免重复截帧
+    if (v.posterPath) {
+      try {
+        await fs.access(v.posterPath)
+        return v.posterPath
+      } catch {
+        /* 缓存文件丢失，重新生成 */
+      }
+    }
+    await frameLog(`[videoFrameFallback] start id=${id} path=${v.path}`)
+    const settings = await repo.getSettings()
+    const lib = (await repo.listLibraries()).find((l) => l.id === v.libraryId) ?? defaultLibrary()
+    // resolvePoster 会按 imagePriority 依次尝试：侧车图 → 已缓存抓取 → ffmpeg 截帧，最终兜底占位
+    const r = await resolvePoster(v, lib, settings, { allowFfmpeg: true })
+    if (!r.posterPath) {
+      await frameLog(`[videoFrameFallback] no frame id=${id} source=${r.source}`)
+      return null
+    }
+    await repo.updateVideo(id, { posterSource: r.source, posterPath: r.posterPath })
+    await frameLog(`[videoFrameFallback] ok id=${id} source=${r.source} poster=${r.posterPath}`)
+    return r.posterPath
   })
 }

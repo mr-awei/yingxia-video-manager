@@ -23,6 +23,8 @@ export const IPC = {
   videoFetchJavdbDetail: 'video:fetchJavdbDetail',
   // ffmpeg 兜底截帧：随机截 1 张封面 + 15 张预览图
   videoGeneratePreviews: 'video:generatePreviews',
+  // ffmpeg 单帧兜底：无封面时截 1 帧视频画面作为封面（列表懒加载用，返回本地路径或 null）
+  videoFrameFallback: 'video:frameFallback',
   // ffprobe 读取视频技术参数
   videoProbe: 'video:probe',
   // 分享：扫描视频文件夹的 .torrent 并转磁链

@@ -56,8 +56,18 @@ export async function scanLibrary(
   settings: Settings,
   onProgress?: (p: ScanProgress) => void
 ): Promise<Video[]> {
+  // 扫描最小文件大小过滤：0 = 不限；小于阈值的视频（短视频/广告等）不进媒体库。
+  // 只影响本次扫描**新建**的条目；已入库的视频不受影响（避免误删既有数据）。
+  const minBytes = Math.max(0, Math.floor(settings.scanMinSizeMb ?? 0)) * 1024 * 1024
   const allFiles: string[] = []
-  for await (const f of walk(library.folderPath)) allFiles.push(f)
+  for await (const f of walk(library.folderPath)) {
+    if (minBytes > 0) {
+      const st = await fs.stat(f).catch(() => null)
+      // stat 失败时保守保留（不跳过，避免网络盘/权限异常时误过滤）
+      if (st && st.size < minBytes) continue
+    }
+    allFiles.push(f)
+  }
   const total = allFiles.length
   let done = 0
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
+import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import Icon from './Icon'
 import { toast } from './Toast'
@@ -70,9 +71,12 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const [detail, setDetail] = useState<Video['javdbDetail']>(video.javdbDetail)
   /** 本地 video 副本：截帧/封面更新后立即反映，不必等父组件重新拉取 */
   const [localVideo, setLocalVideo] = useState<Video>(video)
+  /** 封面加载失败（路径失效）时标记，触发截帧兜底 */
+  const [coverImgError, setCoverImgError] = useState(false)
   useEffect(() => {
     setLocalVideo(video)
     setDetail(video.javdbDetail)
+    setCoverImgError(false)
   }, [video.id])
   /** 手动「补齐信息」进行中 */
   const [fetching, setFetching] = useState(false)
@@ -99,7 +103,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       if (res?.ok && res.detail) {
         setDetail(res.detail)
         onDetailFetched?.(video.id, res.detail)
-        const src = res.source === 'javbus' ? 'JavBus' : 'JavDB'
+        const src = res.source === 'javbus' ? 'JavBus' : res.source === 'javinfo' ? 'Javinfo' : res.source === 'javapi' ? 'Javapi' : 'JavDB'
         toast({ text: `信息已更新（来源：${src}）`, tone: 'ok' })
       } else {
         const reason = res && !res.ok ? res.error : '未知原因'
@@ -257,9 +261,15 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const d = detail
   // 只用本地路径：远程 URL 经 posterUrl 透传会让 Chromium 直连 javdb CDN 触发 403 反盗链
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
-  const coverSrc = (d?.cover && isLocal(d.cover)
+  const originalCover = (d?.cover && isLocal(d.cover)
     ? d.cover
     : localVideo.posterPath) || null
+  // 无封面/封面加载失败 → ffmpeg 截帧兜底（懒加载）
+  const { fallbackPoster, isFrameFallback } = useFrameFallback(
+    localVideo,
+    originalCover && !coverImgError ? originalCover : null
+  )
+  const coverSrc = (originalCover && !coverImgError ? originalCover : null) ?? fallbackPoster
 
   return (
     <div
@@ -316,16 +326,23 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
 
         {/* 封面 + 元数据 */}
         <div className="grid grid-cols-[260px_1fr] gap-6 mb-6">
-          <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10">
+          <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative">
             {coverSrc ? (
-              <img
-                src={posterUrl(coverSrc) ?? ''}
-                alt={video.title}
-                className="h-full w-full object-cover poster-img"
-                onError={(e) => {
-                  console.error('[VideoDetail] poster load error', coverSrc, e.currentTarget.src)
-                }}
-              />
+              <div className="absolute inset-0">
+                {/* 模糊铺底：横竖屏封面完整显示，四周裁切处由模糊同图填充 */}
+                <img
+                  src={posterUrl(coverSrc) ?? ''}
+                  alt=""
+                  aria-hidden
+                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-40"
+                />
+                <img
+                  src={posterUrl(coverSrc) ?? ''}
+                  alt={video.title}
+                  className="relative h-full w-full object-contain poster-img"
+                  onError={() => setCoverImgError(true)}
+                />
+              </div>
             ) : (
               <div
                 className="h-full w-full flex items-center justify-center text-5xl font-bold text-white/80"
@@ -341,10 +358,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 ${
                   d.source === 'javbus'
                     ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'
-                    : 'bg-brand/15 text-brand ring-1 ring-brand/30'
+                    : d.source === 'javinfo'
+                      ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                      : d.source === 'javapi'
+                        ? 'bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30'
+                        : 'bg-brand/15 text-brand ring-1 ring-brand/30'
                 }`}
               >
-                数据来源 {d.source === 'javbus' ? 'JavBus' : 'JavDB'}
+                数据来源 {d.source === 'javbus' ? 'JavBus' : d.source === 'javinfo' ? 'Javinfo' : d.source === 'javapi' ? 'Javapi' : 'JavDB'}
+              </span>
+            ) : null}
+            {/* 截帧封面标识：无真实封面，展示的是视频画面里截的一帧 */}
+            {isFrameFallback ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 bg-fuchsia-500/15 text-fuchsia-400 ring-1 ring-fuchsia-500/30">
+                <Icon name="film" size={11} className="fill-current" />
+                截帧封面（视频画面一帧，非真实封面）
               </span>
             ) : null}
             {/* 国产片徽章：纯中文文件夹，不抓元数据，仅 ffmpeg 截帧 */}

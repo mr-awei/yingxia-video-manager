@@ -214,9 +214,12 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
 
           {/* 内容：左下，标题字号大，行高紧凑 */}
           <div className="relative h-full flex items-end p-7 gap-6">
-            <div className={`${aspect === 'landscape' ? 'w-52 h-36' : 'w-36 h-52'} shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02]`}>
+            <div className={`${aspect === 'landscape' ? 'w-52 h-36' : 'w-36 h-52'} shrink-0 rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/20 shadow-2xl hidden sm:block transition-transform group-hover:scale-[1.02] relative`}>
               {heroSrc ? (
-                <img src={heroSrc} alt={heroV.title} className="h-full w-full object-cover poster-img" />
+                <>
+                  <img src={heroSrc} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-40" />
+                  <img src={heroSrc} alt={heroV.title} className="relative h-full w-full object-contain poster-img" />
+                </>
               ) : (
                 <div className="h-full w-full flex flex-col items-center justify-center gap-2" style={{ background: placeholderGradient(heroV.title) }}>
                 <div className="w-16 h-16 rounded-2xl bg-white/25 ring-1 ring-white/40 backdrop-blur-md flex items-center justify-center text-2xl font-bold text-white leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] shadow-xl shadow-black/40"

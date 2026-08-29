@@ -84,7 +84,10 @@ function normalizeProxy(s: Settings): Settings {
     fetchConcurrency: Number(next.fetchConcurrency) || 2,
     fetchIntervalMs: Number(next.fetchIntervalMs) || 600,
     autoRescan: !!next.autoRescan,
-    dataSource: next.dataSource ?? 'auto'
+    dataSource: next.dataSource ?? 'auto',
+    javinfoKey: next.javinfoKey ?? '',
+    javapiUrl: next.javapiUrl ?? 'http://127.0.0.1:8080',
+    javapiKey: next.javapiKey ?? ''
   }
 }
 
@@ -814,16 +817,51 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name="database" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">数据源</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">auto 自动降级（JavDB → JavBus，连续失败自动切换）；手动指定可单独调试某个源。</div>
+                  <div className="text-white/40 text-xs mb-3">auto 自动降级（Javapi → Javinfo → JavDB → JavBus，连续失败自动切换）；手动指定可单独调试某个源。</div>
                   <SegmentedControl
                     value={draft.dataSource ?? 'auto'}
                     options={[
                       { value: 'auto', label: '自动' },
+                      { value: 'javapi', label: 'Javapi' },
+                      { value: 'javinfo', label: 'Javinfo' },
                       { value: 'javdb', label: 'JavDB' },
                       { value: 'javbus', label: 'JavBus' }
                     ]}
-                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javdb' | 'javbus' })}
+                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' })}
                   />
+                  <Field
+                    label="本地 Javapi 地址（自托管，免费）"
+                    hint="自托管 javapi（github.com/a1850976305/javapi）本地服务地址。JavDB API 元数据 + 8 个视频站，免费、无 Cloudflare/IP 风控。启动：AUTH_API_KEYS=你的key go run ./cmd/api"
+                  >
+                    <input
+                      className={inputCls}
+                      placeholder="http://127.0.0.1:8080"
+                      value={draft.javapiUrl ?? 'http://127.0.0.1:8080'}
+                      onChange={(e) => setDraft({ ...draft, javapiUrl: e.target.value.trim() })}
+                    />
+                  </Field>
+                  <Field
+                    label="本地 Javapi API Key"
+                    hint="启动 javapi 时 AUTH_API_KEYS 指定的值；留空则跳过该源。"
+                  >
+                    <input
+                      className={inputCls}
+                      placeholder="留空则跳过 Javapi，直接走 Javinfo → JavDB → JavBus"
+                      value={draft.javapiKey ?? ''}
+                      onChange={(e) => setDraft({ ...draft, javapiKey: e.target.value.trim() })}
+                    />
+                  </Field>
+                  <Field
+                    label="Javinfo API Key（推荐）"
+                    hint="javinfo.dev 聚合 API：免爬虫、无 Cloudflare 风控。在 app.javinfo.dev 注册免费领取 1000+ 次查询额度，之后按量计费。填入后自动优先使用。"
+                  >
+                    <input
+                      className={inputCls}
+                      placeholder="留空则跳过 Javinfo，直接走 JavDB → JavBus"
+                      value={draft.javinfoKey ?? ''}
+                      onChange={(e) => setDraft({ ...draft, javinfoKey: e.target.value.trim() })}
+                    />
+                  </Field>
                 </Card>
 
                 <Card>
@@ -1029,6 +1067,21 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       value={String(draft.scanConcurrency ?? 2)}
                       options={['1', '2', '3', '4', '6', '8'].map((n) => ({ value: n, label: `${n} 并发` }))}
                       onChange={(v) => setDraft({ ...draft, scanConcurrency: Number(v) })}
+                    />
+                  </FieldRow>
+                  <FieldRow
+                    label="最小文件大小（MB）"
+                    hint="只扫描大于该大小的视频；0 = 不限。用于过滤短视频 / 广告等小文件，只对本次扫描新增的文件生效。"
+                  >
+                    <input
+                      className={inputCls}
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={draft.scanMinSizeMb ?? 0}
+                      onChange={(e) =>
+                        setDraft({ ...draft, scanMinSizeMb: Math.max(0, Math.floor(Number(e.target.value) || 0)) })
+                      }
                     />
                   </FieldRow>
                 </Card>
