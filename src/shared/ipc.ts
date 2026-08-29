@@ -74,9 +74,7 @@ export const IPC = {
   shellRevealInFolder: 'system:revealInFolder',
   // 事件（主进程 -> 渲染进程）
   scanProgress: 'scan:progress',
-  // 简介 md 文件变化（自动重新对账）
-  // 内置规范文档（新建 md 文件向导）：读取打包资源中的规范全文
-  // 批量导出媒体库番号清单（新建 md 文件向导第一步，写入 txt 文件）
+  // 片单变化事件（预留）
   // 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载）
   libraryGetCodes: 'library:getCodes'
 } as const

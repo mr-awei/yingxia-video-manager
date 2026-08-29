@@ -45,8 +45,8 @@ jobs:
 
       - name: Package installer (electron-builder, signed)
         # certificateFile/certificatePassword 走 Secret，签名配置不进仓库
-        # 证书路径在 electron-builder.yml；密码走 CSC_KEY_PASSWORD env（不落仓库）
-        run: npx electron-builder --win
+        # 证书显式传参（密码走 CSC_KEY_PASSWORD env，不落仓库）
+        run: npx electron-builder --win -c.win.certificateFile=build/yingxia-sign.pfx
         env:
           CSC_KEY_PASSWORD: ${{ secrets.CERT_PASSWORD }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/

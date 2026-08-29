@@ -1,5 +1,21 @@
 # 更新日志（Changelog）
 
+## v2.2.1（2026-08-30）
+
+**数据源自定义优先级（1-5）**
+- 设置 → 数据源 → 「自定义优先级」区块（仅 auto 模式显示）：5 个源可点 ↑↓ 调整任意顺序（谁 1 谁 2 谁 3 谁 4 谁 5 你说了算）；
+- 「重置为推荐顺序」一键恢复默认：Javapi → Javinfo → JavDB → JavBus → JavLibrary（按信息全面度 / 获取难度 / 风控排序）；
+- 批量抓取（fetchDetailSmart）auto 链按该顺序降级，连续网络失败自动跳过当前源；
+- 持久化到 `settings.customSourceOrder`。
+
+**markdown 残留彻底清除（含注释与文案）**
+- 复查全仓并修复 20+ 处注释/文案残留：excel.ts、App.tsx、EditMetaModal（4 处）、ReconcileDialog（2 处）、about.ts（3 处）、api-types.ts（3 处）、ipc.ts、reconcile.ts（4 处）、types.ts（4 处）——全部改为 Excel 表述；
+- 保留：`CHANGELOG.md`（项目更新日志）、`通用评分与简介规范.md`（资源文档），非片单用途。
+
+**CI 修复（GitHub Actions 构建失败）**
+- `electron-builder.yml` 增加 `win.certificateFile: build/yingxia-sign.pfx`；
+- `release.yml` 命令简化为 `npx electron-builder --win`，证书密码改走 `CSC_KEY_PASSWORD` 环境变量（`secrets.CERT_PASSWORD`），不再用会触发 ENOENT 的 `-c.win.certificateFile=...` 写法。
+
 ## v2.2.0（2026-08-30）
 
 **全面删除 markdown 片单支持**（用户要求一处不留，已全仓清理）

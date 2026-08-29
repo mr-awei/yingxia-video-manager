@@ -94,7 +94,7 @@ export default function ReconcileDialog({
         <div className="p-5 pb-3 border-b border-white/5">
           <div className="text-white font-semibold text-lg">对账提醒</div>
           <div className="text-white/50 text-xs mt-1">
-            简介 md 与视频文件夹不一致，请及时处理。
+            Excel 片单与视频文件夹不一致，请及时处理。
             {mdPath ? (
               <button
                 className="ml-1 text-brand hover:underline"
@@ -191,7 +191,7 @@ export default function ReconcileDialog({
                 <button
                   className="px-3 py-1.5 rounded-lg bg-white/8 hover:bg-white/15 text-white/90 text-xs font-medium ring-1 ring-white/10 transition-colors"
                   onClick={handleCopyUnlistedCodes}
-                  title="复制所有未收录视频的番号，中文逗号间隔（方便粘贴到简介 md / 搜索）"
+                  title="复制所有未收录视频的番号，中文逗号间隔（方便粘贴到 Excel 片单 / 搜索）"
                 >
                   {copied ? '✓ 已复制' : '📋 复制所有未收录番号'}
                 </button>

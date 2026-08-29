@@ -151,9 +151,9 @@ async function ensureVideo(
 
 /**
  * 按 Excel 片单对账某个媒体库的视频文件夹。
- * - md 条目匹配到文件 → matched（含海报/播放信息）
- * - md 有但文件缺失 → missing（提示下载或删除简介）
- * - 文件夹有但 md 未收录 → unlisted（提示更新 md）
+ * - Excel 条目匹配到文件 → matched（含海报/播放信息）
+ * - Excel 有但文件缺失 → missing（提示下载或删除简介）
+ * - 文件夹有但 Excel 未收录 → unlisted（提示更新 Excel）
  */
 export async function reconcileLibrary(
   library: Library,
@@ -176,7 +176,7 @@ export async function reconcileLibrary(
   let missing = 0
 
   // 已删除标记：用户主动删除过（文件挪回收站 + data.json 记录被删）的番号集合。
-  // md 里有条目但文件缺失时，若该番号在 data.json 中已无任何记录，说明用户主动删除过，
+  // Excel 里有条目但文件缺失时，若该番号在 data.json 中已无任何记录，说明用户主动删除过，
   // 跳过该条目不标 missing（否则删除后对账又会把它标成"缺失"挂回来）。
   let activeCodeSet: Set<string> | null = null
   const getActiveCodeSet = async (): Promise<Set<string>> => {
@@ -247,7 +247,7 @@ export async function reconcileLibrary(
       }
     }
   } else {
-    // 未配置 md / Excel 片单：全部文件直接展示
+    // 未配置 Excel 片单：全部文件直接展示
     // 需求 B（自动归类）：有数据源元数据（javdbDetail.genres 非空）的视频按 genres 自动归类，
     // 归入「【JavBus】高清·字幕」这类自动分类（order 9000，未分类 9999 之前）；
     // 无元数据的仍归「未分类」（order 0）。

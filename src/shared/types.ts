@@ -7,7 +7,7 @@ export type ViewMode = 'grid-portrait' | 'grid-landscape' | 'list-filename'
 /** 更新检查源 */
 export type UpdateSource = 'github' | 'gitee'
 
-/** 媒体库：对应一个被扫描的本地文件夹 + 一个简介 md 或 Excel 片单文件 */
+/** 媒体库：对应一个被扫描的本地文件夹 + 一个 Excel 片单文件 */
 export interface Library {
   id: string
   name: string
@@ -122,6 +122,8 @@ export interface Settings {
   javdbCookie: string
   /** 数据源：auto 自动降级（Javapi→Javinfo→JavDB→JavBus→JavLibrary）/ javapi 只用本地 Javapi / javinfo 只用 Javinfo / javdb 只用 JavDB / javbus 只用 JavBus / javlibrary 只用 JavLibrary（调试用） */
   dataSource: 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+  /** auto 模式下的自定义源优先级（1-5）；未设置时用推荐顺序 Javapi→Javinfo→JavDB→JavBus→JavLibrary */
+  customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
   /** 本地自托管 javapi 服务地址（如 http://127.0.0.1:8080），留空则跳过该源 */
   javapiUrl: string
   /** 本地自托管 javapi 的 API key（启动时 AUTH_API_KEYS 指定的值） */
@@ -255,9 +257,9 @@ export const DEFAULT_IMAGE_PRIORITY: ImageSource[] = [
   'placeholder'
 ]
 
-// ---------- 简介 md 解析结果 ----------
+// ---------- Excel 片单解析结果 ----------
 
-/** md 文件中的单条影片信息（名字=番号，简介，标签） */
+/** Excel 片单中的单条影片信息（名字=番号，简介，标签） */
 export interface IntroItem {
   /** 番号 / 文件名匹配键，如 SONE-560 */
   code: string
@@ -267,7 +269,7 @@ export interface IntroItem {
   tags: string[]
   /** 结构化标签：分类 → 标签列表（新格式 `**标签**：` 块解析；旧格式无此块为空） */
   tagCategories?: Record<string, string[]>
-  /** 推荐评分（md `- **推荐评分**：9.60 / 10`，0-10 分；权威，覆盖 javdb） */
+  /** 推荐评分（Excel 片单中的评分列，0-10 分；权威，覆盖 javdb） */
   score?: number
   /** 原始行文本 */
   raw: string
@@ -281,13 +283,13 @@ export interface IntroCategory {
   items: IntroItem[]
 }
 
-/** 整篇简介 md 的解析结果 */
+/** 整份 Excel 片单的解析结果 */
 export interface IntroDoc {
   categories: IntroCategory[]
   totalCount: number
 }
 
-// ---------- 对账展示（MD 驱动 + 文件夹对账） ----------
+// ---------- 对账展示（Excel 片单驱动 + 文件夹对账） ----------
 
 /** 海报墙展示条目 */
 export interface DisplayEntry {

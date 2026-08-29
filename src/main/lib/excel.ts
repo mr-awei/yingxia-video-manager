@@ -3,7 +3,7 @@ import type { IntroDoc, IntroItem } from '../../shared/types'
 import * as XLSX from 'xlsx'
 
 /**
- * 解析「收藏整理」Excel 片单（替代/并存 md 简介）。
+ * 解析「收藏整理」Excel 片单（唯一片单权威来源）。
  *
  * 期望结构（sheet「片单」）：
  *   表头：编号 | 品番 | 分类 | 推荐评分 | 简介 | 主题 | 角色 | 服装 | 体型 | 行为 | 玩法 | 场景 | 剧情 | 其他

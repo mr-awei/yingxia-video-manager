@@ -105,7 +105,7 @@ export interface AppApi {
   libraryAdd(input: Omit<Library, 'id' | 'createdAt'>): Promise<Library>
   libraryRemove(id: string): Promise<void>
   libraryUpdate(id: string, patch: Partial<Library>): Promise<Library | null>
-  /** 按简介 md 对账文件夹，返回分类展示数据 */
+  /** 按 Excel 片单对账文件夹，返回分类展示数据 */
   libraryReconcile(libraryId: string): Promise<ReconcileResult>
   videoList(filter?: VideoFilter): Promise<Video[]>
   videoGet(id: string): Promise<Video | null>
@@ -149,9 +149,9 @@ export interface AppApi {
   settingsGet(): Promise<Settings>
   settingsSet(patch: Partial<Settings>): Promise<Settings>
   dialogSelectFolder(): Promise<string | null>
-  /** 选择单个文件（用于选择简介 md） */
+  /** 选择单个文件（Excel 片单 / 其他） */
   dialogSelectFile(): Promise<string | null>
-  /** 用系统默认程序打开文件 / 文件夹（如打开简介 md 供编辑） */
+  /** 用系统默认程序打开文件 / 文件夹（如打开 Excel 片单供编辑） */
   openPath(path: string): Promise<void>
   /** 应用信息（版本 / 运行环境 / 数据目录 / 更新日志） */
   appInfo(): Promise<AppInfo>

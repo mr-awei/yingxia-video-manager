@@ -127,7 +127,7 @@ function localSamples(detail: JavdbDetail | null | undefined): string[] {
 }
 
 /**
- * 把数据源详情回填到 Video 顶层字段（无 md 视频用得上）。
+ * 把数据源详情回填到 Video 顶层字段（无 Excel 片单视频用得上）。
  * - actors：演员名单
  * - year / rating：缺失时从详情补全
  * - tags：合并数据源 genres（去重）
@@ -478,99 +478,116 @@ async function fetchDetailSmart(
     }
     return { detail: null, error: errs.length ? errs.join('；') : 'JavBus 未返回结果' }
   }
-  // ---- auto：Javapi（未配置则跳过）→ Javinfo（未配置则跳过）→ JavDB（仅网络失败计数）→ JavBus → JavLibrary ----
-  if (hasJavapiConfig(settings) && !state.javapiDisabled) {
-    const errs: string[] = []
-    try {
-      const javapi = await fetchJavapiDetail(code, settings, (m) => errs.push(m))
-      if (javapi) {
-        state.javapiFails = 0
-        return { detail: javapi, source: 'javapi' }
-      }
-    } catch (e) {
-      errs.push(`Javapi 异常：${(e as Error)?.message || e}`)
-    }
-    // 仅网络错误计数；「无结果」不计数（与 javdb/javbus 约定一致）
-    if (errs.length > 0) {
-      state.javapiFails++
-      if (state.javapiFails >= JAVAPI_CONSECUTIVE_LIMIT) {
-        state.javapiDisabled = true
-        console.log(`[batch] Javapi 连续网络失败 ${state.javapiFails} 部，本轮自动切换 Javinfo`)
-      }
-    }
-  } else if (!hasJavapiConfig(settings)) {
-    errors.push('未配置本地 Javapi，跳过')
-  }
-  if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
-    const errs: string[] = []
-    try {
-      const javinfo = await fetchJavinfoDetail(code, settings, (m) => errs.push(m))
-      if (javinfo) {
-        state.javinfoFails = 0
-        return { detail: javinfo, source: 'javinfo' }
-      }
-    } catch (e) {
-      errs.push(`Javinfo 异常：${(e as Error)?.message || e}`)
-    }
-    // 仅网络错误计数；「无结果」不计数
-    if (errs.length > 0) {
-      state.javinfoFails++
-      if (state.javinfoFails >= JAVINFO_CONSECUTIVE_LIMIT) {
-        state.javinfoDisabled = true
-        console.log(`[batch] Javinfo 连续网络失败 ${state.javinfoFails} 部，本轮自动切换 JavDB`)
-      }
-    }
-  } else if (!hasJavinfoKey(settings)) {
-    errors.push('未配置 Javinfo key，跳过')
-  }
+  // ---- auto：按自定义/推荐优先级降级 ----
+  // 推荐顺序（信息全面度 / 获取难度 / 风控）：Javapi → Javinfo → JavDB → JavBus → JavLibrary
+  // 用户可在设置里自定义 1-5 优先级（customSourceOrder）
+  const DEFAULT_SOURCE_ORDER: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = [
+    'javapi',
+    'javinfo',
+    'javdb',
+    'javbus',
+    'javlibrary'
+  ]
+  const order = settings.customSourceOrder && settings.customSourceOrder.length === 5
+    ? settings.customSourceOrder
+    : DEFAULT_SOURCE_ORDER
   const javdbErrs: string[] = []
-  if (!state.javdbDisabled) {
-    try {
-      const javdb = await fetchJavdbDetail(code, settings, (m) => javdbErrs.push(m))
-      if (javdb) {
-        state.javdbFails = 0
-        return { detail: javdb, source: 'javdb' }
-      }
-    } catch (e) {
-      javdbErrs.push(`JavDB 异常：${(e as Error)?.message || e}`)
-    }
-    // 仅网络失败计数；「无结果」不计数
-    if (javdbErrs.length > 0) {
-      state.javdbFails++
-      if (state.javdbFails >= JAVDB_CONSECUTIVE_LIMIT) {
-        state.javdbDisabled = true
-        console.log(`[batch] JavDB 连续网络失败 ${state.javdbFails} 部，本轮自动切换 JavBus`)
-      }
-    }
-  }
   const javbusErrs: string[] = []
-  try {
-    const javbus = await fetchJavBusDetail(code, settings, (m) => javbusErrs.push(m))
-    if (javbus) {
-      state.javbusFails = 0
-      return { detail: javbus, source: 'javbus' }
+  for (const src of order) {
+    if (src === 'javapi') {
+      if (hasJavapiConfig(settings) && !state.javapiDisabled) {
+        const errs: string[] = []
+        try {
+          const javapi = await fetchJavapiDetail(code, settings, (m) => errs.push(m))
+          if (javapi) {
+            state.javapiFails = 0
+            return { detail: javapi, source: 'javapi' }
+          }
+        } catch (e) {
+          errs.push(`Javapi 异常：${(e as Error)?.message || e}`)
+        }
+        // 仅网络错误计数；「无结果」不计数
+        if (errs.length > 0) {
+          state.javapiFails++
+          if (state.javapiFails >= JAVAPI_CONSECUTIVE_LIMIT) {
+            state.javapiDisabled = true
+            console.log(`[batch] Javapi 连续网络失败 ${state.javapiFails} 部，本轮自动跳过`)
+          }
+        }
+      } else if (!hasJavapiConfig(settings)) {
+        errors.push('未配置本地 Javapi，跳过')
+      }
+    } else if (src === 'javinfo') {
+      if (hasJavinfoKey(settings) && !state.javinfoDisabled) {
+        const errs: string[] = []
+        try {
+          const javinfo = await fetchJavinfoDetail(code, settings, (m) => errs.push(m))
+          if (javinfo) {
+            state.javinfoFails = 0
+            return { detail: javinfo, source: 'javinfo' }
+          }
+        } catch (e) {
+          errs.push(`Javinfo 异常：${(e as Error)?.message || e}`)
+        }
+        // 仅网络错误计数；「无结果」不计数
+        if (errs.length > 0) {
+          state.javinfoFails++
+          if (state.javinfoFails >= JAVINFO_CONSECUTIVE_LIMIT) {
+            state.javinfoDisabled = true
+            console.log(`[batch] Javinfo 连续网络失败 ${state.javinfoFails} 部，本轮自动跳过`)
+          }
+        }
+      } else if (!hasJavinfoKey(settings)) {
+        errors.push('未配置 Javinfo key，跳过')
+      }
+    } else if (src === 'javdb') {
+      if (!state.javdbDisabled) {
+        try {
+          const javdb = await fetchJavdbDetail(code, settings, (m) => javdbErrs.push(m))
+          if (javdb) {
+            state.javdbFails = 0
+            return { detail: javdb, source: 'javdb' }
+          }
+        } catch (e) {
+          javdbErrs.push(`JavDB 异常：${(e as Error)?.message || e}`)
+        }
+        // 仅网络失败计数；「无结果」不计数
+        if (javdbErrs.length > 0) {
+          state.javdbFails++
+          if (state.javdbFails >= JAVDB_CONSECUTIVE_LIMIT) {
+            state.javdbDisabled = true
+            console.log(`[batch] JavDB 连续网络失败 ${state.javdbFails} 部，本轮自动跳过`)
+          }
+        }
+      }
+    } else if (src === 'javbus') {
+      try {
+        const javbus = await fetchJavBusDetail(code, settings, (m) => javbusErrs.push(m))
+        if (javbus) {
+          state.javbusFails = 0
+          return { detail: javbus, source: 'javbus' }
+        }
+      } catch (e) {
+        javbusErrs.push(`JavBus 异常：${(e as Error)?.message || e}`)
+      }
+      // 停止条件：JavBus 是最后兜底源之一，连续**网络失败**说明整条抓取链已不可用。
+      // 无条件计数（不管其他源是否禁用）+ 仅网络错误计数（无结果不计），防空转
+      if (javbusErrs.length > 0) {
+        state.javbusFails++
+        if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
+          state.stop = true
+          javbusErrs.push(`JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止`)
+        }
+      }
+    } else {
+      // javlibrary：不计数（数据与 javdb/javbus 重叠度高，纯兜底，静默）
+      try {
+        const javlibrary = await fetchJavLibraryDetail(code, settings)
+        if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
+      } catch {
+        /* 静默 */
+      }
     }
-  } catch (e) {
-    javbusErrs.push(`JavBus 异常：${(e as Error)?.message || e}`)
-  }
-  // 停止条件：JavBus 是最后兜底源，其连续**网络失败**说明整条抓取链已不可用。
-  // 无条件计数（不管 javdbDisabled）+ 仅网络错误计数（无结果不计），
-  // 既避免 JavDB 未连续失败时 JavBus 一直失败也不停止（无限空转），
-  // 又避免「JavBus 只是没这个番号」被误停。
-  if (javbusErrs.length > 0) {
-    state.javbusFails++
-    if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
-      state.stop = true
-      javbusErrs.push(`JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止`)
-    }
-
-  }
-  // javlibrary 最后兜底（不计数；JavLibrary 数据与 javdb/javbus 重叠度高，作为补充源）
-  try {
-    const javlibrary = await fetchJavLibraryDetail(code, settings)
-    if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
-  } catch {
-    /* 静默 */
   }
   const allErrs = [...javdbErrs, ...javbusErrs]
   return { detail: null, error: allErrs.length ? allErrs.join('；') : '未知原因' }

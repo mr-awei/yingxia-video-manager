@@ -37,7 +37,7 @@ interface FilterState {
   search: string
   sort: SortKey
   desc: boolean
-  /** 分组模式：grouped 按 md 分类分组 / flat 全库单网格（适用于所有排序） */
+  /** 分组模式：grouped 按 Excel 分类分组 / flat 全库单网格（适用于所有排序） */
   groupMode: 'grouped' | 'flat'
   /** 当前选中的分类（点击侧栏分类切换；null = 全部） */
   category: string | null
@@ -277,7 +277,7 @@ export default function App() {
     }
   }, [progress])
 
-  // 简介 md 文件变化 → 自动重新对账（用 ref 拿最新 libraryId，避免重复监听）
+  // 片单变化触发重新对账（预留：Excel 片单 watcher 可在此接入）
   const libraryIdRef = useRef(libraryId)
   useEffect(() => {
     libraryIdRef.current = libraryId
@@ -579,7 +579,7 @@ export default function App() {
     return list
   }, [applySmart, filter.category, filter.sort, filter.desc])
 
-  // 分组：选中分类 → 单一 section；flat → 全库单网格；其他 → 按 md 分类分组
+  // 分组：选中分类 → 单一 section；flat → 全库单网格；其他 → 按 Excel 分类分组
   const sections = useMemo<WallSection[]>(() => {
     if (filter.category) {
       return [{ title: `📁 ${filter.category}`, entries: filtered }]
@@ -1533,7 +1533,7 @@ export default function App() {
               </div>
               <div className="text-2xl font-semibold mb-2">欢迎使用影匣</div>
               <div className="text-white/50 text-sm mb-6 max-w-md leading-relaxed">
-                选择一个视频文件夹，再选择对应的「简介 md 文件」。
+                选择一个视频文件夹，再选择对应的「Excel 片单文件」。
                 海报墙会按简介文件中的分类展示影片，并自动对账文件夹与简介的差异。
               </div>
               <button className="btn btn-brand px-5 py-2.5" onClick={handleAddLibrary}>
