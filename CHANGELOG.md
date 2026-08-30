@@ -1,47 +1,42 @@
 # 更新日志（Changelog）
 
-## v2.2.10-fix6（2026-08-30）
+## v2.2.12（2026-08-30）
 
-**数据目录换回 `%APPDATA%\local-video-manager`**
+**朋友合入三件套（P0 性能三连修 + P1 对账缓存+写盘防抖 + 数据目录名修复）**
 
-- main 入口用 `app.setPath('userData', ...)` 强制数据目录为 `%APPDATA%\local-video-manager`（productName「影匣」不改，窗口/安装包名不变），避免中文目录名。
-- 已同步把 `%APPDATA%\影匣` 的最新数据（data.json 含 customSourceOrder、posters 13501 个、logs）合并回 local-video-manager（旧 data.json 备份为 data.json.bak-0829）。
-
-## v2.2.10-fix5（2026-08-30）
-
-**P1 双修：启动/切库秒出 + 写盘防抖**
-
-- **对账结果磁盘缓存**：每次对账结果写入 `userData/reconcile-cache/<libraryId>.json`。打开软件/切换媒体库时**先读缓存秒出界面**（不再空白"正在加载媒体库…"等 walk 扫描十几秒），后台再全量对账刷新；对账失败时保留缓存展示。
-- **写盘 debounce**：`data.json` 落盘改为 300ms 防抖合并——连点收藏/改名等单条操作不再每次全量序列化 4.7MB；进程退出前同步兜底落盘保证不丢数据。
-
-## v2.2.10-fix4（2026-08-30）
-
-**P0 性能三连修**
-
+### 1. P0 性能三连修（fix4）
 - **批量补齐批量写盘**：「批量补齐信息」原来每抓完一部就 `updateVideo` → 4.7MB data.json 全量写盘一次（4680 部 = 4680 次全量写，小时级）。改为 worker 内收集变更、全部结束后一次 `applyVideoChanges` 落盘；末尾无封面截帧兜底同样批量落盘。
 - **首页补齐改串行**：进入首页时原来并发发起所有缺失库的 reconcile（多库同时 walk + 与主对账并发写盘竞态，可能丢更新）。改为串行补齐 + 跳过当前库（由主对账负责）。
-- **列表虚拟化（content-visibility）**：浏览列表原来一次性渲染几千条 DOM 卡片，打开/滚动卡顿、内存高。给列表项加 `content-visibility: auto`（Chromium 原生跳过视口外渲染，滚动按需渲染，零依赖），大库滚动流畅度明显提升。
+- **列表虚拟化（content-visibility）**：浏览列表原来一次性渲染几千条 DOM 卡片，打开/滚动卡顿、内存高。给列表项加 `content-visibility: auto` + `contain-intrinsic-size`（Chromium 原生跳过视口外渲染，滚动按需渲染，零依赖），大库滚动流畅度明显提升。
 
-## v2.2.10-fix3（2026-08-30）
+### 2. P1 双修：启动/切库秒出 + 写盘防抖（fix5）
+- **对账结果磁盘缓存**：每次对账结果写入 `userData/reconcile-cache/<libraryId>.json`。打开软件/切换媒体库时**先读缓存秒出界面**（不再空白"正在加载媒体库…"等 walk 扫描十几秒），后台再全量对账刷新；对账失败时保留缓存展示。新增 IPC：`libraryReconcileCache`。
+- **写盘 debounce**：`data.json` 落盘改为 300ms 防抖合并（`saveDB → scheduleSave`）——连点收藏/改名等单条操作不再每次全量序列化 4.7MB；`mutate` 不阻塞立即返回；进程 `before-quit` 同步兜底落盘 + 提供 `flushSave()`，保证 debounce 窗口内的写入不丢。
 
-**修复打开媒体库 / 切换媒体库变慢**
+### 3. 数据目录换回英文路径（fix6）
+- main 入口用 `app.setPath('userData', %APPDATA%\local-video-manager)` 强制数据目录为英文路径（productName「影匣」不改，窗口标题/安装包名均不变），避免中文目录名带来的潜在兼容问题。
+- **迁移提醒**：旧数据目录 `%APPDATA%\影匣` 的 `data.json / posters / logs` 需要手工拷贝到 `%APPDATA%\local-video-manager`，老用户升级后如发现库空了请手动迁移一次。
 
-- **dead previewPaths 清理限频**：v2.2.5 的全量清理每次 reconcile 都跑——遍历全部视频 + 数千次 `existsSync` 磁盘 IO（762 部 × 多个预览帧 ≈ 3000+ 次 stat），且与当前库无关（切一个库也清全库），大库下打开/切库明显变慢。现改为**每 6 小时最多清理一次**（previewPaths 只在升级/清缓存后失效，平时不会变）。
+## v2.2.11（2026-08-30）
 
-## v2.2.10-fix2（2026-08-30）
+**大库性能优化三件套（根治启动风暴 / 卡顿 / 切库变慢）+ md→Excel 迁移脚本**
 
-**根治大库启动卡顿：ffmpeg 截帧彻底改手动**
-
-- **自动截帧完全移除**：`generatePreviewSet` 每部视频 = 1 个 thumbnail **全片解码** + 4 个预览帧进程（5 个 ffmpeg），20 部自动截帧并发下会出现"一大堆 ffmpeg.exe"、CPU 长时间拉满。现在 reconcile 不再自动截帧，改为日志提示"有 N 部无封面视频（已禁用自动截帧，需要时请手动「重新截帧」）"。
+### 1. 大库启动风暴修复
+- **无片单兜底抓取限量 + 批量落盘**：v2.2.4 引入的「无片单自动抓元数据」会对全部无元数据视频后台并发抓取（数千部 × 5 源 + 逐条全量写盘）。现在自动兜底每轮最多抓 **30 部**，其余留给手动「批量补齐」；抓取结果改为**批量落盘**（一次 saveDB），不再逐条全量写 data.json。
 - **兜底抓取每进程只自动一次**：自动兜底抓取（30 部）只在进程启动后的首次 reconcile 执行一次，切库/切页面/刷新不再反复触发；之后一律走手动「批量补齐」。
+
+### 2. 根治 ffmpeg 自动截帧引发的大量 ffmpeg.exe 进程
+- **自动截帧完全移除**：`generatePreviewSet` 每部视频 = 1 个 thumbnail **全片解码** + 4 个预览帧进程（5 个 ffmpeg），20 部自动截帧并发下会出现"一大堆 ffmpeg.exe"、CPU 长时间拉满。现在 reconcile 不再自动截帧，改为日志提示"有 N 部无封面视频（已禁用自动截帧，需要时请手动「重新截帧」）"。
 - 手动入口保持不变：详情页「重新截帧」（单视频）、工具栏「批量补齐」（元数据）。
 
-## v2.2.10-fix（2026-08-30）
+### 3. 打开/切换媒体库变慢修复
+- **dead previewPaths 清理限频**：v2.2.5 的全量清理每次 reconcile 都跑——遍历全部视频 + 数千次 `existsSync` 磁盘 IO（762 部 × 多个预览帧 ≈ 3000+ 次 stat），且与当前库无关（切一个库也清全库），大库下打开/切库明显变慢。现改为**每 6 小时最多清理一次**（previewPaths 只在升级/清缓存后失效，平时不会变）。
 
-**修复大库启动风暴（4680 部 + 无片单时打开 CPU 直接拉满）**
+### 4. Bug Fix
+- 修 `cleanupDeadPreviewPaths` 误调用 `fs.existsSync`（fs 是 promises API）→ 导入同步 `existsSync`，避免死代码（catch 吞 TypeError，导致孤儿预览路径从没清干净）。
 
-- **无片单兜底抓取限量**：v2.2.4 引入的「无片单自动抓元数据」会对全部无元数据视频后台并发抓取（数千部 × 5 源 + 逐条全量写盘）。现在自动兜底每轮最多抓 **30 部**，其余留给手动「批量补齐」；抓取结果改为**批量落盘**（一次 saveDB），不再逐条全量写 data.json。
-- **无封面自动截帧限量**：reconcile 末尾的 ffmpeg 截帧兜底每轮上限从 200 降到 **20 部**（ffmpeg 解码是 CPU 密集操作，全量自动截会长时间占满 CPU），其余留给手动「重新截帧」。
+### 5. 新增迁移工具
+- `scripts/md-to-excel.mjs`：v1.9.4 md 片单 → v2.2.x Excel 片单迁移脚本，兼容旧风格标签 + 新结构化标签分类列，用法 `node scripts/md-to-excel.mjs <input.md> [output.xlsx]`。
 
 ## v2.2.10（2026-08-30）
 

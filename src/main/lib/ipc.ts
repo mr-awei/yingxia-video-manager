@@ -540,7 +540,8 @@ export function registerIpc(): void {
     return readReconcileCache(libraryId)
   })
 
-  // ---------- 视频 ----------  ipcMain.handle(IPC.videoList, (_e, filter: any) => repo.listVideos(filter ?? {}))
+  // ---------- 视频 ----------
+  ipcMain.handle(IPC.videoList, (_e, filter: any) => repo.listVideos(filter ?? {}))
   ipcMain.handle(IPC.videoGet, (_e, id: string) => repo.getVideo(id))
   ipcMain.handle(IPC.videoUpdate, (_e, id: string, patch: any) => repo.updateVideo(id, patch))
   ipcMain.handle(IPC.videoScan, async (_e, libraryId: string) => {
