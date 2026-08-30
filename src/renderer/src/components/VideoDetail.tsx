@@ -852,12 +852,12 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative group/preview"
                   title="hover 查看大图 · 滚轮切换 · 右键关闭"
                   onMouseEnter={() => {
-                    setZoomGroup(localVideo.previewPaths, 'preview', url)
+                    setZoomGroup(localVideo.previewPaths!, 'preview', url)
                     cancelClose(); scheduleOpen(url)
                   }}
                   onMouseLeave={clearOpenTimer}
                   onClick={() => {
-                    setZoomGroup(localVideo.previewPaths, 'preview', url)
+                    setZoomGroup(localVideo.previewPaths!, 'preview', url)
                     setZoomUrl(url)
                   }}
                 >
