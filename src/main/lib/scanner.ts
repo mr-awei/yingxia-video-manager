@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Library, ScanProgress, Settings, Video } from '../../shared/types'
-import { findVideoByPath, upsertVideo, updateVideo, listLibraries } from './repo'
+import { findVideoByPath, listLibraries, applyVideoChanges, type VideoChange } from './repo'
 import { resolvePoster, postersCacheDir, generatePreviewSet } from './images'
 import { isDomestic } from '../../shared/code'
 
@@ -75,6 +75,9 @@ export async function scanLibrary(
   let done = 0
 
   const created: Video[] = []
+  // v2.2.10-fix7：批量写盘——创建阶段收集变更，最后一次 applyVideoChanges 落盘
+  //（原来逐条 upsertVideo 全量写 data.json，大库扫描会因过慢被中断，只建了部分记录）
+  const createdChanges: VideoChange[] = []
   for (const filePath of allFiles) {
     done++
     onProgress?.({ libraryId: library.id, total, done, current: path.basename(filePath) })
@@ -101,9 +104,13 @@ export async function scanLibrary(
     const quick = await resolvePoster(video, library, settings, { allowFfmpeg: false })
     video.posterSource = quick.source
     video.posterPath = quick.posterPath
-    const saved = await upsertVideo(video)
-    created.push(saved)
+    // v2.2.10-fix7：批量写盘——创建阶段不再逐条 upsertVideo 全量写 4.7MB data.json
+    //（4492 部逐条写要几十分钟，用户等不及中断 → 只建了部分记录），统一收集最后一次落盘
+    createdChanges.push({ type: 'upsert', video })
+    created.push(video)
   }
+  // fix7：创建阶段一次性落盘
+  if (createdChanges.length > 0) await applyVideoChanges(createdChanges)
 
   // 富集阶段：ffmpeg 截帧兜底（并发 = settings.scanConcurrency，默认 4）
   const libraries = await listLibraries()
@@ -113,6 +120,8 @@ export async function scanLibrary(
 
   let doneCount = 0
   let nextIdx = 0
+  // fix7：富集结果也批量落盘（原来逐条 updateVideo）
+  const enrichChanges: VideoChange[] = []
   async function enrichWorker(): Promise<void> {
     while (nextIdx < created.length) {
       const i = nextIdx++
@@ -123,23 +132,25 @@ export async function scanLibrary(
         if (!created[i].posterPath || created[i].posterSource === 'placeholder') {
           const r = await resolvePoster(created[i], lib, settings, { allowFfmpeg: true })
           if (r.source !== 'placeholder') {
-            const updated = await updateVideo(created[i].id, {
+            created[i] = {
+              ...created[i],
               posterSource: r.source,
               posterPath: r.posterPath,
               posterPathFfmpeg: r.source === 'ffmpeg' ? r.posterPath : created[i].posterPathFfmpeg
-            })
-            if (updated) created[i] = updated
+            }
+            enrichChanges.push({ type: 'update', video: created[i] })
           } else {
             // 优先级链最终仍是占位 → 强制 ffmpeg 截帧兜底（保证有真实画面）
             const set = await generatePreviewSet(created[i], settings)
             if (set?.coverPath) {
-              const updated = await updateVideo(created[i].id, {
+              created[i] = {
+                ...created[i],
                 posterSource: 'ffmpeg',
                 posterPath: set.coverPath,
                 posterPathFfmpeg: set.coverPath,
                 previewPaths: set.previewPaths
-              })
-              if (updated) created[i] = updated
+              }
+              enrichChanges.push({ type: 'update', video: created[i] })
             }
           }
         }
@@ -150,6 +161,8 @@ export async function scanLibrary(
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, created.length) }, () => enrichWorker()))
+  // fix7：富集结果一次性落盘
+  if (enrichChanges.length > 0) await applyVideoChanges(enrichChanges)
 
   await postersCacheDir() // 确保缓存目录存在（无副作用）
   onProgress?.({ libraryId: library.id, total, done: total + created.length })
