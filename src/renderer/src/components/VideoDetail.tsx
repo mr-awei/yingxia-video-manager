@@ -606,15 +606,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               // 主标签节点：按分类分组 / 平铺（结构化 vs 退化）
               const primaryNode = (() => {
                 if (cats && Object.keys(cats).length > 0) {
-                  // 去重 + key 加索引后缀（防止分类名重复如"分类"、"类别"时 React 告警 + 渲染错乱）
-                  const entries = Object.entries(cats)
+                  // 非标签分类黑名单（Excel 里这些分类是元数据/简介/评分，不是标签，跳过不渲染）
+                  const NON_TAG_CATS = new Set([
+                    '推荐评分', '评分', '简介', '说明', '备注', 'note', 'comment',
+                    '推荐', '描述', 'desc', 'description', 'summary'
+                  ])
+                  // 去重 + 过滤非标签分类 + key 加索引后缀（防止分类名重复 React 告警）
                   const seen = new Set<string>()
-                  const dedup = entries.filter(([name, list]) => {
+                  const dedup = Object.entries(cats).filter(([name, list]) => {
                     if (!list?.length) return false
+                    if (NON_TAG_CATS.has(name.trim())) return false   // ← 核心：跳过简介/推荐评分等非标签分类
                     if (seen.has(name)) return false
                     seen.add(name)
                     return true
                   })
+                  if (!dedup.length) return null
                   return (
                     <div className="space-y-1.5 min-w-0">
                       {dedup.map(([catName, list], idx) => (
@@ -686,7 +692,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 return (
                   <div className="mt-0.5 min-w-0">
                     <div className="flex flex-wrap gap-1.5 items-center min-w-0">
-                      <span className="text-[11px] text-white/35 shrink-0 pr-1 min-w-[3.5rem]">数据源</span>
+                      <span className="text-[11px] text-white/35 shrink-0 pr-1 min-w-[3.5rem]">数据源标签</span>
                       <div className="flex flex-wrap gap-1.5 min-w-0">
                         {shown.map((t) => (
                           <button
@@ -719,7 +725,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                       ) : null}
                     </div>
                     <div className="text-[10px] text-white/30 mt-1">
-                      文档标签为权威分类；数据源 genres 折叠为备用展示，可筛选搜索。
+                      文档片单标签（彩色）是权威分类；数据源抓取的 genres（蓝色）仅作备用参考。
                     </div>
                   </div>
                 )
