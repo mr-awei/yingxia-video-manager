@@ -412,6 +412,10 @@ export async function reconcileLibrary(
     }
 
     // 后台异步抓元数据（fire-and-forget，不阻塞 reconcile 返回）
+    // v2.2.10-fix 防风暴：大库（数千部）+ 无片单时，v2.2.4 的"全量自动兜底"会让启动即对
+    // 数千部视频发起网络抓取 + 逐条全量写盘，CPU/IO 拉满。现在：
+    //   1) 自动兜底只抓前 AUTO_FETCH_LIMIT 部，其余留给手动「批量补齐」；
+    //   2) 抓取结果统一批量落盘（一次 saveDB），不再逐条 updateVideo 全量写 JSON。
     if (needFetchAfter.length > 0) {
       const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
       const now = Date.now()
@@ -423,38 +427,52 @@ export async function reconcileLibrary(
       if (skipped > 0) {
         console.log(`[reconcile] 无片单兜底抓取：跳过 ${skipped} 部（7 天内已抓过且失败）`)
       }
-      if (toFetch.length > 0) {
+      const AUTO_FETCH_LIMIT = 30
+      const autoFetch = toFetch.slice(0, AUTO_FETCH_LIMIT)
+      const rest = toFetch.length - autoFetch.length
+      if (autoFetch.length > 0) {
         const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         const state = createSmartFetchState()
         let idx = 0
-        console.log(`[reconcile] 无片单兜底抓取：启动 ${toFetch.length} 部 / 并发 ${conc}`)
+        const changes: VideoChange[] = []
+        console.log(
+          `[reconcile] 无片单兜底抓取：自动抓 ${autoFetch.length} 部 / 并发 ${conc}` +
+            (rest > 0 ? `（其余 ${rest} 部请手动「批量补齐」）` : '')
+        )
         void (async () => {
           const worker = async () => {
-            while (idx < toFetch.length) {
-              const v = toFetch[idx++]
+            while (idx < autoFetch.length) {
+              const v = autoFetch[idx++]
               if (state.stop) return
               try {
                 const r = await fetchDetailSmart(v.title, settings, state, (fe) => {
                   // v2.2.10：兜底抓取也把事件推给 renderer（走 onProgress 同管道）
-                  onProgress?.({ libraryId: library.id, total: toFetch.length, done: idx, current: v.title, fetchEvent: fe })
+                  onProgress?.({ libraryId: library.id, total: autoFetch.length, done: idx, current: v.title, fetchEvent: fe })
                 })
                 if (r.detail) {
-                  await updateVideo(v.id, {
-                    javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },
-                    lastMetaFetchAt: now
+                  changes.push({
+                    type: 'update',
+                    video: {
+                      ...v,
+                      javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },
+                      lastMetaFetchAt: now
+                    }
                   })
                   console.log(`[reconcile] 兜底抓取成功 ${v.title}（${r.source}）`)
                 } else {
                   // 抓不到（不是网络错误也可能是源里没这部）也要标 lastMetaFetchAt，避免下次立即重试
-                  await updateVideo(v.id, { lastMetaFetchAt: now })
+                  changes.push({ type: 'update', video: { ...v, lastMetaFetchAt: now } })
                 }
               } catch (e) {
                 console.warn(`[reconcile] 兜底抓取异常 ${v.title}:`, (e as Error)?.message || e)
-                await updateVideo(v.id, { lastMetaFetchAt: now }).catch(() => {})
+                changes.push({ type: 'update', video: { ...v, lastMetaFetchAt: now } })
               }
             }
           }
-          await Promise.all(Array.from({ length: Math.min(conc, toFetch.length) }, () => worker()))
+          await Promise.all(Array.from({ length: Math.min(conc, autoFetch.length) }, () => worker()))
+          await applyVideoChanges(changes).catch((e) =>
+            console.warn('[reconcile] 兜底抓取批量落盘失败:', (e as Error)?.message || e)
+          )
         })()
       }
     }
@@ -503,14 +521,17 @@ export async function reconcileLibrary(
 
   // 无封面兜底：数据源抓不到时，对账完成后后台给无海报视频截帧（不阻塞对账返回）
   //（封面缺失视频 → ffmpeg 截帧 → 下次列表/详情直接命中）
+  // v2.2.10-fix 防风暴：ffmpeg 解码视频截帧是 CPU 密集操作，大库全量自动截会让 CPU 直接拉满。
+  // 单轮上限从 200 降到 20，其余留给手动「重新截帧」/「补齐信息」按需执行。
   const missingPoster = entries
     .filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder'))
     .map((e) => e.video!)
-    // 批次上限：单轮对账最多后台截 200 部，其余留待下轮（避免长时间占满并发池）
-    .slice(0, 200)
+    // 批次上限：单轮对账最多后台截 20 部，其余留待手动触发（避免 ffmpeg 长时间占满 CPU）
+    .slice(0, 20)
   if (missingPoster.length > 0) {
     const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
     let idx = 0
+    console.log(`[reconcile] 无封面截帧：本轮自动截 ${missingPoster.length} 部（ffmpeg 极耗 CPU，上限 20，其余请手动「重新截帧」）`)
     void (async () => {
       const worker = async () => {
         while (idx < missingPoster.length) {
