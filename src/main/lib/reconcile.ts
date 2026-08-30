@@ -22,6 +22,10 @@ import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
  */
 let autoFetchFired = false
 
+/** dead previewPaths 全量清理限频：每 6 小时最多一次（大库下数千次 existsSync 磁盘 IO 会拖慢打开/切库） */
+const PREVIEW_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000
+let lastPreviewCleanupAt = 0
+
 /**
  * 片单加载结果（含错误信息）。reconcile.ts 把 error 透传给 ipc.ts，
  * 由 ipc.ts 通过 webContents.send 推到 renderer 弹 Toast——
@@ -545,8 +549,14 @@ export async function reconcileLibrary(
 
   // v2.2.5 修复：清理 dead previewPaths —— 上一次升级/installer 可能清掉了 posters 目录里的旧 .jpg，
   // 但 data.json 里的 video.previewPaths 仍指向这些不存在的文件 → hover/详情页 lm:// ENOENT 刷屏。
-  // 这里扫一遍 fs.existsSync 删孤儿，并把改动合并进 changes 一次性落盘。
-  await cleanupDeadPreviewPaths(changes)
+  // v2.2.10-fix3：大库（数千部）下全量清理 = 遍历全部视频 + 数千次 existsSync 磁盘 IO，
+  // 且与当前库无关（切一个库也清全库）→ 打开/切库明显变慢。previewPaths 只在升级/清缓存后
+  // 才失效，平时不会变，改为每 6 小时最多清理一次。
+  const previewCleanupDue = Date.now() - lastPreviewCleanupAt > PREVIEW_CLEANUP_INTERVAL
+  if (previewCleanupDue) {
+    lastPreviewCleanupAt = Date.now()
+    await cleanupDeadPreviewPaths(changes)
+  }
 
   return {
     libraryId: library.id,
