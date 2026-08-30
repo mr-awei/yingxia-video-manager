@@ -295,14 +295,19 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
             <div className="card-title text-[13px] font-medium text-white truncate leading-tight min-w-0 flex-1">
               {entry.code}
             </div>
-            {score != null ? (
-              <span className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm ring-1 ring-white/10">
-                <Icon name="star" size={10} className="text-brand fill-brand" />
-                <span className="card-title text-[11px] font-bold text-white tabular-nums leading-none">
-                  {score.toFixed(2)}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {entry.video?.durationSec ? (
+                <span className="card-title text-[10px] text-white/70 tabular-nums leading-none">{formatDuration(entry.video.durationSec)}</span>
+              ) : null}
+              {score != null ? (
+                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm ring-1 ring-white/10">
+                  <Icon name="star" size={10} className="text-brand fill-brand" />
+                  <span className="card-title text-[11px] font-bold text-white tabular-nums leading-none">
+                    {score.toFixed(2)}
+                  </span>
                 </span>
-              </span>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
 
