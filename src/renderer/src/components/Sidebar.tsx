@@ -114,7 +114,8 @@ function Section({
   onClear,
   children,
   defaultOpen = true,
-  active
+  active,
+  grow
 }: {
   title: string
   icon: IconName
@@ -123,10 +124,11 @@ function Section({
   children: ReactNode
   defaultOpen?: boolean
   active?: boolean
+  grow?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border-b border-white/5 last:border-b-0">
+    <div className={`border-b border-white/5 last:border-b-0 ${grow ? 'flex flex-col flex-1 min-h-0' : ''}`}>
       <button
         className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-ink-800/40 transition-colors"
         onClick={() => setOpen((o) => !o)}
@@ -159,7 +161,7 @@ function Section({
           />
         </div>
       </button>
-      {open ? <div className="px-3 pb-3">{children}</div> : null}
+      {open ? <div className={`px-3 pb-3 ${grow ? 'flex flex-col flex-1 min-h-0' : ''}`}>{children}</div> : null}
     </div>
   )
 }
@@ -423,9 +425,9 @@ function SidebarInner(props: Props) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto thin-scroll">
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {/* 导航 */}
-        <div className="px-2 py-2 flex flex-col gap-0.5">
+        <div className="px-2 py-2 flex flex-col gap-0.5 shrink-0">
           <NavItem icon="home" label="首页" active={view === 'home'} onClick={() => onNav('home')} />
           <NavItem
             icon="grid"
@@ -508,8 +510,8 @@ function SidebarInner(props: Props) {
         </Section>
 
         {/* 筛选：合并为可折叠 Tab 组，默认收起，显著降低首屏高度 */}
-        <Section title="筛选" icon="sliders" count={filterCount} onClear={clearAllFilters} active={filterCount > 0} defaultOpen={false}>
-          <div className="flex flex-wrap gap-1 mb-2">
+        <Section title="筛选" icon="sliders" count={filterCount} onClear={clearAllFilters} active={filterCount > 0} defaultOpen={false} grow>
+          <div className="flex flex-wrap gap-1 mb-2 shrink-0">
             {FILTER_TABS.map((tab) => {
               const sel = filterTab === tab.key
               return (
@@ -533,8 +535,8 @@ function SidebarInner(props: Props) {
 
           {/* 分类 */}
           {filterTab === 'cat' ? (
-            <div>
-              <div className="flex items-center justify-between mb-1">
+            <div className="flex flex-col min-h-0 flex-1">
+              <div className="flex items-center justify-between mb-1 shrink-0">
                 <span className="text-white/45 text-[11px] font-medium">分类</span>
                 {selectedCategory ? (
                   <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearCategory}>清除</button>
@@ -543,7 +545,7 @@ function SidebarInner(props: Props) {
               {visibleSections.length === 0 ? (
                 <div className="text-white/35 text-[11px] py-1">暂无分类</div>
               ) : (
-                <div className="flex flex-col gap-0.5 max-h-[180px] overflow-auto thin-scroll -mr-1 pr-1">
+                <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
                   {(() => {
                     // 需求 B：自动归类（order 9000-9998，如【JavBus】高清·字幕）与用户分类分组显示
                     const autoSections = visibleSections.filter((s) => s.order >= 9000 && s.order < 9999)
@@ -591,8 +593,8 @@ function SidebarInner(props: Props) {
 
           {/* 类别（genre） */}
           {filterTab === 'genre' ? (
-            <div>
-              <div className="flex items-center justify-between mb-1">
+            <div className="flex flex-col min-h-0 flex-1">
+              <div className="flex items-center justify-between mb-1 shrink-0">
                 <span className="text-white/45 text-[11px] font-medium">类别</span>
                 {genreSelectedCount > 0 ? (
                   <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearGenres}>清除</button>
@@ -601,7 +603,7 @@ function SidebarInner(props: Props) {
               {genreFacets.length === 0 ? (
                 <div className="text-white/35 text-[11px] py-1">暂无类别（需抓取到元数据才有 genres）</div>
               ) : (
-                <div className="flex flex-col gap-0.5 max-h-[220px] overflow-auto thin-scroll -mr-1 pr-1">
+                <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
                   {genreFacets.map((g) => {
                      const sel = selectedGenres.has(g.name)
                      return (
@@ -628,13 +630,14 @@ function SidebarInner(props: Props) {
 
           {/* 标签 */}
           {filterTab === 'tag' ? (
-            <div>
-              <div className="flex items-center justify-between mb-1">
+            <div className="flex flex-col min-h-0 flex-1">
+              <div className="flex items-center justify-between mb-1 shrink-0">
                 <span className="text-white/45 text-[11px] font-medium">标签</span>
                 {totalSelected > 0 ? (
                   <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClear}>清除</button>
                 ) : null}
               </div>
+              <div className="flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
               {tags.length === 0 ? <div className="text-white/35 text-xs py-2 text-center">暂无标签</div> : null}
               {categories.map((cat) => {
                 const list = grouped.get(cat) ?? []
@@ -686,12 +689,13 @@ function SidebarInner(props: Props) {
                   </div>
                 )
               })}
+              </div>
             </div>
           ) : null}
 
           {/* 女演员 / 片商 / 系列 */}
           {filterTab === 'meta' ? (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
               <FacetGroup title="女演员" icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
               <FacetGroup title="片商" icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
               <FacetGroup title="系列" icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
@@ -700,7 +704,7 @@ function SidebarInner(props: Props) {
 
           {/* 技术规格 */}
           {filterTab === 'tech' ? (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
               <FacetGroup title="分辨率" icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
               <FacetGroup title="时长" icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
               <FacetGroup title="评分" icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />

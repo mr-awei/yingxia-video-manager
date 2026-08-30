@@ -369,8 +369,13 @@ async function fetchMovieDetail(
 }
 
 function emitProgress(p: ScanProgress): void {
+  // 只给主窗口发 — BrowserWindow.getAllWindows() 会把 DevTools 也返回
+  // DevTools URL 是 devtools://devtools/... 开头, 据此过滤
   for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed()) w.webContents.send(IPC.scanProgress, p)
+    if (w.isDestroyed()) continue
+    const url = w.webContents.getURL()
+    if (url.startsWith('devtools://')) continue
+    w.webContents.send(IPC.scanProgress, p)
   }
 }
 
