@@ -1,6 +1,26 @@
 # 更新日志（Changelog）
 
-- **补齐结果告知剩余无封面数**：`libraryFetchJavdbAll` 返回 `remainingNoPoster`，完成 toast 增加一行「仍有 N 部无封面（每轮最多补 200 部，可再跑一轮「补齐信息」）」——此前用户不知道要不要再跑一轮。
+## v2.3.12（2026-08-30）
+
+**合并作者 v2.2.14 修复集 + 朋友 v2.3.3~v2.3.11 功能集，保留双方最优解**
+
+### 合入的作者 v2.2.14 修复
+- **设置项不持久化**：重写防抖写盘逻辑（resolve 收集 + 定时器重排 + 写盘串行化），修掉 300ms 窗口内连续调用导致 Promise 永不 resolve 的死锁。
+- **DMM 图床 Referer 被拒**：Electron Chromium 对跨站 Referer 校验严格，`*.dmm.co.jp` 图床带 JavBus 域名 Referer 会被取消（`ERR_BLOCKED_BY_CLIENT`），改为不传 Referer。
+- **补齐信息覆盖预览帧**：仅当截图实际下载到时才覆盖 `previewPaths`，否则保留原有 ffmpeg 预览帧。
+- **抓取日志重复打印**：`preload/index.ts` 的 `onScanProgress` 返回 cleanup 函数，useEffect 返回它（React StrictMode 让 useEffect 执行两次导致双监听器）。
+- **tagCategories 标签值重复**：分类内部标签列表加 `Array.from(new Set(...))` 去重，消除 `["/"]` 重复导致的 React key 冲突。
+- **批量补齐重复触发**：详情页 useEffect 自动补抓 + 用户手动点按钮互斥，加 `fetchingRef` 锁。
+- **批量抓取失败循环重试弹窗**：居中弹窗显示失败明细，底部「全部重试」按钮逐个重试；仍有失败则再次弹窗，循环直到全部成功或用户关闭。
+
+### 合入的朋友 v2.3.3~v2.3.11 功能
+- **v2.3.3/2.3.4**：相关推荐封面统一（`resolveEntryPoster`，posterPath 优先）。
+- **v2.3.5/2.3.6**：三种视图时长显示 + techInfo fallback。
+- **v2.3.7**：时长改右下角角标 + 新增 `libraryBatchProbe` 批量补时长。
+- **v2.3.8**：扫描库真正建记录（`handleScan` → `scanLibrary` → reconcile）。
+- **v2.3.9**：store 外部修改检测（data.json 被外部改写时自动重载内存）。
+- **v2.3.10**：防抖死锁修复（防饥饿 2s 强制落盘）+ `applyVideoChanges` 索引 O(n²)→O(n)。
+- **v2.3.11**：损坏视频不再卡死批量补齐——封面截帧超时检测 + stderr 消费 + 7 天冷却期 + 补齐结果提示剩余无封面数。
 
 ## v2.3.11（2026-08-30）
 
