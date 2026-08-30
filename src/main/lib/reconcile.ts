@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, existsSync } from 'node:fs'
 import path from 'node:path'
 import type {
   DisplayEntry,
@@ -564,7 +564,7 @@ async function cleanupDeadPreviewPaths(changes: VideoChange[]): Promise<void> {
     if (!v.previewPaths || v.previewPaths.length === 0) continue
     const alive = v.previewPaths.filter((p) => {
       try {
-        return fs.existsSync(p)
+        return existsSync(p)
       } catch {
         return false
       }
