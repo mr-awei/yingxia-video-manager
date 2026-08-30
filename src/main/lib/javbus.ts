@@ -213,15 +213,18 @@ export async function fetchJavBusDetail(
   } else {
     tasks.push(Promise.resolve(null))
   }
+  const samplesTotal = detail.samples.length
   detail.samples.forEach((u, i) => {
     tasks.push(cacheRemoteImage(u, `javbus-sample-${codeNorm}-${i}`, settings, detailUrl))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
-  console.log(`[javbus] ${codeNorm} cover=${coverLocal ? 'OK' : 'null'} samples=${sampleLocals.filter(Boolean).length}/${detail.samples.length}`)
+  console.log(`[javbus] ${codeNorm} cover=${coverLocal ? 'OK' : 'null'} samples=${sampleLocals.filter(Boolean).length}/${samplesTotal}`)
   return {
     ...detail,
     cover: coverLocal || undefined,
+    // v2.2.14：保留解析出的原始总数，供前端区分「本来就没图」与「下载失败」
+    samplesTotal,
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

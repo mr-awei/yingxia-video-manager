@@ -96,6 +96,12 @@ export interface JavdbDetail {
   actresses?: string[]
   /** 关键截图（原图 URL 列表） */
   samples: string[]
+  /**
+   * v2.2.14：解析到的原始样本总数（samples 是下载成功的本地路径，可能被失败过滤掉）。
+   * 当 samplesTotal > samples.length 时说明有 N 张截图下载失败（常见原因：DMM / javdb CDN 被网络封锁）。
+   * 旧数据无此字段。
+   */
+  samplesTotal?: number
   /** 解析器版本标记：v2 = zip 配对解析器（2026-08-26 修复男演员混入）。旧数据无此字段。 */
   parseVer?: number
   /** 数据来源：javdb / javbus / javlibrary / javapi / javinfo（旧数据无此字段，默认视为 javdb） */

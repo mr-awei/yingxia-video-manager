@@ -26,10 +26,29 @@ let dbPath = ''
 
 // v2.2.10-fix5：写盘 debounce——连续写入合并为一次落盘（300ms 窗口），
 // 避免连点收藏/改名等单条操作每次都全量序列化 4.7MB data.json（几百 ms 卡顿）。
-// 批量场景（批量补齐 fix4 已合并）同样受益。进程退出前 flushSave 保证不丢数据。
+// v2.2.14-fix：修复防抖致命缺陷——旧实现里窗口期内的第二次调用会 clearTimeout 掉
+// 唯一的落盘定时器，而 pendingWrite 不重置、其 resolve 又在被清掉的定时器回调里，
+// 结果 Promise 永不 resolve，且之后所有 scheduleSave 都返回这个死 Promise：
+// 一旦 300ms 内发生两次写入（设置页连续改两项/批量补齐），本进程从此再也不落盘。
 const SAVE_DEBOUNCE_MS = 300
 let saveTimer: NodeJS.Timeout | null = null
-let pendingWrite: Promise<void> | null = null
+/** 同一 debounce 窗口内所有调用方的 resolve，落盘完成后统一放行 */
+let saveWaiters: Array<() => void> = []
+/** 写盘串行化：防抖写盘与 flushSave 并发时排队执行，避免 .tmp 临时文件互相覆盖 */
+let writeChain: Promise<void> = Promise.resolve()
+
+function enqueueWrite(): Promise<void> {
+  writeChain = writeChain.then(() => writeNow()).catch((e) => {
+    console.error('[store] 落盘失败:', (e as Error)?.message || e)
+  })
+  return writeChain
+}
+
+function settleWaiters(): void {
+  const ws = saveWaiters
+  saveWaiters = []
+  for (const w of ws) w()
+}
 
 function resolveDbPath(): string {
   const userData = app.getPath('userData')
@@ -115,21 +134,14 @@ async function writeNow(): Promise<void> {
 
 /** 触发一次防抖写盘；返回本次合并批次的完成 Promise（同一 debounce 窗口内的多次写入合并为一次） */
 export function scheduleSave(): Promise<void> {
-  if (saveTimer) clearTimeout(saveTimer)
-  if (!pendingWrite) {
-    pendingWrite = new Promise<void>((resolve) => {
-      saveTimer = setTimeout(() => {
-        saveTimer = null
-        void writeNow()
-          .catch((e) => console.error('[store] 落盘失败:', (e as Error)?.message || e))
-          .finally(() => {
-            pendingWrite = null
-            resolve()
-          })
-      }, SAVE_DEBOUNCE_MS)
-    })
-  }
-  return pendingWrite
+  return new Promise<void>((resolve) => {
+    saveWaiters.push(resolve)
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      void enqueueWrite().then(settleWaiters)
+    }, SAVE_DEBOUNCE_MS)
+  })
 }
 
 /** 立即落盘（进程退出前调用，保证 debounce 窗口内的写入不丢） */
@@ -138,15 +150,11 @@ export async function flushSave(): Promise<void> {
     clearTimeout(saveTimer)
     saveTimer = null
   }
-  if (pendingWrite) {
-    await pendingWrite.catch(() => {})
-    // 可能有新的写入发生在 await 之后，再兜底一次
+  if (saveWaiters.length > 0) {
+    await enqueueWrite()
+    settleWaiters()
   }
-  try {
-    await writeNow()
-  } catch (e) {
-    console.error('[store] 落盘失败:', (e as Error)?.message || e)
-  }
+  await writeChain
 }
 
 export async function getDB(): Promise<DBShape> {

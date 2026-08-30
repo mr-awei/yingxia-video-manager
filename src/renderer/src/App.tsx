@@ -139,6 +139,9 @@ export default function App() {
   const [fetchLogs, setFetchLogs] = useState<
     Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
   >([])
+  // v2.2.14：批量抓取失败明细弹窗（居中显示失败影片标题 + 原因）
+  const [batchFailures, setBatchFailures] = useState<Array<{ id: string; title: string; reason: string }> | null>(null)
+  const [retryingFailures, setRetryingFailures] = useState(false)
 
   // ---- 新增：导航 / 视图状态 ----
   /** 主导航：home 首页概览 / browse 浏览 */
@@ -253,7 +256,7 @@ export default function App() {
 
   // 扫描进度（主进程推送）
   useEffect(() => {
-    api.onScanProgress((p) => {
+    return api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
       // v2.2.10：实时抓取事件 → 追加到右下角抓取日志浮层（保留最近 60 条）
       const fe = (p as { fetchEvent?: { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string } }).fetchEvent
@@ -1255,6 +1258,10 @@ export default function App() {
         remaining: res.remaining ?? 0,
         customSourceOrder: settings.customSourceOrder
       })
+      // 有失败任务时弹出居中明细窗口
+      if (res.failures && res.failures.length > 0) {
+        setBatchFailures(res.failures)
+      }
       await runReconcile(libraryId)
     } catch (e) {
       showBatchToast({
@@ -1270,6 +1277,79 @@ export default function App() {
     } finally {
       // 批量补齐结束后再保留进度条 1 秒，让用户看到「完成」
       setTimeout(() => setProgress(null), 1000)
+      // 抓取过程浮层立即收起
+      setFetchLogs([])
+      setScanning(false)
+    }
+  }, [libraryId, runReconcile])
+
+  /** 对失败明细弹窗中的项目逐个重试补齐（单点抓取，顺序执行降风控） */
+  const handleRetryFailures = useCallback(async (failures: Array<{ id: string; title: string; reason: string }>) => {
+    if (failures.length === 0) return
+    setBatchFailures(null)
+    setRetryingFailures(true)
+    setScanning(true)
+    setProgress({ total: failures.length, done: 0 })
+    setFetchLogs([])
+    let ok = 0
+    const stillFailed: Array<{ id: string; title: string; reason: string }> = []
+    try {
+      for (let i = 0; i < failures.length; i++) {
+        const f = failures[i]
+        setProgress({ total: failures.length, done: i, current: f.title })
+        try {
+          const res = await api.videoFetchJavdbDetail(f.id)
+          if (res?.ok && res.detail) {
+            ok++
+          } else {
+            stillFailed.push({ id: f.id, title: f.title, reason: (!res || res.ok) ? '未知原因' : res.error })
+          }
+        } catch (e) {
+          stillFailed.push({ id: f.id, title: f.title, reason: (e as Error)?.message ?? '请求异常' })
+        }
+      }
+      setProgress({ total: failures.length, done: failures.length })
+      if (stillFailed.length > 0) {
+        // 仍有失败 → 再次弹出明细窗口，循环重试直到成功或用户取消
+        setBatchFailures(stillFailed)
+        showBatchToast({
+          title: '仍有失败项目',
+          tone: 'warn',
+          ok,
+          failed: stillFailed.length,
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
+          reasons: [`${stillFailed.length} 部影片仍未抓取成功，可继续点击“全部重试”`],
+          stopped: false,
+          remaining: 0
+        })
+      } else {
+        showBatchToast({
+          title: '全部重试成功',
+          tone: 'ok',
+          ok,
+          failed: 0,
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
+          reasons: [],
+          stopped: false,
+          remaining: 0
+        })
+      }
+      if (libraryId) await runReconcile(libraryId)
+    } catch (e) {
+      showBatchToast({
+        title: '重试失败',
+        tone: 'err',
+        ok,
+        failed: stillFailed.length,
+        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
+        reasons: [`请求异常：${(e as Error)?.message ?? e}`],
+        stopped: false,
+        remaining: 0
+      })
+    } finally {
+      setTimeout(() => setProgress(null), 1000)
+      setFetchLogs([])
+      setRetryingFailures(false)
       setScanning(false)
     }
   }, [libraryId, runReconcile])
@@ -1956,6 +2036,63 @@ export default function App() {
 
       {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
       <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
+
+      {/* v2.2.14：批量抓取失败明细弹窗（居中） */}
+      {batchFailures && batchFailures.length > 0 && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-modal-backdrop"
+          onClick={() => setBatchFailures(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[80vh] overflow-hidden rounded-2xl bg-ink-850 ring-1 ring-white/10 shadow-2xl shadow-black/50 animate-modal-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                <h3 className="text-base font-medium text-white">批量抓取失败明细</h3>
+                <span className="text-xs text-white/40 ml-2">共 {batchFailures.length} 部</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchFailures(null)}
+                className="w-7 h-7 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto max-h-[60vh] space-y-2">
+              {batchFailures.map((f, i) => (
+                <div key={i} className="flex items-start gap-3 rounded-lg bg-white/5 px-3 py-2.5">
+                  <span className="text-xs text-white/30 font-mono mt-0.5">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-white truncate" title={f.title}>{f.title}</div>
+                    <div className="text-xs text-red-300/80 mt-0.5 break-all">{f.reason || '未知原因'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end items-center gap-3 px-5 py-4 border-t border-white/5">
+              <button
+                type="button"
+                onClick={() => handleRetryFailures(batchFailures)}
+                disabled={retryingFailures}
+                className="px-4 h-9 rounded-lg bg-brand hover:bg-brand/90 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                {retryingFailures && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                全部重试
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchFailures(null)}
+                className="px-4 h-9 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
     </ToastProvider>

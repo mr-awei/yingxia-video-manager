@@ -23,8 +23,8 @@ export interface BatchFetchResult {
   failed: number
   /** 成功来源分布（v2.2.7 加 javlibrary —— 自定义顺序里也可能命中） */
   bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number }
-  /** 失败明细（标题 + 原因） */
-  failures: Array<{ title: string; reason: string }>
+  /** 失败明细（id + 标题 + 原因） */
+  failures: Array<{ id: string; title: string; reason: string }>
   /** 是否因连续失败自动停止 */
   stopped?: boolean
   /** 停止时剩余未处理部数 */
@@ -224,7 +224,7 @@ export interface AppApi {
     id: string,
     source: 'data' | 'ffmpeg'
   ): Promise<{ ok: boolean; posterPath?: string; posterSource?: string; error?: string }>
-  onScanProgress(cb: (p: ScanProgress) => void): void
+  onScanProgress(cb: (p: ScanProgress) => void): () => void
   /** 仅扫描媒体库番号清单（不弹保存对话框、不写文件），供向导打开时自动加载 */
   libraryGetCodes(libraryId: string): Promise<{ count: number; codes: string[] }>
 }

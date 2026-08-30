@@ -86,12 +86,15 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   }, [video.id])
   /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
+  /** 与 fetching 状态同步的 ref 锁，useEffect 自动补齐和按钮手动补齐互斥 */
+  const fetchingRef = useRef(false)
   /** 手动「重新截帧」进行中 */
   const [framing, setFraming] = useState(false)
   /** 手动补齐：无视缓存强制重抓当前作品（多源 JavDB → JavBus）。
    * 无论数据是否与旧缓存一致，只要拿到新数据就弹窗提示已更新 + 来源；失败弹窗说明原因。 */
   const forceFetch = useCallback(async () => {
-    if (fetching) return
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setFetching(true)
     setError(null)
     try {
@@ -105,7 +108,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         setDetail(res.detail)
         onDetailFetched?.(video.id, res.detail)
         const src = res.source === 'javbus' ? 'JavBus' : res.source === 'javinfo' ? 'Javinfo' : res.source === 'javapi' ? 'Javapi' : 'JavDB'
-        toast({ text: `信息已更新（来源：${src}）`, tone: 'ok' })
+        // v2.2.14：截图下载失败（图床被网络封锁）时如实提示，不再假装完全成功
+        const total = res.detail.samplesTotal ?? 0
+        const got = res.detail.samples?.length ?? 0
+        if (total > got) {
+          toast({ text: `信息已更新（来源：${src}），但 ${total - got}/${total} 张关键截图下载失败（图床被网络拦截）`, tone: 'warn', duration: 6000 })
+        } else {
+          toast({ text: `信息已更新（来源：${src}）`, tone: 'ok' })
+        }
       } else {
         const reason = res && !res.ok ? res.error : '未知原因'
         toast({ text: `补齐失败：${reason ?? '未知原因'}`, tone: 'err' })
@@ -113,9 +123,10 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     } catch (e) {
       toast({ text: `补齐失败：${(e as Error)?.message ?? e}`, tone: 'err' })
     } finally {
+      fetchingRef.current = false
       setFetching(false)
     }
-  }, [localVideo.id, localVideo.domestic, fetching, onDetailFetched, onPosterFetched])
+  }, [localVideo.id, localVideo.domestic, onDetailFetched, onPosterFetched])
   /** ffmpeg 重新截帧（1 封面 + 预览帧），所有视频（含非国产片）都可用 */
   const handleGenerateFrames = useCallback(async () => {
     if (framing) return
@@ -298,29 +309,9 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       setError(null)
       return
     }
-    let alive = true
-    setLoading(true)
-    setError(null)
-    api
-      .videoFetchJavdbDetail(video.id)
-      .then((res) => {
-        if (!alive) return
-        if (res?.ok && res.detail) {
-          setDetail(res.detail)
-          onDetailFetched?.(video.id, res.detail) // 回写 App，下次直接命中缓存
-        } else {
-          const reason = res && !res.ok ? res.error : '未知原因'
-          setError(`未抓到详情：${reason ?? '未知原因'}`)
-        }
-        setLoading(false)
-      })
-      .catch((e) => {
-        if (!alive) return
-        setError(`抓取失败：${(e as Error)?.message ?? e}`)
-        setLoading(false)
-      })
-    return () => {
-      alive = false
+    // 自动补齐与手动「补齐信息」共享 ref 锁，避免两者同时触发造成重复请求
+    if (!fetchingRef.current) {
+      void forceFetch()
     }
   }, [video.id])
 
@@ -651,7 +642,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                     const norm = normalizeCat(name)
                     if (!norm) continue
                     if (NON_TAG_CATEGORY_NAMES.has(norm)) continue
-                    const list = (rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)
+                    const list = Array.from(new Set((rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)))
                     if (!list.length) continue
                     if (seen.has(norm)) continue
                     seen.add(norm)
@@ -808,12 +799,30 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         {/* 关键截图（来自 javdb）—— 过滤掉陈旧远程 URL（已重抓但还没写回的） */}
         {(() => {
           const all = d?.samples ?? []
-          const localOnly = all.filter(isLocal)
           const remoteOnly = all.filter(u => !isLocal(u))
-          console.log('[VideoDetail 关键截图 debug]', { videoId: video.id, total: all.length, local: localOnly.length, remote: remoteOnly.length, source: d?.source })
           // 本地图数组（滚轮切换也只在本地图上生效, 远程 URL 无法预览所以跳过）
           const localGroup = all.filter(isLocal)
-          return all.length > 0 ? (
+          if (all.length === 0) {
+            // v2.2.14：详情抓到了但截图一张都没有 → 显示原因说明，不再让整个区块神秘消失
+            if (d) {
+              const failed = d.samplesTotal ?? 0
+              return (
+                <div className="mb-6">
+                  <div className="text-white/80 font-medium mb-2 flex items-center gap-2">
+                    <Icon name="info" size={13} className="text-[#FF6B8A] animate-pulse shrink-0" />
+                    关键截图（{failed || '无'}）
+                    <span className="text-white/45 text-[12px]">{failed > 0 ? '下载失败' : '未获取到'}</span>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-ink-800/50 px-3 py-2.5 text-[12px] text-amber-400/80 leading-relaxed">
+                    {failed > 0 ? `${failed} 张关键截图下载失败` : '未获取到关键截图'}，可再次点击「补齐信息」重试；
+                    或点击「重新截帧」从视频本身生成本地预览帧。
+                  </div>
+                </div>
+              )
+            }
+            return null
+          }
+          return (
             <div>
               <div className="text-white/80 font-medium mb-2 flex items-center gap-2 flex-wrap">
                 关键截图（{all.length}）
@@ -853,7 +862,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 ))}
                </div>
             </div>
-          ) : null
+          )
         })()}
 
         {/* ffmpeg 截帧预览帧（封面外的多张预览，本地 previewPaths）；国产片也走这里 */}

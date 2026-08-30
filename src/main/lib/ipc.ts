@@ -371,7 +371,9 @@ async function fetchMovieDetail(
 function emitProgress(p: ScanProgress): void {
   // 只给主窗口发 — BrowserWindow.getAllWindows() 会把 DevTools 也返回
   // DevTools URL 是 devtools://devtools/... 开头, 据此过滤
-  for (const w of BrowserWindow.getAllWindows()) {
+  const wins = BrowserWindow.getAllWindows()
+  console.log(`[emitProgress] windows=${wins.length} payload=${p.current ?? '-'}`)
+  for (const w of wins) {
     if (w.isDestroyed()) continue
     const url = w.webContents.getURL()
     if (url.startsWith('devtools://')) continue
@@ -538,7 +540,14 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
   return { ...baseResult, fallback: true, error: errors.join('；') }
 }
 
+let ipcRegistered = false
+
 export function registerIpc(): void {
+  if (ipcRegistered) {
+    console.warn('[ipc] registerIpc 被重复调用，已跳过')
+    return
+  }
+  ipcRegistered = true
 
   // ---------- 媒体库 ----------
   ipcMain.handle(IPC.libraryList, () => repo.listLibraries())
@@ -635,8 +644,14 @@ export function registerIpc(): void {
     if (coverLocal) {
       patch.posterSource = mr.detail.source ?? 'javdb'
       patch.posterPath = coverLocal
-      patch.previewPaths = localSamples(mr.detail)
-      await removeFfmpegPreviewFiles(id)
+      // v2.2.14-fix：样本图一张都没拿到时，**保留**原有 ffmpeg 预览帧——
+      // 之前无条件用 samples（空数组）覆盖 previewPaths + 删除预览帧文件，
+      // 导致「补齐信息」后预览帧神秘消失（哪怕提示成功）。
+      const samples = localSamples(mr.detail)
+      if (samples.length) {
+        patch.previewPaths = samples
+        await removeFfmpegPreviewFiles(id)
+      }
     }
     await repo.updateVideo(id, patch)
     for (const w of BrowserWindow.getAllWindows()) {
@@ -645,7 +660,7 @@ export function registerIpc(): void {
           videoId: id,
           posterPath: coverLocal,
           posterSource: mr.detail.source ?? 'javdb',
-          previewPaths: coverLocal ? localSamples(mr.detail) : undefined
+          previewPaths: coverLocal && localSamples(mr.detail).length ? localSamples(mr.detail) : undefined
         })
       }
     }
@@ -679,7 +694,7 @@ export function registerIpc(): void {
     let ok = 0
     let failed = 0
     const bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number } = { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 }
-    const failures: Array<{ title: string; reason: string }> = []
+    const failures: Array<{ id: string; title: string; reason: string }> = []
     const smartState = createSmartFetchState()
     // 系列去重：同 base code 只抓一次，其余分集复用（HUNTA-468CD1/CD2 → 抓一次）
     const seriesCache = new Map<string, JavdbDetail>()
@@ -803,10 +818,13 @@ export function registerIpc(): void {
             ) {
               const coverLocal = await resolveDetailCover(mr.detail, v.id, settings)
               if (coverLocal) {
-                const patch: Partial<Video> = { posterSource: mr.detail.source ?? 'javbus', posterPath: coverLocal }
+                // v2.2.14-fix：样本图没拿到时保留原有 ffmpeg 预览帧（原代码 samples 为空也会删预览帧文件）
                 const samples = localSamples(mr.detail)
-                if (samples.length) patch.previewPaths = samples
-                await removeFfmpegPreviewFiles(v.id)
+                const patch: Partial<Video> = { posterSource: mr.detail.source ?? 'javbus', posterPath: coverLocal }
+                if (samples.length) {
+                  patch.previewPaths = samples
+                  await removeFfmpegPreviewFiles(v.id)
+                }
                 await applyPatch(v, patch)
                 for (const w of BrowserWindow.getAllWindows()) {
                   if (!w.isDestroyed()) {
@@ -825,7 +843,7 @@ export function registerIpc(): void {
             bySource[src] = (bySource[src] ?? 0) + 1
           } else {
             failed++
-            failures.push({ title: v.title, reason: mr.error || '未知原因' })
+            failures.push({ id: v.id, title: v.title, reason: mr.error || '未知原因' })
           }
         }
         // 统一限速：本轮发过请求才延时一次（修复旧逻辑封面+详情都抓时延时两次、间隔翻倍）

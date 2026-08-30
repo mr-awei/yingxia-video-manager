@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { net } from 'electron'
 import type { JavdbDetail, Settings, Video } from '../../shared/types'
 import { extractBaseCode, extractCode } from '../../shared/code'
 import { postersCacheDir } from './images'
@@ -115,7 +116,7 @@ export async function searchJavdb(
 export async function cacheRemoteImage(
   remoteUrl: string,
   key: string,
-  settings: Settings,
+  _settings: Settings,
   referer: string = BASE
 ): Promise<string | null> {
   const safe = key.replace(/[^A-Za-z0-9_-]/g, '_')
@@ -128,24 +129,30 @@ export async function cacheRemoteImage(
   }
   const headers: Record<string, string> = {
     'User-Agent': UA,
-    Referer: referer + '/',
     Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
   }
+  // DMM 图床被 Chromium 网络安全策略判定为跨站 Referer 不合法，直接去掉 Referer。
+  const isDmm = /\.dmm\.co\.jp$/i.test(new URL(remoteUrl).hostname)
+  if (!isDmm) headers.Referer = referer + '/'
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 15000)
   try {
-    const res = await fetch(remoteUrl, {
-      headers,
-      signal: ctrl.signal,
-      dispatcher: getDispatcher(settings)
-    })
-    if (!res.ok) return null
+    // v2.2.14-fix：Node fetch 的 TLS 指纹会被 DMM 图床拦截；改用 Electron Chromium 网络栈下载图片。
+    const res = await net.fetch(remoteUrl, { headers, signal: ctrl.signal })
+    if (!res.ok) {
+      console.log(`[cacheRemoteImage] ${key} HTTP ${res.status} ${remoteUrl}`)
+      return null
+    }
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.length < 1000) return null
+    if (buf.length < 1000) {
+      console.log(`[cacheRemoteImage] ${key} too small ${buf.length}B ${remoteUrl}`)
+      return null
+    }
     await fs.mkdir(postersCacheDir(), { recursive: true })
     await fs.writeFile(out, buf)
     return out
-  } catch {
+  } catch (e) {
+    console.log(`[cacheRemoteImage] ${key} error ${(e as Error)?.message || e} ${remoteUrl}`)
     return null
   } finally {
     clearTimeout(timer)
@@ -353,6 +360,7 @@ export async function fetchJavdbDetail(
   }
 
   // 把远程图片下载到本地缓存（并行）。失败的跳过。
+  const samplesTotal = detail.samples.length
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     tasks.push(cacheRemoteImage(detail.cover, `javdb-cover-${hit.uid}`, settings))
@@ -369,6 +377,8 @@ export async function fetchJavdbDetail(
   return {
     ...detail,
     cover: coverLocal || undefined,
+    // v2.2.14：保留解析出的原始总数，供前端区分「本来就没图」与「下载失败」
+    samplesTotal,
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

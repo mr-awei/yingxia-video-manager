@@ -52,7 +52,9 @@ const api: AppApi = {
   videoFrameFallback: (id) => ipcRenderer.invoke(IPC.videoFrameFallback, id),
   videoSetPreviewAsCover: (id, previewPath) => ipcRenderer.invoke(IPC.videoSetPreviewAsCover, id, previewPath),
   onScanProgress: (cb) => {
-    ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
+    const handler = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p as never)
+    ipcRenderer.on(IPC.scanProgress, handler)
+    return () => ipcRenderer.removeListener(IPC.scanProgress, handler)
   },
   libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId)
 }

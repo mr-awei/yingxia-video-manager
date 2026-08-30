@@ -8,6 +8,21 @@ import { runtime, applyRuntimeSettings } from './lib/runtime'
 // 造成的中文目录名；必须在任何 app.getPath('userData') 调用之前设置）
 app.setPath('userData', path.join(app.getPath('appData'), 'local-video-manager'))
 
+// v2.2.14-fix：单实例锁。多实例同时跑会各自持有整份内存缓存，先后把「自己的快照」
+// 覆盖写进同一个 data.json（尤其托盘常驻的旧进程退出时会把旧数据盖回去），造成
+// 「设置改了不保存 / 数据回退到旧时间点」。第二实例启动时直接退出并唤起已有窗口。
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      win.show()
+      win.focus()
+    }
+  })
+}
+
 const POSTER_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
