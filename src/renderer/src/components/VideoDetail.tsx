@@ -639,16 +639,23 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               // 主标签节点：按分类分组 / 平铺（结构化 vs 退化）
               const primaryNode = (() => {
                 if (cats && Object.keys(cats).length > 0) {
+                  // v2.2.14-fix：分类名 normalize（去空格 + 去末尾冒号斜杠），
+                  // 防 tagCategories 里同时存在 "分类" / "分类:" / "分类/" 等
+                  // 只差标点的 key 导致 React key 重复 Warning
+                  const normalizeCat = (n: string) =>
+                    n.trim().replace(/[:：/\\]+$/, '').trim()
                   // 去重 + 过滤空 tag 字符串 + 过滤非标签分类 + key 加索引后缀
                   const seen = new Set<string>()
                   const dedup: [string, string[]][] = []
                   for (const [name, rawList] of Object.entries(cats)) {
-                    if (NON_TAG_CATEGORY_NAMES.has(name.trim())) continue  // 跳过简介/评分等元数据分类
+                    const norm = normalizeCat(name)
+                    if (!norm) continue
+                    if (NON_TAG_CATEGORY_NAMES.has(norm)) continue
                     const list = (rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)
                     if (!list.length) continue
-                    if (seen.has(name)) continue
-                    seen.add(name)
-                    dedup.push([name, list])
+                    if (seen.has(norm)) continue
+                    seen.add(norm)
+                    dedup.push([norm, list])
                   }
                   if (!dedup.length) return null
                   return (

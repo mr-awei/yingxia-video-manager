@@ -203,19 +203,22 @@ export async function fetchJavBusDetail(
   }
   const detail = parseJavBusDetailHtml(html, codeNorm)
   const b = base()
-  // 本地化封面 + 截图（JavBus 图片需带 JavBus Referer）
+  // v2.2.14-fix：DMM 图床 (pics.dmm.co.jp) 防盗链 — 必须用 **JavBus 详情页 URL** 当 Referer，
+  // 站点根路径 https://www.seedmm.bond/ 会被 DMM 拒掉 → 所有 sample 返回 null → samples=[]
+  // 封面是站点自己的相对路径，用根 Referer 没问题；但 samples 是 DMM 绝对 URL，必须 detailUrl
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     const abs = detail.cover.startsWith('http') ? detail.cover : b + detail.cover
-    tasks.push(cacheRemoteImage(abs, `javbus-cover-${codeNorm}`, settings, b))
+    tasks.push(cacheRemoteImage(abs, `javbus-cover-${codeNorm}`, settings, detailUrl))
   } else {
     tasks.push(Promise.resolve(null))
   }
   detail.samples.forEach((u, i) => {
-    tasks.push(cacheRemoteImage(u, `javbus-sample-${codeNorm}-${i}`, settings, b))
+    tasks.push(cacheRemoteImage(u, `javbus-sample-${codeNorm}-${i}`, settings, detailUrl))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
+  console.log(`[javbus] ${codeNorm} cover=${coverLocal ? 'OK' : 'null'} samples=${sampleLocals.filter(Boolean).length}/${detail.samples.length}`)
   return {
     ...detail,
     cover: coverLocal || undefined,
