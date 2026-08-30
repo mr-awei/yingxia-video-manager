@@ -97,13 +97,26 @@ export type VideoChange =
 export async function applyVideoChanges(changes: VideoChange[]): Promise<void> {
   if (changes.length === 0) return
   const db = await getDB()
+  // v2.3.10：用 Map 建 id→下标索引（原逐条 findIndex 是 O(n²)——4494 条变更 × 6253 条记录
+  // ≈ 2800 万次字符串比较，大库对账落盘明显卡顿）。remove 数量通常极少，先 filter 再建索引。
+  const removeIds: string[] = []
+  for (const c of changes) if (c.type === 'remove') removeIds.push(c.id)
+  if (removeIds.length > 0) {
+    const rm = new Set(removeIds)
+    db.videos = db.videos.filter((v) => !rm.has(v.id))
+  }
+  const index = new Map<string, number>()
+  for (let i = 0; i < db.videos.length; i++) {
+    const id = db.videos[i].id
+    if (!index.has(id)) index.set(id, i)
+  }
   for (const c of changes) {
-    if (c.type === 'remove') {
-      db.videos = db.videos.filter((v) => v.id !== c.id)
-    } else {
-      const idx = db.videos.findIndex((v) => v.id === c.video.id)
-      if (idx >= 0) db.videos[idx] = c.video
-      else db.videos.push(c.video)
+    if (c.type === 'remove') continue
+    const idx = index.get(c.video.id)
+    if (idx !== undefined) db.videos[idx] = c.video
+    else {
+      index.set(c.video.id, db.videos.length)
+      db.videos.push(c.video)
     }
   }
   await saveDB()

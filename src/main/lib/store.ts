@@ -35,9 +35,22 @@ let lastStatMs = 0
 // v2.2.10-fix5：写盘 debounce——连续写入合并为一次落盘（300ms 窗口），
 // 避免连点收藏/改名等单条操作每次都全量序列化 4.7MB data.json（几百 ms 卡顿）。
 // 批量场景（批量补齐 fix4 已合并）同样受益。进程退出前 flushSave 保证不丢数据。
+// v2.3.10 重写（修死锁）：原实现把 resolve() 只挂在 debounce 计时器回调里，
+// 且「pendingWrite 非空时不重建计时器」——任一次 mutate/saveDB 在窗口内再次调用
+// scheduleSave 就会 clearTimeout 掉那个唯一计时器，Promise 永不 resolve，
+// await saveDB()（applyVideoChanges → 对账收尾）永久挂起 → UI 一直"正在对账"。
+// 现在：dirty 标志 + 写盘串行 + waiters 唤醒，计时器只负责触发，不承载 Promise。
 const SAVE_DEBOUNCE_MS = 300
+// 防饥饿：距上次落盘超过该值就不再等 debounce，立即写（连续改动下也能推进）
+const MAX_SAVE_DELAY_MS = 2000
 let saveTimer: NodeJS.Timeout | null = null
-let pendingWrite: Promise<void> | null = null
+let waiters: Array<() => void> = []
+/** 是否有未落盘的数据 */
+let dirty = false
+/** 是否正在写盘（runWrite 执行中） */
+let writeInFlight = false
+/** 最近一次落盘完成时间：用于防饥饿（距上次写入过久就不再等 debounce） */
+let lastWriteAt = 0
 
 function resolveDbPath(): string {
   const userData = app.getPath('userData')
@@ -146,23 +159,49 @@ async function writeNow(): Promise<void> {
   lastLoadMs = lastSelfWriteMs
 }
 
-/** 触发一次防抖写盘；返回本次合并批次的完成 Promise（同一 debounce 窗口内的多次写入合并为一次） */
-export function scheduleSave(): Promise<void> {
-  if (saveTimer) clearTimeout(saveTimer)
-  if (!pendingWrite) {
-    pendingWrite = new Promise<void>((resolve) => {
-      saveTimer = setTimeout(() => {
-        saveTimer = null
-        void writeNow()
-          .catch((e) => console.error('[store] 落盘失败:', (e as Error)?.message || e))
-          .finally(() => {
-            pendingWrite = null
-            resolve()
-          })
-      }, SAVE_DEBOUNCE_MS)
-    })
+/** 唤醒所有等待落盘的调用者（数据已持久化） */
+function settleWaiters(): void {
+  const ws = waiters
+  waiters = []
+  for (const w of ws) w()
+}
+
+/** 串行落盘一轮：写盘期间的新改动置 dirty，写完后自动续一轮，保证不漏写 */
+async function runWrite(): Promise<void> {
+  if (writeInFlight) return
+  writeInFlight = true
+  dirty = false
+  const t0 = Date.now()
+  try {
+    await writeNow()
+    const cost = Date.now() - t0
+    if (cost > 1000) console.log(`[store] 落盘耗时 ${cost}ms（大库全量序列化，可观察指标）`)
+  } catch (e) {
+    console.error('[store] 落盘失败:', (e as Error)?.message || e)
+  } finally {
+    writeInFlight = false
+    lastWriteAt = Date.now()
+    if (dirty) void runWrite()
+    else settleWaiters()
   }
-  return pendingWrite
+}
+
+/** 触发一次防抖写盘；返回的 Promise 在「本次改动已落盘」后 resolve（保证会 resolve，不挂起） */
+export function scheduleSave(): Promise<void> {
+  dirty = true
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  // 防饥饿：距上次落盘过久就不再等 debounce，立即写（连续改动下也能推进）
+  const delay = Date.now() - lastWriteAt > MAX_SAVE_DELAY_MS ? 0 : SAVE_DEBOUNCE_MS
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    void runWrite()
+  }, delay)
+  return new Promise<void>((resolve) => {
+    waiters.push(resolve)
+  })
 }
 
 /** 立即落盘（进程退出前调用，保证 debounce 窗口内的写入不丢） */
@@ -171,15 +210,18 @@ export async function flushSave(): Promise<void> {
     clearTimeout(saveTimer)
     saveTimer = null
   }
-  if (pendingWrite) {
-    await pendingWrite.catch(() => {})
-    // 可能有新的写入发生在 await 之后，再兜底一次
+  // 等在途写盘结束（含写盘期间新改动触发的续写轮次），最多等 2s
+  for (let i = 0; i < 100 && (writeInFlight || dirty); i++) {
+    await new Promise((r) => setTimeout(r, 20))
   }
-  try {
-    await writeNow()
-  } catch (e) {
-    console.error('[store] 落盘失败:', (e as Error)?.message || e)
+  if (dirty && !writeInFlight) {
+    try {
+      await writeNow()
+    } catch (e) {
+      console.error('[store] 退出前落盘失败:', (e as Error)?.message || e)
+    }
   }
+  settleWaiters()
 }
 
 export async function getDB(): Promise<DBShape> {

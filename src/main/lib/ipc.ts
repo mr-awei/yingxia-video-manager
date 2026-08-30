@@ -554,9 +554,14 @@ export function registerIpc(): void {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
     const settings = await repo.getSettings()
+    const t0 = Date.now()
     const result = await reconcileLibrary(lib, settings, emitProgress)
+    // v2.3.10 诊断：对账完成打点（此前若卡在落盘，这里永远到不了，日志一片空白无从定位）
+    console.log(`[reconcile] 对账完成 ${libraryId}：entries=${result.entries.length} 耗时${Date.now() - t0}ms`)
     // v2.2.10-fix5：对账结果写磁盘缓存——启动/切库先秒出缓存界面，后台再全量对账刷新
-    void writeReconcileCache(libraryId, result).catch(() => {})
+    void writeReconcileCache(libraryId, result)
+      .then(() => console.log(`[reconcile] 缓存已写 ${libraryId}`))
+      .catch((e) => console.error('[reconcile] 缓存写入失败:', (e as Error)?.message || e))
     return result
   })
 
