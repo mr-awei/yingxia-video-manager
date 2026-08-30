@@ -1949,7 +1949,10 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
     }
   }
   return (
-    <div className="fixed bottom-4 right-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast">
+    <div className="fixed right-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast"
+         style={{ bottom: 'calc(1.5rem + 310px)' }}
+         title="抓取过程日志（Toast 堆叠区上方）"
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
         <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
