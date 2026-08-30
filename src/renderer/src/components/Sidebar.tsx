@@ -71,6 +71,12 @@ interface Props {
   onClearSeries: () => void
   onClearMetaFilters: () => void
 
+  /** v2.3.2 类别（genre）筛选：独立于分类，从 javdbDetail.genres 提取单标签 */
+  genreFacets: MetaFacet[]
+  selectedGenres: Set<string>
+  onToggleGenre: (g: string) => void
+  onClearGenres: () => void
+
   /** 筛选：技术规格 / 时间 */
   resolutionFacets: MetaFacet[]
   durationFacets: MetaFacet[]
@@ -299,6 +305,7 @@ function SidebarInner(props: Props) {
     selectedActors, selectedStudios, selectedSeries,
     onToggleActor, onToggleStudio, onToggleSeries,
     onClearActors, onClearStudios, onClearSeries, onClearMetaFilters,
+    genreFacets, selectedGenres, onToggleGenre, onClearGenres,
     resolutionFacets, durationFacets, scoreFacets, yearFacets,
     selectedResolutions, selectedDurations, selectedScores, selectedYears,
     onToggleResolution, onToggleDuration, onToggleScore, onToggleYear,
@@ -330,21 +337,24 @@ function SidebarInner(props: Props) {
 
   const totalSelected = selected.size
   const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size
+  const genreSelectedCount = selectedGenres.size
   const techSelectedCount = selectedResolutions.size + selectedDurations.size + selectedScores.size + selectedYears.size
 
-  // 筛选：合并为可折叠 Tab 组（分类 / 标签 / 影人 / 规格 / 年份），默认收起
-  const [filterTab, setFilterTab] = useState<'cat' | 'tag' | 'meta' | 'tech' | 'year'>('cat')
+  // 筛选：合并为可折叠 Tab 组（分类 / 类别 / 标签 / 影人 / 规格 / 年份），默认收起
+  const [filterTab, setFilterTab] = useState<'cat' | 'genre' | 'tag' | 'meta' | 'tech' | 'year'>('cat')
   const filterCount =
-    (selectedCategory ? 1 : 0) + totalSelected + metaSelectedCount + techSelectedCount + selectedYears.size
+    (selectedCategory ? 1 : 0) + genreSelectedCount + totalSelected + metaSelectedCount + techSelectedCount + selectedYears.size
   const clearAllFilters = () => {
     onClearCategory()
+    onClearGenres()
     onClear()
     onClearMetaFilters()
     onClearTechFilters()
     onClearYears()
   }
-  const FILTER_TABS: { key: 'cat' | 'tag' | 'meta' | 'tech' | 'year'; label: string; icon: IconName; badge: number }[] = [
+  const FILTER_TABS: { key: 'cat' | 'genre' | 'tag' | 'meta' | 'tech' | 'year'; label: string; icon: IconName; badge: number }[] = [
     { key: 'cat', label: '分类', icon: 'folder', badge: selectedCategory ? 1 : 0 },
+    { key: 'genre', label: '类别', icon: 'layers', badge: genreSelectedCount },
     { key: 'tag', label: '标签', icon: 'tag', badge: totalSelected },
     { key: 'meta', label: '影人', icon: 'users', badge: metaSelectedCount },
     { key: 'tech', label: '规格', icon: 'monitor', badge: techSelectedCount },
@@ -572,6 +582,41 @@ function SidebarInner(props: Props) {
                       </>
                     )
                   })()}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* 类别（genre） */}
+          {filterTab === 'genre' ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-white/45 text-[11px] font-medium">类别</span>
+                {genreSelectedCount > 0 ? (
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearGenres}>清除</button>
+                ) : null}
+              </div>
+              {genreFacets.length === 0 ? (
+                <div className="text-white/35 text-[11px] py-1">暂无类别（需抓取到元数据才有 genres）</div>
+              ) : (
+                <div className="flex flex-col gap-0.5 max-h-[220px] overflow-auto thin-scroll -mr-1 pr-1">
+                  {genreFacets.map((g) => {
+                    const sel = selectedGenres.has(g.name)
+                    return (
+                      <button
+                        key={g.name}
+                        onClick={() => onToggleGenre(g.name)}
+                        className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
+                          sel ? 'bg-brand text-white font-medium' : 'hover:bg-ink-700 text-white/80 hover:text-white'
+                        }`}
+                        title={g.name}
+                      >
+                        {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="layers" size={10} className="shrink-0 opacity-50" />}
+                        <span className="flex-1 min-w-0 truncate">{g.name}</span>
+                        <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{g.count}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>

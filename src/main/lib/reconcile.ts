@@ -406,6 +406,8 @@ export async function reconcileLibrary(
       }
       const d = video.javdbDetail
       const hasGenres = !!d && !!d.genres && d.genres.length > 0
+      // v2.3.2：分类恢复原 v2.2.0 逻辑（一个视频一条 entry，category 用 genres 拼接长串），
+      // 避免方案 A 把一个视频拆多条 entry 导致计数/推荐重复；genres 单标签改由独立的「类别」筛选提供。
       const srcName = d?.source === 'javbus' ? 'JavBus' : d?.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'
       const catName = hasGenres ? `【${srcName}】${d!.genres.join('·')}` : '未分类'
       entries.push({
