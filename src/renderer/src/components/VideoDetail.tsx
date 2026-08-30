@@ -804,9 +804,15 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           const localGroup = all.filter(isLocal)
           return all.length > 0 ? (
             <div>
-              <div className="text-white/80 font-medium mb-2 flex items-center gap-2">
+              <div className="text-white/80 font-medium mb-2 flex items-center gap-2 flex-wrap">
                 关键截图（{all.length}）
                 {remoteOnly.length > 0 ? <span className="text-white/40 text-xs">· {remoteOnly.length} 张为远程 URL（反盗链无法预览）</span> : null}
+                {localGroup.length > 1 ? (
+                  <span className="flex items-center gap-1.5 text-white/45 text-[12px] ml-2">
+                    <Icon name="info" size={14} className="text-[#FF6B8A] animate-pulse shrink-0" />
+                    <span>悬停大图 · 滚轮切换 · 右键关闭</span>
+                  </span>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {all.map((url, i) => (
@@ -835,12 +841,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   </div>
                 ))}
                </div>
-              {localGroup.length > 1 ? (
-                <div className="mt-2 flex items-center gap-1.5 text-white/35 text-[11px] select-none">
-                  <Icon name="info" size={12} className="text-[#FF6B8A]/70 shrink-0 animate-pulse" />
-                  <span>悬停查看大图 · 滚轮切换 · 右键关闭</span>
-                </div>
-              ) : null}
             </div>
           ) : null
         })()}
@@ -848,9 +848,15 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         {/* ffmpeg 截帧预览帧（封面外的多张预览，本地 previewPaths）；国产片也走这里 */}
         {localVideo.previewPaths && localVideo.previewPaths.length > 0 ? (
           <div className="mb-6">
-            <div className="text-white/80 font-medium mb-2 flex items-center gap-1.5">
+            <div className="text-white/80 font-medium mb-2 flex items-center gap-1.5 flex-wrap">
               <Icon name="film" size={13} className="text-white/40" />
               预览帧（{localVideo.previewPaths.length}）
+              {localVideo.previewPaths.length > 1 ? (
+                <span className="flex items-center gap-1.5 text-white/45 text-[12px] ml-2">
+                  <Icon name="info" size={14} className="text-[#FF6B8A] animate-pulse shrink-0" />
+                  <span>悬停大图 · 滚轮切换 · 右键关闭</span>
+                </span>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {localVideo.previewPaths.map((url, i) => (
@@ -891,12 +897,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 </div>
               ))}
              </div>
-            {localVideo.previewPaths.length > 1 ? (
-              <div className="mt-2 flex items-center gap-1.5 text-white/35 text-[11px] select-none">
-                <Icon name="info" size={12} className="text-[#FF6B8A]/70 shrink-0 animate-pulse" />
-                <span>悬停查看大图 · 滚轮切换 · 右键关闭</span>
-              </div>
-            ) : null}
           </div>
         ) : null}
 

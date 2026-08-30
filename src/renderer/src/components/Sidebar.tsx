@@ -407,7 +407,7 @@ function SidebarInner(props: Props) {
   }
 
   return (
-    <aside className="w-[240px] shrink-0 border-r border-white/5 bg-ink-850/80 flex flex-col overflow-hidden">
+    <aside className="w-[280px] shrink-0 border-r border-white/5 bg-ink-850/80 flex flex-col overflow-hidden">
       {/* 顶部条 */}
       <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
         <div className="flex items-center gap-1.5 text-white/90 font-semibold text-[12px]">
@@ -556,14 +556,16 @@ function SidebarInner(props: Props) {
                           key={s.name}
                           onClick={() => onToggleCategory(s.name)}
                           disabled={empty && !sel}
-                          className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
+                          className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-[12px] transition-colors text-left ${
                             sel ? 'bg-brand text-white font-medium' : empty ? 'text-white/30 cursor-not-allowed' : 'hover:bg-ink-700 text-white/80 hover:text-white'
                           }`}
                           title={s.name}
                         >
-                          {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="folder" size={10} className="shrink-0 opacity-50" />}
-                          <span className="flex-1 min-w-0 truncate">{s.name}</span>
-                          <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{s.count}</span>
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {sel ? <Icon name="check" size={11} className="shrink-0 text-white" /> : <Icon name="folder" size={11} className="shrink-0 text-white/40" />}
+                            <span className="truncate">{s.name}</span>
+                          </div>
+                          <span className={`shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded ${sel ? 'bg-white/20' : 'bg-white/5 text-white/50'}`}>{s.count}</span>
                         </button>
                       )
                     }
@@ -601,22 +603,24 @@ function SidebarInner(props: Props) {
               ) : (
                 <div className="flex flex-col gap-0.5 max-h-[220px] overflow-auto thin-scroll -mr-1 pr-1">
                   {genreFacets.map((g) => {
-                    const sel = selectedGenres.has(g.name)
-                    return (
-                      <button
-                        key={g.name}
-                        onClick={() => onToggleGenre(g.name)}
-                        className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
-                          sel ? 'bg-brand text-white font-medium' : 'hover:bg-ink-700 text-white/80 hover:text-white'
-                        }`}
-                        title={g.name}
-                      >
-                        {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="layers" size={10} className="shrink-0 opacity-50" />}
-                        <span className="flex-1 min-w-0 truncate">{g.name}</span>
-                        <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{g.count}</span>
-                      </button>
-                    )
-                  })}
+                     const sel = selectedGenres.has(g.name)
+                     return (
+                       <button
+                         key={g.name}
+                         onClick={() => onToggleGenre(g.name)}
+                         className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-[12px] transition-colors text-left ${
+                           sel ? 'bg-brand text-white font-medium' : 'hover:bg-ink-700 text-white/80 hover:text-white'
+                         }`}
+                         title={g.name}
+                       >
+                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                           {sel ? <Icon name="check" size={11} className="shrink-0 text-white" /> : <Icon name="layers" size={11} className="shrink-0 text-white/40" />}
+                           <span className="truncate">{g.name}</span>
+                         </div>
+                         <span className={`shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded ${sel ? 'bg-white/20' : 'bg-white/5 text-white/50'}`}>{g.count}</span>
+                       </button>
+                     )
+                   })}
                 </div>
               )}
             </div>
