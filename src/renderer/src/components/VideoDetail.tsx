@@ -384,10 +384,13 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           </div>
         </div>
 
-        {/* 封面 + 元数据 */}
-        <div className="grid grid-cols-[260px_1fr] gap-6 mb-6">
-          {/* 封面：自适应高度（和右栏等高），min 390px 保证最小海报比例，max 520px 防止过长 */}
-          <div className="h-full min-h-[390px] max-h-[520px] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative self-stretch">
+        {/* 封面 + 元数据 —— 左栏封面(固定2:3)+简介, 右栏标题/按钮/Meta/标签/文件信息
+            封面保持 aspect-[2/3] 海报比例, 不被右栏 self-stretch 撑得过高导致大片模糊背景;
+            简介放到封面下方, 让左栏也有足够高度, 两栏视觉均衡. */}
+        <div className="grid grid-cols-[260px_1fr] gap-6 mb-6 items-start">
+          {/* 左栏：封面(固定 2:3) + 简介(紧跟下方) */}
+          <div className="flex flex-col gap-4">
+            <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative shrink-0">
             {coverSrc ? (
               <div className="absolute inset-0">
                 {/* 模糊铺底：横竖屏封面完整显示，四周裁切处由模糊同图填充 */}
@@ -412,7 +415,18 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 {titleInitial(video.title)}
               </div>
             )}
-          </div>
+          </div>{/* 封面容器结束 */}
+            {/* 简介（来自 MD）—— 放在封面下方，左栏 flex-col 第二个子元素 */}
+            {video.description ? (
+              <div className="rounded-xl bg-ink-800/50 ring-1 ring-white/5 p-3 text-[12.5px] text-white/75 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                <div className="text-[10px] text-white/35 mb-1 flex items-center gap-1">
+                  <Icon name="info" size={10} className="text-white/30" />
+                  简介
+                </div>
+                {video.description}
+              </div>
+            ) : null}
+          </div>{/* 左栏 flex-col 结束 */}
           <div className="min-w-0 flex flex-col">
             {d ? (
               <span
@@ -749,19 +763,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <div className="mt-4 text-white/40 text-xs">正在抓取 javdb 详情…</div>
             ) : null}
             {error ? <div className="mt-4 text-amber-400 text-xs">{error}</div> : null}
-
-            {/* 简介（来自 MD）—— 搬入右栏紧凑展示 */}
-            {video.description ? (
-              <div className="pt-3 border-t border-white/5">
-                <div className="text-white/50 text-[11px] mb-1.5 flex items-center gap-1.5">
-                  <Icon name="info" size={11} className="text-white/30" />
-                  简介
-                </div>
-                <div className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
-                  {video.description}
-                </div>
-              </div>
-            ) : null}
 
             {/* 文件信息 */}
             <div className="pt-3 border-t border-white/5 space-y-1">
