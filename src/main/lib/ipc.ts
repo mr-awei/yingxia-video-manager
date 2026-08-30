@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
 import { IPC } from '../../shared/ipc'
+import type { ReconcileResult } from '../../shared/types'
 import * as repo from './repo'
 import { scanLibrary, walk } from './scanner'
 import path from 'node:path'
@@ -22,6 +23,26 @@ import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgre
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
 import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
+
+// ---------- v2.2.10-fix5：对账结果磁盘缓存（启动/切库先秒出，后台全量对账刷新） ----------
+function reconcileCachePath(libraryId: string): string {
+  return path.join(app.getPath('userData'), 'reconcile-cache', `${libraryId}.json`)
+}
+
+async function writeReconcileCache(libraryId: string, result: ReconcileResult): Promise<void> {
+  const p = reconcileCachePath(libraryId)
+  await fs.mkdir(path.dirname(p), { recursive: true })
+  await fs.writeFile(p, JSON.stringify(result), 'utf-8')
+}
+
+async function readReconcileCache(libraryId: string): Promise<ReconcileResult | null> {
+  try {
+    const raw = await fs.readFile(reconcileCachePath(libraryId), 'utf-8')
+    return JSON.parse(raw) as ReconcileResult
+  } catch {
+    return null
+  }
+}
 
 /**
  * 多源详情聚合：JavDB（最准，已有 Cookie）→ JavBus（自动绕过年龄验证）。
@@ -508,11 +529,18 @@ export function registerIpc(): void {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
     const settings = await repo.getSettings()
-    return reconcileLibrary(lib, settings, emitProgress)
+    const result = await reconcileLibrary(lib, settings, emitProgress)
+    // v2.2.10-fix5：对账结果写磁盘缓存——启动/切库先秒出缓存界面，后台再全量对账刷新
+    void writeReconcileCache(libraryId, result).catch(() => {})
+    return result
   })
 
-  // ---------- 视频 ----------
-  ipcMain.handle(IPC.videoList, (_e, filter: any) => repo.listVideos(filter ?? {}))
+  // v2.2.10-fix5：读上次对账结果缓存（无缓存返回 null，由 renderer 决定是否等待全量对账）
+  ipcMain.handle(IPC.libraryReconcileCache, async (_e, libraryId: string) => {
+    return readReconcileCache(libraryId)
+  })
+
+  // ---------- 视频 ----------  ipcMain.handle(IPC.videoList, (_e, filter: any) => repo.listVideos(filter ?? {}))
   ipcMain.handle(IPC.videoGet, (_e, id: string) => repo.getVideo(id))
   ipcMain.handle(IPC.videoUpdate, (_e, id: string, patch: any) => repo.updateVideo(id, patch))
   ipcMain.handle(IPC.videoScan, async (_e, libraryId: string) => {

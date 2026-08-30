@@ -222,6 +222,16 @@ export default function App() {
     }
     let alive = true
     setScanning(true)
+    // v2.2.10-fix5：先读上次对账结果缓存秒出界面（首次 walk 可能十几秒，避免一直空白
+    // "正在加载媒体库…"），再发起全量对账，完成后刷新为最新结果；对账失败则保留缓存展示。
+    void api
+      .libraryReconcileCache(libraryId)
+      .then((cached) => {
+        if (!alive || !cached) return
+        setReconcile(cached)
+        setAllReconciles((prev) => (prev[libraryId] ? prev : { ...prev, [libraryId]: cached }))
+      })
+      .catch(() => {})
     api
       .libraryReconcile(libraryId)
       .then((res) => {

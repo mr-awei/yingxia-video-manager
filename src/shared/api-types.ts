@@ -107,6 +107,8 @@ export interface AppApi {
   libraryUpdate(id: string, patch: Partial<Library>): Promise<Library | null>
   /** 按 Excel 片单对账文件夹，返回分类展示数据 */
   libraryReconcile(libraryId: string): Promise<ReconcileResult>
+  /** 读上次对账结果的磁盘缓存（秒出，无缓存返回 null） */
+  libraryReconcileCache(libraryId: string): Promise<ReconcileResult | null>
   videoList(filter?: VideoFilter): Promise<Video[]>
   videoGet(id: string): Promise<Video | null>
   videoUpdate(id: string, patch: Partial<Video>): Promise<Video | null>
