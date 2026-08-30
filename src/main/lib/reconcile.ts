@@ -10,11 +10,17 @@ import type {
   Video
 } from '../../shared/types'
 import { parseIntroExcel } from './excel'
-import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type VideoChange } from './repo'
-import { resolvePoster, generatePreviewSet } from './images'
+import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
+import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic, normalizeCode } from '../../shared/code'
 import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
+
+/**
+ * 无片单兜底自动抓取：每个进程生命周期只自动触发一次（首次 reconcile）。
+ * 避免切库/切页面/刷新反复触发 reconcile 时重复发起抓取风暴；之后一律走手动「批量补齐」。
+ */
+let autoFetchFired = false
 
 /**
  * 片单加载结果（含错误信息）。reconcile.ts 把 error 透传给 ipc.ts，
@@ -430,7 +436,8 @@ export async function reconcileLibrary(
       const AUTO_FETCH_LIMIT = 30
       const autoFetch = toFetch.slice(0, AUTO_FETCH_LIMIT)
       const rest = toFetch.length - autoFetch.length
-      if (autoFetch.length > 0) {
+      if (!autoFetchFired && autoFetch.length > 0) {
+        autoFetchFired = true
         const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         const state = createSmartFetchState()
         let idx = 0
@@ -474,6 +481,8 @@ export async function reconcileLibrary(
             console.warn('[reconcile] 兜底抓取批量落盘失败:', (e as Error)?.message || e)
           )
         })()
+      } else if (autoFetch.length > 0) {
+        console.log(`[reconcile] 无片单兜底抓取：本进程已自动抓过，跳过（剩 ${toFetch.length} 部待抓，请手动「批量补齐」）`)
       }
     }
   }
@@ -519,40 +528,17 @@ export async function reconcileLibrary(
   // 一次性批量落盘（避免逐条全量写 JSON）
   await applyVideoChanges(changes)
 
-  // 无封面兜底：数据源抓不到时，对账完成后后台给无海报视频截帧（不阻塞对账返回）
-  //（封面缺失视频 → ffmpeg 截帧 → 下次列表/详情直接命中）
-  // v2.2.10-fix 防风暴：ffmpeg 解码视频截帧是 CPU 密集操作，大库全量自动截会让 CPU 直接拉满。
-  // 单轮上限从 200 降到 20，其余留给手动「重新截帧」/「补齐信息」按需执行。
-  const missingPoster = entries
-    .filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder'))
-    .map((e) => e.video!)
-    // 批次上限：单轮对账最多后台截 20 部，其余留待手动触发（避免 ffmpeg 长时间占满 CPU）
-    .slice(0, 20)
-  if (missingPoster.length > 0) {
-    const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
-    let idx = 0
-    console.log(`[reconcile] 无封面截帧：本轮自动截 ${missingPoster.length} 部（ffmpeg 极耗 CPU，上限 20，其余请手动「重新截帧」）`)
-    void (async () => {
-      const worker = async () => {
-        while (idx < missingPoster.length) {
-          const v = missingPoster[idx++]
-          try {
-            const set = await generatePreviewSet(v, settings)
-            if (set?.coverPath) {
-              await updateVideo(v.id, {
-                posterSource: 'ffmpeg',
-                posterPath: set.coverPath,
-                posterPathFfmpeg: set.coverPath,
-                previewPaths: set.previewPaths
-              })
-            }
-          } catch {
-            /* 截帧失败静默，下次对账再试 */
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(conc, missingPoster.length) }, () => worker()))
-    })()
+  // v2.2.10-fix2：不再自动截帧。
+  // generatePreviewSet 每部 = 1 个 thumbnail 全片解码 + 4 个预览帧进程（5 个 ffmpeg），
+  // 大库自动截帧（哪怕 20 部）会让 CPU 长时间拉满、出现"一大堆 ffmpeg.exe"。
+  // 截帧改由用户手动触发：详情页「重新截帧」/ 补齐信息（ffmpeg 截帧兜底）。
+  {
+    const missing = entries.filter(
+      (e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder')
+    ).length
+    if (missing > 0) {
+      console.log(`[reconcile] 有 ${missing} 部无封面视频（已禁用自动截帧，需要时请手动「重新截帧」）`)
+    }
   }
 
   onProgress?.({ libraryId: library.id, total: mdCount + allFiles.length, done: mdCount + allFiles.length })
