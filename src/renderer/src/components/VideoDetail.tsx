@@ -386,7 +386,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
 
         {/* 封面 + 元数据 */}
         <div className="grid grid-cols-[260px_1fr] gap-6 mb-6">
-          <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative">
+          {/* 封面：自适应高度（和右栏等高），min 390px 保证最小海报比例，max 520px 防止过长 */}
+          <div className="h-full min-h-[390px] max-h-[520px] w-full rounded-xl overflow-hidden bg-ink-800 ring-1 ring-white/10 relative self-stretch">
             {coverSrc ? (
               <div className="absolute inset-0">
                 {/* 模糊铺底：横竖屏封面完整显示，四周裁切处由模糊同图填充 */}
@@ -611,15 +612,17 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                     '推荐评分', '评分', '简介', '说明', '备注', 'note', 'comment',
                     '推荐', '描述', 'desc', 'description', 'summary'
                   ])
-                  // 去重 + 过滤非标签分类 + key 加索引后缀（防止分类名重复 React 告警）
+                  // 去重 + 过滤空 tag 字符串 + 过滤非标签分类 + key 加索引后缀
                   const seen = new Set<string>()
-                  const dedup = Object.entries(cats).filter(([name, list]) => {
-                    if (!list?.length) return false
-                    if (NON_TAG_CATS.has(name.trim())) return false   // ← 核心：跳过简介/推荐评分等非标签分类
-                    if (seen.has(name)) return false
+                  const dedup: [string, string[]][] = []
+                  for (const [name, rawList] of Object.entries(cats)) {
+                    const list = (rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)  // 去空白字符串
+                    if (!list.length) continue    // 整个分类全是空 tag → 跳过
+                    if (NON_TAG_CATS.has(name.trim())) continue
+                    if (seen.has(name)) continue
                     seen.add(name)
-                    return true
-                  })
+                    dedup.push([name, list])
+                  }
                   if (!dedup.length) return null
                   return (
                     <div className="space-y-1.5 min-w-0">
@@ -747,8 +750,21 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             ) : null}
             {error ? <div className="mt-4 text-amber-400 text-xs">{error}</div> : null}
 
-            {/* 文件信息：始终展示在右栏底部，填满 grid 拉伸后的剩余高度，避免大片空白 */}
-            <div className="mt-auto pt-4 border-t border-white/5 space-y-1">
+            {/* 简介（来自 MD）—— 搬入右栏紧凑展示 */}
+            {video.description ? (
+              <div className="pt-3 border-t border-white/5">
+                <div className="text-white/50 text-[11px] mb-1.5 flex items-center gap-1.5">
+                  <Icon name="info" size={11} className="text-white/30" />
+                  简介
+                </div>
+                <div className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
+                  {video.description}
+                </div>
+              </div>
+            ) : null}
+
+            {/* 文件信息 */}
+            <div className="pt-3 border-t border-white/5 space-y-1">
               <div className="text-white/40 text-[11px] mb-1.5 flex items-center gap-1.5">
                 <Icon name="info" size={11} className="text-white/30" />
                 文件信息
@@ -767,19 +783,6 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             </div>
           </div>
         </div>
-
-        {/* 简介（来自 MD） */}
-        {video.description ? (
-          <div className="mb-6">
-            <div className="text-white/80 font-medium mb-2 flex items-center gap-1.5">
-              <Icon name="info" size={13} className="text-white/40" />
-              简介
-            </div>
-            <div className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap bg-ink-800/50 ring-1 ring-white/5 rounded-xl p-4">
-              {video.description}
-            </div>
-          </div>
-        ) : null}
 
         {/* 关键截图（来自 javdb）—— 过滤掉陈旧远程 URL（已重抓但还没写回的） */}
         {d?.samples && d.samples.filter(isLocal).length > 0 ? (
