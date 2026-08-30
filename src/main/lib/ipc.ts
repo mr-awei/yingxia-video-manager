@@ -618,6 +618,8 @@ export function registerIpc(): void {
     const mr = await fetchMovieDetail(code, settings, (e) => {
       emitProgress({ libraryId: v.libraryId, total: 1, done: 0, current: v.title, fetchEvent: e })
     })
+    // v2.2.13-fix：无论成功/失败，结束前发一次 done=1，让前端 Toast 有机会 dismiss
+    emitProgress({ libraryId: v.libraryId, total: 1, done: 1, current: v.title })
     if (!mr.detail) return { ok: false as const, error: mr.error || '未获取到数据' }
     await repo.updateVideo(id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
     // **列表/详情封面同步**：详情抓取成功且有真实封面，但视频当前是 ffmpeg 截帧 / 占位 / 无封面时，
