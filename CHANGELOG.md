@@ -1,5 +1,13 @@
 # 更新日志（Changelog）
 
+## v2.3.0（2026-08-30）
+
+**安全加固：原子写盘 + 危险 IPC 参数白名单**
+
+- **data.json 原子写盘**：写临时文件再 rename 覆盖，避免写盘中途崩溃/断电导致 data.json 截断损坏（4.7MB 全量序列化窗口内风险）；进程退出兜底同步落盘同样原子化。
+- **openExternal 协议白名单**：只放行 http/https，杜绝渲染进程被注入后经 `shell.openExternal` 打开 `file://` 或任意本地程序。
+- **危险 IPC 入参校验**：`videoDeleteFile`（删磁盘文件）校验 id 合法性；`videoSetPreviewAsCover`（写封面文件）要求 previewPath 必须位于海报缓存目录内；`openPath` / `shellRevealInFolder` 只放行绝对路径。
+
 ## v2.2.12（2026-08-30）
 
 **朋友合入三件套（P0 性能三连修 + P1 对账缓存+写盘防抖 + 数据目录名修复）**
