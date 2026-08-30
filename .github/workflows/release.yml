@@ -1,4 +1,13 @@
-# 发布流水线：push v* tag → Windows 自动构建 + 签名 → GitHub Release + Gitee Release 同步
+# CI 流水线（三合一）：
+#
+# 【模式 A — PR 校验】朋友/协作者开 PR 到 main 时触发：
+#   Checkout → Setup Node → npm ci → Typecheck → Build renderer & main
+#   （不签名、不打包、不发 Release；合并前能看到「这 PR 能过 TS + 能 build」）
+#
+# 【模式 B — 发版构建】push 带 v* 的 tag 时触发：
+#   跑完 Typecheck + Build 之后，再加三步：签名打包 → GitHub Release → 同步 Gitee Release
+#
+# 【模式 C — 手动触发】Actions 页点 Run workflow（workflow_dispatch），跑完整发版构建（tag=手动）
 #
 # 使用方式（本地只推代码，不再手动打包/上传）：
 #   1. bump package.json 版本 + 更新 CHANGELOG
@@ -17,6 +26,22 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:           # 模式 A：PR 校验（分支合并前）
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:      # 模式 C：手动点触发（跑完整发版流程，tag=手动）
+    inputs:
+      do_release:
+        description: '是否执行签名打包 & Release（默认 true）；false 只做 Typecheck+Build 校验'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+# 同一个 PR 后续 push 时取消前一次还在跑的 workflow（省 CI 时长）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -24,6 +49,16 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    # 判定「是否执行签名打包 + Release」：
+    #   - push v* tag → true
+    #   - workflow_dispatch 且 do_release=true → true
+    #   - pull_request → false（只校验，不签名不发布，CERT_PASSWORD/GITEE_TOKEN 对 PR 默认也不可用）
+    env:
+      DO_RELEASE: >-
+        ${{
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.do_release == 'true')
+        }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,9 +78,18 @@ jobs:
       - name: Build renderer & main
         run: npm run build
 
+      # PR 模式（DO_RELEASE=false）会走到这里就输出成功并结束，绿色打勾 → PR 可合并
+      - name: PR 模式：仅校验（跳过签名/打包/发布）
+        if: env.DO_RELEASE == 'false'
+        run: |
+          Write-Host "✅ PR 校验通过（Typecheck + Build 均成功）。当前分支：${env:GITHUB_HEAD_REF} → main"
+          Write-Host "如需正式发版：打 vX.Y.Z tag push，或 Actions 页 Run workflow（do_release=true）"
+        shell: pwsh
+
       - name: Package installer (electron-builder, signed)
         # certificateFile/certificatePassword 走 Secret，签名配置不进仓库
         # 证书显式传参（密码走 CSC_KEY_PASSWORD env，不落仓库）
+        if: env.DO_RELEASE == 'true'
         run: npx electron-builder --win --config.win.certificateFile=build/yingxia-sign.pfx --publish never
         env:
           CSC_KEY_PASSWORD: ${{ secrets.CERT_PASSWORD }}
@@ -53,6 +97,8 @@ jobs:
 
       - name: Upload installer to GitHub Release
         # 上传 release/*.exe 到本次 tag 对应的 GitHub Release（自动创建）
+        # 注意：workflow_dispatch 没有 tag → 不会有 release 名；改用 untagged 模式
+        if: env.DO_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.exe
@@ -60,15 +106,23 @@ jobs:
           # 从 CHANGELOG.md 顶部取最近一个版本段作为正文
           body_path: CHANGELOG.md
           fail_on_unmatched_files: false
+          # 没有 tag 时也允许创建一个 draft（手动触发场景）
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Sync Gitee Release (link only, Gitee has no CI)
         # Gitee 无 CI 服务，无法自动构建；从 GitHub Release 拉取产物链接同步到 Gitee Release 正文
+        if: env.DO_RELEASE == 'true'
         shell: bash
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
           set -e
+          # push v* tag 才需要同步；workflow_dispatch 没有 tag，直接跳过
+          if [ "${TAG:0:1}" != "v" ]; then
+            echo "::notice::本次非 tag push（$TAG），跳过 Gitee Release 同步"
+            exit 0
+          fi
           if [ -z "$GITEE_TOKEN" ]; then
             echo "::warning::GITEE_TOKEN 未配置，跳过 Gitee Release 同步（GitHub Release 已发布）"
             exit 0
