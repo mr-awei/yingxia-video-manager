@@ -804,8 +804,19 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           const localGroup = all.filter(isLocal)
           return all.length > 0 ? (
             <div>
-              <div className="text-white/80 font-medium mb-2">
-                关键截图（{all.length}）{remoteOnly.length > 0 ? <span className="text-white/40 text-xs">· {remoteOnly.length} 张为远程 URL（反盗链无法预览）</span> : null}
+              <div className="text-white/80 font-medium mb-2 flex items-center gap-2">
+                关键截图（{all.length}）
+                {remoteOnly.length > 0 ? <span className="text-white/40 text-xs">· {remoteOnly.length} 张为远程 URL（反盗链无法预览）</span> : null}
+                {localGroup.length > 1 ? (
+                  <span className="group/help relative">
+                    <span className="cursor-help text-white/40 hover:text-white/70 transition-colors text-[11px] border border-white/20 rounded-full w-4 h-4 inline-flex items-center justify-center leading-none select-none">?</span>
+                    <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 w-56 rounded-lg bg-ink-900/95 ring-1 ring-white/10 px-3 py-2 text-[11px] text-white/75 leading-relaxed opacity-0 group-hover/help:opacity-100 transition-opacity whitespace-normal shadow-xl">
+                      <b className="text-white">查看大图：</b>鼠标悬停缩略图 350ms<br/>
+                      <b className="text-white">切换图片：</b>在大图上滚轮上/下<br/>
+                      <b className="text-white">关闭大图：</b>右键 / 点击空白处 / ESC
+                    </span>
+                  </span>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {all.map((url, i) => (
@@ -844,6 +855,16 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             <div className="text-white/80 font-medium mb-2 flex items-center gap-1.5">
               <Icon name="film" size={13} className="text-white/40" />
               预览帧（{localVideo.previewPaths.length}）
+              {localVideo.previewPaths.length > 1 ? (
+                <span className="group/help relative ml-1">
+                  <span className="cursor-help text-white/40 hover:text-white/70 transition-colors text-[11px] border border-white/20 rounded-full w-4 h-4 inline-flex items-center justify-center leading-none select-none">?</span>
+                  <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 w-56 rounded-lg bg-ink-900/95 ring-1 ring-white/10 px-3 py-2 text-[11px] text-white/75 leading-relaxed opacity-0 group-hover/help:opacity-100 transition-opacity whitespace-normal shadow-xl">
+                    <b className="text-white">查看大图：</b>鼠标悬停缩略图 350ms<br/>
+                    <b className="text-white">切换图片：</b>在大图上滚轮上/下<br/>
+                    <b className="text-white">关闭大图：</b>右键 / 点击空白处 / ESC
+                  </span>
+                </span>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {localVideo.previewPaths.map((url, i) => (
