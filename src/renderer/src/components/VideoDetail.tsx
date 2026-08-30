@@ -272,10 +272,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   }, [video.id])
 
   // 判断缓存的 javdbDetail 是否"陈旧"（含远程 URL，可能是修复前缓存的）—— 这种情况重新抓一次升级成本地路径
+  // v2.2.14-fix：加上"关键截图不足 2 张"判定 — 之前番号脏时可能半拉子抓到了 cover（本地）但 samples 空/极少，
+  // 旧 isStale 只看远程 URL 不看数量，误判为"新鲜"导致永远不自动重抓 → 用户每次开详情页都要手动点补齐
   const isStale = (d: Video['javdbDetail']): boolean => {
     if (!d) return true
     if (d.cover && /^https?:\/\//.test(d.cover)) return true
+    const localSamples = (d.samples ?? []).filter((s) => !/^https?:\/\//.test(s))
     if (d.samples && d.samples.some((s) => /^https?:\/\//.test(s))) return true
+    if (localSamples.length < 2) return true // JavDB/JavBus 正常返回 6-12 张，少于 2 张视为不完整
     return false
   }
 

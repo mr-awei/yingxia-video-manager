@@ -415,6 +415,15 @@ export async function reconcileLibrary(
       )
       if (!video.domestic && !video.javdbDetail) {
         needFetchAfter.push(video)
+      } else if (!video.domestic && video.javdbDetail) {
+        // v2.2.14-fix：有 javdbDetail 但 samples 不完整也要进 needFetchAfter —
+        // 之前番号脏时可能半拉子抓到 cover 但 samples 空/极少，旧条件只看 !javdbDetail 漏掉了。
+        const d = video.javdbDetail
+        const localSamples = (d.samples ?? []).filter((s) => !/^https?:\/\//.test(s))
+        const coverRemote = !!d.cover && /^https?:\/\//.test(d.cover)
+        if (coverRemote || localSamples.length < 2 || d.parseVer !== 2) {
+          needFetchAfter.push(video)
+        }
       }
       const d = video.javdbDetail
       const hasGenres = !!d && !!d.genres && d.genres.length > 0
@@ -451,7 +460,7 @@ export async function reconcileLibrary(
       if (skipped > 0) {
         console.log(`[reconcile] 无片单兜底抓取：跳过 ${skipped} 部（7 天内已抓过且失败）`)
       }
-      const AUTO_FETCH_LIMIT = 30
+      const AUTO_FETCH_LIMIT = 80
       const autoFetch = toFetch.slice(0, AUTO_FETCH_LIMIT)
       const rest = toFetch.length - autoFetch.length
       if (!autoFetchFired && autoFetch.length > 0) {
