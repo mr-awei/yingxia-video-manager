@@ -1,5 +1,27 @@
 # 更新日志（Changelog）
 
+## v2.3.2（2026-08-30）
+
+**侧栏新增「类别」筛选；分类恢复原逻辑**
+
+- **新增「类别」筛选**：侧栏新增「类别」tab（独立于「分类」），列出所有 `javdbDetail.genres` 单标签（巨乳/中出/潮吹…）+ 计数，点击按类别筛选（多选 OR）。与分类/标签/影人/规格可叠加。
+- **分类恢复原逻辑**：无片单自动归类的分类名回到原 v2.2.0 逻辑（每视频一条 entry、genres 拼接长串），不再按方案 A 把单个视频拆成多条 entry（避免计数/推荐重复）。类别筛选取代了方案 A 的"单标签进分类"。
+
+## v2.3.1（2026-08-30）
+
+**浏览页默认全库视图**
+
+- **浏览页默认全库模式**：`groupMode` 默认从 `grouped` 改为 `flat`，进浏览页默认显示混合大网格，不按分类分块（点筛选条「分组」按钮可随时切换）。
+- 注：v2.3.1 早期实验的「genre 单标签进分类」已在 v2.3.2 回退（分类恢复原逻辑，改由侧栏「类别」筛选提供单标签）。
+
+## v2.3.0（2026-08-30）
+
+**安全加固：原子写盘 + 危险 IPC 参数白名单**
+
+- **data.json 原子写盘**：写临时文件再 rename 覆盖，避免写盘中途崩溃/断电导致 data.json 截断损坏（4.7MB 全量序列化窗口内风险）；进程退出兜底同步落盘同样原子化。
+- **openExternal 协议白名单**：只放行 http/https，杜绝渲染进程被注入后经 `shell.openExternal` 打开 `file://` 或任意本地程序。
+- **危险 IPC 入参校验**：`videoDeleteFile`（删磁盘文件）校验 id 合法性；`videoSetPreviewAsCover`（写封面文件）要求 previewPath 必须位于海报缓存目录内；`openPath` / `shellRevealInFolder` 只放行绝对路径。
+
 ## v2.2.13（2026-08-30）
 
 **Roadmap P0：文档标签分层 —— 文档标签为主，数据源 genres 折叠为备用展示**
@@ -41,7 +63,6 @@
 - 主进程：`src/main/lib/store.ts`（`SCHEMA_VERSION` + `migrateInPlace`）、`src/main/lib/reconcile.ts`（写 `tagCategories`）、`src/main/lib/ipc.ts`（backupTags 分流）
 - 渲染：`App.tsx`（侧栏/搜索/筛选）、`components/VideoDetail.tsx`（详情页标签分组+折叠）、`components/EntryCard.tsx`、`components/HoverDetail.tsx`、`components/ListView.tsx`、`components/StatsPanel.tsx`、`components/EditMetaModal.tsx`
 
----
 
 ## v2.2.12（2026-08-30）
 

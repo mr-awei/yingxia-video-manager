@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { promises as fs, mkdirSync, writeFileSync } from 'node:fs'
+import { promises as fs, mkdirSync, writeFileSync, existsSync, unlinkSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, type Library, type Settings, type Video } from '../../shared/types'
 import type { JavdbDetail } from '../../shared/types'
@@ -106,7 +106,11 @@ async function writeNow(): Promise<void> {
   if (!dbPath) dbPath = resolveDbPath()
   const dir = path.dirname(dbPath)
   await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(dbPath, JSON.stringify(data, null, 2), 'utf-8')
+  // v2.2.13 原子写盘：先写临时文件再 rename 覆盖，避免写盘中途崩溃/断电导致
+  // data.json 截断损坏（4.7MB 全量序列化窗口内风险）。rename 是同目录原子操作。
+  const tmp = `${dbPath}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
+  await fs.rename(tmp, dbPath)
 }
 
 /** 触发一次防抖写盘；返回本次合并批次的完成 Promise（同一 debounce 窗口内的多次写入合并为一次） */
@@ -166,7 +170,16 @@ app.on('before-quit', () => {
   if (cache && dbPath) {
     try {
       mkdirSync(path.dirname(dbPath), { recursive: true })
-      writeFileSync(dbPath, JSON.stringify(cache, null, 2), 'utf-8')
+      const tmp = `${dbPath}.tmp`
+      writeFileSync(tmp, JSON.stringify(cache, null, 2), 'utf-8')
+      try {
+        // renameSync 在 Windows 上目标存在时会抛 EEXIST/EPERM，先删旧再 rename
+        if (existsSync(dbPath)) unlinkSync(dbPath)
+        renameSync(tmp, dbPath)
+      } catch {
+        // 跨设备或权限失败：退化为直接写（尽力而为，不因清理失败丢数据）
+        writeFileSync(dbPath, JSON.stringify(cache, null, 2), 'utf-8')
+      }
     } catch (e) {
       console.error('[store] 退出前落盘失败:', (e as Error)?.message || e)
     }

@@ -24,6 +24,25 @@ import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-t
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
 import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
 
+// ---------- v2.2.13 安全加固：openExternal 协议白名单 + 危险 IPC 参数校验 ----------
+// 只允许 http/https（更新链接/官网），杜绝渲染进程被注入后经 shell.openExternal 打开 file:// 或任意程序
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:'])
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return ALLOWED_EXTERNAL_PROTOCOLS.has(u.protocol)
+  } catch {
+    return false
+  }
+}
+
+// 危险 IPC 入参白名单校验：
+// 1) 库 id / 视频 id：必须是非空字符串且不含路径分隔符（防止拼接路径穿越）
+// 2) openExternal：只放行 http/https
+function isSafeId(id: unknown): id is string {
+  return typeof id === 'string' && id.length > 0 && id.length <= 64 && !id.includes('/') && !id.includes('\\') && !id.includes('..')
+}
+
 // ---------- v2.2.10-fix5：对账结果磁盘缓存（启动/切库先秒出，后台全量对账刷新） ----------
 function reconcileCachePath(libraryId: string): string {
   return path.join(app.getPath('userData'), 'reconcile-cache', `${libraryId}.json`)
@@ -932,6 +951,11 @@ export function registerIpc(): void {
     return res.canceled ? null : (res.filePaths[0] ?? null)
   })
   ipcMain.handle(IPC.openPath, async (_e, p: string) => {
+    // v2.2.13：只放行绝对路径（openPath 可被用来打开任意文件/程序）
+    if (typeof p !== 'string' || !path.isAbsolute(p)) {
+      console.warn('[ipc] openPath 被拒绝（非绝对路径）')
+      return
+    }
     try {
       await shell.openPath(p)
     } catch {
@@ -983,6 +1007,8 @@ export function registerIpc(): void {
   //（Windows 回收站 / macOS Trash / Linux trash-cli），不彻底删除。
   // 用户可从回收站恢复，比"直接删"安全得多。
   ipcMain.handle(IPC.videoDeleteFile, async (_e, id: string) => {
+    // v2.2.13：删除磁盘文件是危险操作，先校验 id 合法性
+    if (!isSafeId(id)) return { ok: false, error: '非法的视频 id' }
     try {
       const v = await repo.getVideo(id)
       if (!v) return { ok: false, error: '视频不存在' }
@@ -1195,6 +1221,11 @@ export function registerIpc(): void {
   })
   // ---------- 打开外部链接 ----------
   ipcMain.handle(IPC.openExternal, async (_e, url: string) => {
+    // v2.2.13：只放行 http/https，防止渲染进程注入后经 openExternal 打开 file:// 或任意本地程序
+    if (typeof url !== 'string' || !isSafeExternalUrl(url)) {
+      console.warn(`[ipc] openExternal 被拒绝（协议非 http/https）: ${String(url).slice(0, 80)}`)
+      return
+    }
     try {
       await shell.openExternal(url)
     } catch {
@@ -1212,6 +1243,8 @@ export function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.shellRevealInFolder, async (_e, p: string) => {
+    // v2.2.13：只放行绝对路径
+    if (typeof p !== 'string' || !path.isAbsolute(p)) return
     try {
       shell.showItemInFolder(p)
     } catch {
@@ -1352,8 +1385,16 @@ export function registerIpc(): void {
 
   // ---------- 截帧预览帧 → 设为封面：把某张预览帧复制为 <id>.jpg 并更新记录 ----------
   ipcMain.handle(IPC.videoSetPreviewAsCover, async (_e, id: string, previewPath: string) => {
+    if (!isSafeId(id)) throw new Error('非法 id')
     const v = await repo.getVideo(id)
     if (!v) throw new Error('视频不存在')
+    // v2.2.13：previewPath 是写文件操作，必须是指向海报缓存目录内的绝对路径（防任意路径写文件）
+    if (typeof previewPath !== 'string' || !path.isAbsolute(previewPath)) return null
+    const cacheDir = postersCacheDir()
+    if (!previewPath.startsWith(cacheDir + path.sep)) {
+      console.warn('[ipc] videoSetPreviewAsCover 被拒绝（previewPath 不在海报缓存目录内）')
+      return null
+    }
     const settings = await repo.getSettings()
     // 校验该预览帧是有效图片（防坏图/不存在）
     if (!(await isCoverUsable(previewPath, settings))) return null
