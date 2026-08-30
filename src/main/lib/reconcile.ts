@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, existsSync } from 'node:fs'
 import path from 'node:path'
 import type {
   DisplayEntry,
@@ -10,11 +10,21 @@ import type {
   Video
 } from '../../shared/types'
 import { parseIntroExcel } from './excel'
-import { applyVideoChanges, findVideoByPath, listVideos, updateVideo, type VideoChange } from './repo'
-import { resolvePoster, generatePreviewSet } from './images'
+import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
+import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { isDomestic, normalizeCode } from '../../shared/code'
 import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
+
+/**
+ * 无片单兜底自动抓取：每个进程生命周期只自动触发一次（首次 reconcile）。
+ * 避免切库/切页面/刷新反复触发 reconcile 时重复发起抓取风暴；之后一律走手动「批量补齐」。
+ */
+let autoFetchFired = false
+
+/** dead previewPaths 全量清理限频：每 6 小时最多一次（大库下数千次 existsSync 磁盘 IO 会拖慢打开/切库） */
+const PREVIEW_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000
+let lastPreviewCleanupAt = 0
 
 /**
  * 片单加载结果（含错误信息）。reconcile.ts 把 error 透传给 ipc.ts，
@@ -412,6 +422,10 @@ export async function reconcileLibrary(
     }
 
     // 后台异步抓元数据（fire-and-forget，不阻塞 reconcile 返回）
+    // v2.2.10-fix 防风暴：大库（数千部）+ 无片单时，v2.2.4 的"全量自动兜底"会让启动即对
+    // 数千部视频发起网络抓取 + 逐条全量写盘，CPU/IO 拉满。现在：
+    //   1) 自动兜底只抓前 AUTO_FETCH_LIMIT 部，其余留给手动「批量补齐」；
+    //   2) 抓取结果统一批量落盘（一次 saveDB），不再逐条 updateVideo 全量写 JSON。
     if (needFetchAfter.length > 0) {
       const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
       const now = Date.now()
@@ -423,39 +437,56 @@ export async function reconcileLibrary(
       if (skipped > 0) {
         console.log(`[reconcile] 无片单兜底抓取：跳过 ${skipped} 部（7 天内已抓过且失败）`)
       }
-      if (toFetch.length > 0) {
+      const AUTO_FETCH_LIMIT = 30
+      const autoFetch = toFetch.slice(0, AUTO_FETCH_LIMIT)
+      const rest = toFetch.length - autoFetch.length
+      if (!autoFetchFired && autoFetch.length > 0) {
+        autoFetchFired = true
         const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         const state = createSmartFetchState()
         let idx = 0
-        console.log(`[reconcile] 无片单兜底抓取：启动 ${toFetch.length} 部 / 并发 ${conc}`)
+        const changes: VideoChange[] = []
+        console.log(
+          `[reconcile] 无片单兜底抓取：自动抓 ${autoFetch.length} 部 / 并发 ${conc}` +
+            (rest > 0 ? `（其余 ${rest} 部请手动「批量补齐」）` : '')
+        )
         void (async () => {
           const worker = async () => {
-            while (idx < toFetch.length) {
-              const v = toFetch[idx++]
+            while (idx < autoFetch.length) {
+              const v = autoFetch[idx++]
               if (state.stop) return
               try {
                 const r = await fetchDetailSmart(v.title, settings, state, (fe) => {
                   // v2.2.10：兜底抓取也把事件推给 renderer（走 onProgress 同管道）
-                  onProgress?.({ libraryId: library.id, total: toFetch.length, done: idx, current: v.title, fetchEvent: fe })
+                  onProgress?.({ libraryId: library.id, total: autoFetch.length, done: idx, current: v.title, fetchEvent: fe })
                 })
                 if (r.detail) {
-                  await updateVideo(v.id, {
-                    javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },
-                    lastMetaFetchAt: now
+                  changes.push({
+                    type: 'update',
+                    video: {
+                      ...v,
+                      javdbDetail: { ...r.detail, code: v.title, source: r.source ?? r.detail.source },
+                      lastMetaFetchAt: now
+                    }
                   })
                   console.log(`[reconcile] 兜底抓取成功 ${v.title}（${r.source}）`)
                 } else {
                   // 抓不到（不是网络错误也可能是源里没这部）也要标 lastMetaFetchAt，避免下次立即重试
-                  await updateVideo(v.id, { lastMetaFetchAt: now })
+                  changes.push({ type: 'update', video: { ...v, lastMetaFetchAt: now } })
                 }
               } catch (e) {
                 console.warn(`[reconcile] 兜底抓取异常 ${v.title}:`, (e as Error)?.message || e)
-                await updateVideo(v.id, { lastMetaFetchAt: now }).catch(() => {})
+                changes.push({ type: 'update', video: { ...v, lastMetaFetchAt: now } })
               }
             }
           }
-          await Promise.all(Array.from({ length: Math.min(conc, toFetch.length) }, () => worker()))
+          await Promise.all(Array.from({ length: Math.min(conc, autoFetch.length) }, () => worker()))
+          await applyVideoChanges(changes).catch((e) =>
+            console.warn('[reconcile] 兜底抓取批量落盘失败:', (e as Error)?.message || e)
+          )
         })()
+      } else if (autoFetch.length > 0) {
+        console.log(`[reconcile] 无片单兜底抓取：本进程已自动抓过，跳过（剩 ${toFetch.length} 部待抓，请手动「批量补齐」）`)
       }
     }
   }
@@ -501,45 +532,31 @@ export async function reconcileLibrary(
   // 一次性批量落盘（避免逐条全量写 JSON）
   await applyVideoChanges(changes)
 
-  // 无封面兜底：数据源抓不到时，对账完成后后台给无海报视频截帧（不阻塞对账返回）
-  //（封面缺失视频 → ffmpeg 截帧 → 下次列表/详情直接命中）
-  const missingPoster = entries
-    .filter((e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder'))
-    .map((e) => e.video!)
-    // 批次上限：单轮对账最多后台截 200 部，其余留待下轮（避免长时间占满并发池）
-    .slice(0, 200)
-  if (missingPoster.length > 0) {
-    const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
-    let idx = 0
-    void (async () => {
-      const worker = async () => {
-        while (idx < missingPoster.length) {
-          const v = missingPoster[idx++]
-          try {
-            const set = await generatePreviewSet(v, settings)
-            if (set?.coverPath) {
-              await updateVideo(v.id, {
-                posterSource: 'ffmpeg',
-                posterPath: set.coverPath,
-                posterPathFfmpeg: set.coverPath,
-                previewPaths: set.previewPaths
-              })
-            }
-          } catch {
-            /* 截帧失败静默，下次对账再试 */
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(conc, missingPoster.length) }, () => worker()))
-    })()
+  // v2.2.10-fix2：不再自动截帧。
+  // generatePreviewSet 每部 = 1 个 thumbnail 全片解码 + 4 个预览帧进程（5 个 ffmpeg），
+  // 大库自动截帧（哪怕 20 部）会让 CPU 长时间拉满、出现"一大堆 ffmpeg.exe"。
+  // 截帧改由用户手动触发：详情页「重新截帧」/ 补齐信息（ffmpeg 截帧兜底）。
+  {
+    const missing = entries.filter(
+      (e) => e.video && (!e.video.posterPath || e.video.posterSource === 'placeholder')
+    ).length
+    if (missing > 0) {
+      console.log(`[reconcile] 有 ${missing} 部无封面视频（已禁用自动截帧，需要时请手动「重新截帧」）`)
+    }
   }
 
   onProgress?.({ libraryId: library.id, total: mdCount + allFiles.length, done: mdCount + allFiles.length })
 
   // v2.2.5 修复：清理 dead previewPaths —— 上一次升级/installer 可能清掉了 posters 目录里的旧 .jpg，
   // 但 data.json 里的 video.previewPaths 仍指向这些不存在的文件 → hover/详情页 lm:// ENOENT 刷屏。
-  // 这里扫一遍 fs.existsSync 删孤儿，并把改动合并进 changes 一次性落盘。
-  await cleanupDeadPreviewPaths(changes)
+  // v2.2.10-fix3：大库（数千部）下全量清理 = 遍历全部视频 + 数千次 existsSync 磁盘 IO，
+  // 且与当前库无关（切一个库也清全库）→ 打开/切库明显变慢。previewPaths 只在升级/清缓存后
+  // 才失效，平时不会变，改为每 6 小时最多清理一次。
+  const previewCleanupDue = Date.now() - lastPreviewCleanupAt > PREVIEW_CLEANUP_INTERVAL
+  if (previewCleanupDue) {
+    lastPreviewCleanupAt = Date.now()
+    await cleanupDeadPreviewPaths(changes)
+  }
 
   return {
     libraryId: library.id,
@@ -564,7 +581,7 @@ async function cleanupDeadPreviewPaths(changes: VideoChange[]): Promise<void> {
     if (!v.previewPaths || v.previewPaths.length === 0) continue
     const alive = v.previewPaths.filter((p) => {
       try {
-        return fs.existsSync(p)
+        return existsSync(p)
       } catch {
         return false
       }
