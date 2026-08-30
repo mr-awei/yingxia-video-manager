@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
-import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
+import { posterUrl, placeholderGradient, titleInitial, formatSize, resolveEntryPoster } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import Icon from './Icon'
@@ -731,7 +731,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
               {related.map((r) => {
-                const rs = r.video?.posterPath ? posterUrl(r.video.posterPath) : null
+                const rs = resolveEntryPoster(r.video) ? posterUrl(resolveEntryPoster(r.video)!) : null
                 return (
                   <button
                     key={r.code}

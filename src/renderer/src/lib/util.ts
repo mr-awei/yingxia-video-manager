@@ -22,6 +22,26 @@ export function posterUrl(posterPath?: string, version?: number | string): strin
   return url
 }
 
+/**
+ * 解析一个条目的最佳封面路径（与 EntryCard 展示优先级一致）。
+ * 优先级：手动设的封面(manual) > javdbDetail.cover(本地真实海报) > 非截帧来源的 posterPath >
+ * ffmpeg 截帧 posterPath。用于相关推荐等场景，避免"列表有真实海报、相关推荐只看 posterPath 显示占位"的不一致。
+ */
+export function resolveEntryPoster(v?: { posterPath?: string; posterSource?: string; javdbDetail?: { cover?: string } }): string | null {
+  if (!v) return null
+  const manualPoster = v.posterSource === 'manual' && v.posterPath ? v.posterPath : null
+  const detailCover = v.javdbDetail?.cover && !/^https?:\/\//.test(v.javdbDetail.cover) ? v.javdbDetail.cover : null
+  const realPoster =
+    v.posterPath &&
+    v.posterSource &&
+    v.posterSource !== 'ffmpeg' &&
+    v.posterSource !== 'placeholder' &&
+    v.posterSource !== 'manual'
+      ? v.posterPath
+      : null
+  return manualPoster ?? detailCover ?? realPoster ?? v.posterPath ?? null
+}
+
 export function formatSize(bytes?: number): string {
   if (!bytes) return ''
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
