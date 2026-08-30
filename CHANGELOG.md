@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v2.2.10-fix6（2026-08-30）
+
+**数据目录换回 `%APPDATA%\local-video-manager`**
+
+- main 入口用 `app.setPath('userData', ...)` 强制数据目录为 `%APPDATA%\local-video-manager`（productName「影匣」不改，窗口/安装包名不变），避免中文目录名。
+- 已同步把 `%APPDATA%\影匣` 的最新数据（data.json 含 customSourceOrder、posters 13501 个、logs）合并回 local-video-manager（旧 data.json 备份为 data.json.bak-0829）。
+
 ## v2.2.10-fix5（2026-08-30）
 
 **P1 双修：启动/切库秒出 + 写盘防抖**
