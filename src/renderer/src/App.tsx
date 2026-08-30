@@ -96,7 +96,7 @@ export default function App() {
     search: '',
     sort: 'title',
     desc: false,
-    groupMode: 'grouped' as 'grouped' | 'flat',
+    groupMode: 'flat' as 'grouped' | 'flat',
     category: null
   })
   /** 搜索输入框的值（立即更新 UI）；实际过滤用防抖后的 filter.search */
