@@ -682,6 +682,15 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <div className="text-white/90 text-sm font-medium">启动行为</div>
                   </div>
                   <div className="text-white/40 text-xs mb-2">配置影匣如何随系统启动与关闭</div>
+                  <FieldRow
+                    label="不提示「无片单 Excel」"
+                    hint="媒体库根目录没有片单 Excel 时，每次对账都会弹提示。不使用片单可勾选关闭（片单解析失败等真实错误仍会提示）"
+                  >
+                    <Toggle
+                      on={!!draft.suppressIntroExcelNotice}
+                      onChange={(v) => setDraft({ ...draft, suppressIntroExcelNotice: v })}
+                    />
+                  </FieldRow>
                   <FieldRow label="开机自启" hint="随系统启动自动运行影匣">
                     <Toggle on={!!draft.launchAtLogin} onChange={(v) => setDraft({ ...draft, launchAtLogin: v })} />
                   </FieldRow>

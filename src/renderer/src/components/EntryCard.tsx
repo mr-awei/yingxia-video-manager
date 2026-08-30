@@ -40,7 +40,7 @@ function hoverVideo(entry: DisplayEntry): Video {
     posterSource: entry.video?.posterSource,
     year: entry.video?.year,
     rating: entry.video?.rating,
-    durationSec: entry.video?.durationSec,
+    durationSec: entry.video?.durationSec ?? entry.video?.techInfo?.durationSec,
     addedAt: 0
   }
 }
@@ -287,6 +287,13 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               </>
             ) : null}
           </div>
+        ) : null}
+
+        {/* 时长角标（右下角悬浮，位于底部信息条上方避免重叠） */}
+        {entry.video?.durationSec ?? entry.video?.techInfo?.durationSec ? (
+          <span className="absolute bottom-9 right-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-white text-[10px] font-semibold tabular-nums z-[5]">
+            {formatDuration((entry.video?.durationSec ?? entry.video?.techInfo?.durationSec)!)}
+          </span>
         ) : null}
 
         {/* 底部名字条 + 评分 */}

@@ -87,8 +87,8 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
 
                 {/* 时长 */}
                 <div className="w-14 shrink-0 text-right hidden md:block">
-                  {v?.durationSec ? (
-                    <span className="text-white/50 text-[11px] tabular-nums">{formatDuration(v.durationSec)}</span>
+                  {v?.durationSec ?? v?.techInfo?.durationSec ? (
+                    <span className="text-white/50 text-[11px] tabular-nums">{formatDuration((v.durationSec ?? v.techInfo!.durationSec)!)}</span>
                   ) : null}
                 </div>
 
@@ -204,7 +204,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                 <div className="text-white/45 text-[11px] truncate mt-0.5">
                   {v?.year ? `${v.year} · ` : ''}
                   {v?.javdbDetail?.studio ?? e.category}
-                  {v?.durationSec ? ` · ${formatDuration(v.durationSec)}` : ''}
+                  {v?.durationSec ?? v?.techInfo?.durationSec ? ` · ${formatDuration((v.durationSec ?? v.techInfo!.durationSec)!)}` : ''}
                 </div>
               </div>
 

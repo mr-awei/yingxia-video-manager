@@ -295,7 +295,11 @@ export async function reconcileLibrary(
   // 片单加载失败：v2.2.4 硬性要求——必须告知用户，不能再静默吞错。
   // 通过 onProgress 顺带把 introError 推给 renderer（与 scanProgress 同管道，
   // renderer 看到 kind/introError 字段就弹 Toast）。
-  if (introLookup.error) {
+  // v2.3.11：无片单用户可在「设置-通用」关闭这条提示（每次对账都弹、且不自动消失，太打扰）。
+  // 只屏蔽 kind==='not-configured'（本来就没片单）；片单存在但解析失败等真实错误仍提示。
+  const introNoticeSuppressed =
+    !!settings.suppressIntroExcelNotice && introLookup.error?.kind === 'not-configured'
+  if (introLookup.error && !introNoticeSuppressed) {
     onProgress?.({
       libraryId: library.id,
       total: 0,

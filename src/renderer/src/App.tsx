@@ -940,7 +940,20 @@ export default function App() {
   }, [])
 
   const handleScan = useCallback(() => {
-    if (libraryId) void runReconcile(libraryId)
+    if (!libraryId) return
+    // v2.3.8：扫描库先调 videoScan（scanLibrary 批量写盘建记录，fix7 秒级补全磁盘视频），
+    // 再 reconcile 刷新列表。原来只跑 reconcile，无片单时临时生成 entry 不落盘记录，
+    // 导致 G 库 3701 部视频无 data.json 记录（补不到时长、点不开详情）。
+    setScanning(true)
+    setProgress(null)
+    api
+      .videoScan(libraryId)
+      .catch(() => {})
+      .finally(() => {
+        void runReconcile(libraryId)
+        setTimeout(() => setProgress(null), 800)
+        setScanning(false)
+      })
   }, [libraryId, runReconcile])
 
   const handleOpenEntry = useCallback((entry: DisplayEntry) => {
@@ -1178,6 +1191,8 @@ export default function App() {
     remaining: number
     /** v2.2.7：按用户的 customSourceOrder 渲染来源分布条，让展示顺序跟实际采集顺序一致 */
     customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
+    /** v2.3.11：补充提示（如「仍有 N 部无封面，可再跑一轮」） */
+    hint?: string
   }
   const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
@@ -1225,6 +1240,7 @@ export default function App() {
         {data.stopped ? (
           <div className="text-[11px] text-amber-400/90">⚠ 已自动停止，剩余 {data.remaining} 部未处理</div>
         ) : null}
+        {data.hint ? <div className="text-[11px] text-white/50">{data.hint}</div> : null}
       </div>
     )
     toast({ title, text: subtitle, tone, detail, duration: 9000 })
@@ -1249,6 +1265,9 @@ export default function App() {
       const tone: 'ok' | 'warn' | 'err' = res.stopped || res.failed > 0 ? 'warn' : 'ok'
       showBatchToast({
         title: tone === 'ok' ? '补齐完成' : '补齐部分失败',
+        hint: res.remainingNoPoster
+          ? `仍有 ${res.remainingNoPoster} 部无封面（每轮最多补 200 部，可再跑一轮「补齐信息」）`
+          : undefined,
         tone,
         ok: res.ok,
         failed: res.failed,
@@ -1350,6 +1369,27 @@ export default function App() {
       setTimeout(() => setProgress(null), 1000)
       setFetchLogs([])
       setRetryingFailures(false)
+      setScanning(false)
+    }
+  }, [libraryId, runReconcile])
+
+  // v2.3.7 批量补齐时长：对当前库所有缺时长视频 ffprobe 读时长写 techInfo
+  const handleBatchProbe = useCallback(async () => {
+    if (!libraryId) return
+    setScanning(true)
+    setProgress(null)
+    try {
+      const res = await api.libraryBatchProbe(libraryId)
+      toast({
+        text: `补时长完成：成功 ${res.ok} 部 / 失败 ${res.failed} 部 / 跳过 ${res.skipped} 部`,
+        tone: res.failed > 0 ? 'warn' : 'ok',
+        duration: 6000
+      })
+      await runReconcile(libraryId)
+    } catch (e) {
+      toast({ text: `补时长失败：${(e as Error)?.message ?? e}`, tone: 'err' })
+    } finally {
+      setTimeout(() => setProgress(null), 1000)
       setScanning(false)
     }
   }, [libraryId, runReconcile])
@@ -1665,6 +1705,7 @@ export default function App() {
         libraryName={currentLibrary?.name}
         onScan={handleScan}
         onBatchJavdb={handleBatchJavdb}
+        onBatchProbe={handleBatchProbe}
       />
 
       <div className="flex-1 flex min-h-0">

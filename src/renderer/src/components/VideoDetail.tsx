@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { hasDocTags, primaryTags, NON_TAG_CATEGORY_NAMES } from '../../../shared/types'
-import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
+import { posterUrl, placeholderGradient, titleInitial, formatSize, formatDuration, resolveEntryPoster } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import Icon from './Icon'
@@ -929,7 +929,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
               {related.map((r) => {
-                const rs = r.video?.posterPath ? posterUrl(r.video.posterPath) : null
+                const rs = resolveEntryPoster(r.video) ? posterUrl(resolveEntryPoster(r.video)!) : null
                 return (
                   <button
                     key={r.code}
@@ -948,7 +948,12 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                       </div>
                     )}
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-5">
-                      <div className="text-[11px] text-white truncate">{r.code}</div>
+                      <div className="flex items-end justify-between gap-1">
+                        <div className="text-[11px] text-white truncate min-w-0 flex-1">{r.code}</div>
+                        {r.video?.durationSec ?? r.video?.techInfo?.durationSec ? (
+                          <div className="text-[10px] text-white/70 tabular-nums shrink-0">{formatDuration((r.video?.durationSec ?? r.video?.techInfo?.durationSec)!)}</div>
+                        ) : null}
+                      </div>
                     </div>
                   </button>
                 )

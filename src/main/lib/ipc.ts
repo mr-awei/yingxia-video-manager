@@ -19,7 +19,7 @@ import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
 import { probeVideo, probeImage } from './ffprobe'
 import { previewRenames, applyRenames } from './rename'
-import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
+import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource, type TechInfo } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
 import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
@@ -541,6 +541,15 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
 }
 
 let ipcRegistered = false
+/** 无封面兜底截帧的单轮上限：每部视频最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴 */
+const FRAME_FALLBACK_LIMIT = 200
+
+/** v2.3.11：截帧失败冷却期（7 天）。损坏文件若每次都重试，批量补齐会被反复拖住 */
+const FRAME_FAIL_COOLDOWN = 7 * 24 * 60 * 60 * 1000
+/** 该视频是否刚截帧失败过（冷却期内跳过，避免损坏文件反复拖慢批量任务） */
+function frameFailedRecently(v: Video): boolean {
+  return !!v.frameFailedAt && Date.now() - v.frameFailedAt < FRAME_FAIL_COOLDOWN
+}
 
 export function registerIpc(): void {
   if (ipcRegistered) {
@@ -568,9 +577,14 @@ export function registerIpc(): void {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
     const settings = await repo.getSettings()
+    const t0 = Date.now()
     const result = await reconcileLibrary(lib, settings, emitProgress)
+    // v2.3.10 诊断：对账完成打点（此前若卡在落盘，这里永远到不了，日志一片空白无从定位）
+    console.log(`[reconcile] 对账完成 ${libraryId}：entries=${result.entries.length} 耗时${Date.now() - t0}ms`)
     // v2.2.10-fix5：对账结果写磁盘缓存——启动/切库先秒出缓存界面，后台再全量对账刷新
-    void writeReconcileCache(libraryId, result).catch(() => {})
+    void writeReconcileCache(libraryId, result)
+      .then(() => console.log(`[reconcile] 缓存已写 ${libraryId}`))
+      .catch((e) => console.error('[reconcile] 缓存写入失败:', (e as Error)?.message || e))
     return result
   })
 
@@ -702,6 +716,29 @@ export function registerIpc(): void {
     // v2.2.10-fix4：批量写盘——worker 内只收集变更，全部结束后一次 applyVideoChanges，
     // 不再逐条 updateVideo 全量写 4.7MB data.json（大库 4680 部 = 4680 次全量写 → 小时级）。
     const pendingChanges: repo.VideoChange[] = []
+    // v2.3.10 分段落盘：批量补齐是长任务（4494 部可能跑几十分钟），中途关掉/崩溃时
+    // pendingChanges 里已抓到的元数据会全部丢失（原来只在全部跑完才一次落盘）。
+    // 现在每 CHECKPOINT_SIZE 条落盘一次，中断最多丢一小批；落盘用锁串行且不阻塞 worker。
+    const CHECKPOINT_SIZE = 100
+    let flushing = false
+    const flushPending = async (): Promise<void> => {
+      if (flushing || pendingChanges.length === 0) return
+      flushing = true
+      const batch = pendingChanges.splice(0, pendingChanges.length)
+      try {
+        await repo.applyVideoChanges(batch)
+        console.log(`[ipc] 补齐进度落盘：${batch.length} 条`)
+      } catch (e) {
+        console.error('[ipc] 补齐进度落盘失败:', (e as Error)?.message || e)
+      } finally {
+        flushing = false
+      }
+    }
+    /** 等待在途落盘结束后再落最后一批（收尾调用） */
+    const flushPendingSync = async (): Promise<void> => {
+      for (let i = 0; i < 100 && flushing; i++) await new Promise((r) => setTimeout(r, 20))
+      await flushPending()
+    }
     const applyPatch = (v: Video, patch: Partial<Video>): void => {
       const existing = pendingChanges.find((c) => c.type === 'update' && c.video.id === v.id)
       if (existing && existing.type === 'update') {
@@ -719,7 +756,10 @@ export function registerIpc(): void {
 
         // 0) 国产片（纯中文文件夹）：不抓 JavDB/JavBus 元数据，仅用 ffmpeg 截帧（封面 + 15 预览）
         if (v.domestic) {
-          const needFrame = !v.posterPath || v.posterSource === 'placeholder' || !v.previewPaths?.length
+          // v2.3.11：刚截帧失败过（损坏文件）→ 本轮跳过，不再白等几分钟超时
+          const needFrame =
+            !frameFailedRecently(v) &&
+            (!v.posterPath || v.posterSource === 'placeholder' || !v.previewPaths?.length)
           if (needFrame) {
             const set = await generatePreviewSet(v, settings).catch(() => null)
             if (set && (set.coverPath || set.previewPaths.length)) {
@@ -851,25 +891,35 @@ export function registerIpc(): void {
         if (smartState.stop) break
         done++
         emitProgress({ libraryId, total: videos.length, done, current: v.title })
+        // 分段落盘（不阻塞 worker）：攒够一批就落盘，避免中途关闭丢掉全部进度
+        if (pendingChanges.length >= CHECKPOINT_SIZE) void flushPending()
       }
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, videos.length) }, () => worker()))
-    // v2.2.10-fix4：worker 全部结束后一次性批量落盘（原来逐条全量写，大库下小时级）
-    if (pendingChanges.length > 0) {
-      await repo.applyVideoChanges(pendingChanges)
-    }
+    // v2.2.10-fix4：worker 全部结束后批量落盘（原来逐条全量写，大库下小时级）
+    // v2.3.10：剩余不足一批的收尾落盘（等可能的在途落盘结束后再写）
+    await flushPendingSync()
     emitProgress({ libraryId, total: videos.length, done: videos.length })
     // 无封面兜底：多数据源都抓不到数据的视频，后台 ffmpeg 截帧显示真实画面（不阻塞补齐返回）
     void (async () => {
       try {
         const all = await repo.listVideos({})
-        const noPoster = all
-          .filter(
-            (v) => v.libraryId === libraryId && (!v.posterPath || v.posterSource === 'placeholder')
-          )
-          // 批次上限：单轮补齐最多后台截 200 部，其余留待下次
-          .slice(0, 200)
+        const noPosterAll = all.filter(
+          (v) =>
+            v.libraryId === libraryId &&
+            (!v.posterPath || v.posterSource === 'placeholder') &&
+            // v2.3.11：跳过刚截帧失败过的损坏文件（否则每轮都在同一个坏文件上卡超时）
+            !frameFailedRecently(v)
+        )
+        // 批次上限：单轮补齐最多后台截 200 部（每部最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴）
+        const noPoster = noPosterAll.slice(0, FRAME_FALLBACK_LIMIT)
         if (noPoster.length === 0) return
+        console.log(
+          `[ipc] 无封面兜底截帧：待处理 ${noPosterAll.length} 部，本轮截 ${noPoster.length} 部` +
+            (noPosterAll.length > noPoster.length
+              ? `（剩余 ${noPosterAll.length - noPoster.length} 部需再跑一轮「补齐信息」）`
+              : '')
+        )
         const conc2 = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         let i2 = 0
         // fix4：截帧兜底也批量落盘（最多 200 次全量写 → 1 次）
@@ -877,14 +927,17 @@ export function registerIpc(): void {
         const w2 = async () => {
           while (i2 < noPoster.length) {
             const v = noPoster[i2++]
+            let frameFailed = true
             try {
               const set = await generatePreviewSet(v, settings)
               if (set?.coverPath) {
-                const patch = {
+                frameFailed = false
+                const patch: Partial<Video> = {
                   posterSource: 'ffmpeg' as const,
                   posterPath: set.coverPath,
                   posterPathFfmpeg: set.coverPath,
-                  previewPaths: set.previewPaths
+                  previewPaths: set.previewPaths,
+                  frameFailedAt: undefined // 截帧成功：清掉此前的失败标记
                 }
                 const existing = frameChanges.find((c) => c.type === 'update' && c.video.id === v.id)
                 if (existing && existing.type === 'update') {
@@ -899,7 +952,12 @@ export function registerIpc(): void {
                 }
               }
             } catch {
-              /* 截帧失败静默 */
+              frameFailed = true
+            }
+            // v2.3.11：截帧没出图（损坏文件 / 超时）→ 打时间戳，批量任务冷却期内不再碰它
+            if (frameFailed) {
+              frameChanges.push({ type: 'update', video: { ...v, frameFailedAt: Date.now() } })
+              void frameLog(`[ipc] 截帧失败打标，7 天内跳过 id=${v.id} path=${v.path}`)
             }
           }
         }
@@ -907,17 +965,30 @@ export function registerIpc(): void {
         if (frameChanges.length > 0) {
           await repo.applyVideoChanges(frameChanges)
         }
+        console.log(`[ipc] 无封面兜底截帧完成：产出 ${frameChanges.length}/\${noPoster.length} 部`)
       } catch {
         /* 静默 */
       }
     })()
+    // v2.3.11：统计本轮结束后仍无封面的部数（兜底截帧每轮上限 200，需要告知用户是否再来一轮）
+    let remainingNoPoster = 0
+    try {
+      const after = await repo.listVideos({ libraryId })
+      remainingNoPoster = after.filter(
+        (v) =>
+          (!v.posterPath || v.posterSource === 'placeholder') && !frameFailedRecently(v)
+      ).length
+    } catch {
+      /* 统计失败不影响主流程 */
+    }
     return {
       ok,
       failed,
       bySource,
       failures,
       stopped: smartState.stop,
-      remaining: smartState.stop ? Math.max(0, videos.length - idx) : 0
+      remaining: smartState.stop ? Math.max(0, videos.length - idx) : 0,
+      remainingNoPoster
     }
   })
 
@@ -1209,6 +1280,46 @@ export function registerIpc(): void {
     const info = await probeVideo(v.path, settings)
     if (!info) return null
     return repo.updateVideo(id, { techInfo: info })
+  })
+
+  // v2.3.7 批量补齐时长：对当前库所有缺时长视频 ffprobe 读时长写 techInfo（复用 probeVideo）
+  ipcMain.handle(IPC.libraryBatchProbe, async (_e, libraryId: string) => {
+    if (!isSafeId(libraryId)) throw new Error('非法库 id')
+    const settings = await repo.getSettings()
+    const videos = await repo.listVideos({ libraryId })
+    const needProbe = videos.filter((v) => !v.techInfo?.durationSec && !v.durationSec)
+    const changes: repo.VideoChange[] = []
+    const applyTech = (v: Video, info: TechInfo) => {
+      const existing = changes.find((c) => c.type === 'update' && c.video.id === v.id)
+      if (existing && existing.type === 'update') {
+        existing.video = { ...existing.video, techInfo: info }
+      } else {
+        changes.push({ type: 'update', video: { ...v, techInfo: info } })
+      }
+    }
+    let ok = 0
+    let failed = 0
+    const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
+    let idx = 0
+    const worker = async () => {
+      while (idx < needProbe.length) {
+        const v = needProbe[idx++]
+        try {
+          const info = await probeVideo(v.path, settings)
+          if (info?.durationSec) {
+            applyTech(v, info)
+            ok++
+          } else {
+            failed++
+          }
+        } catch {
+          failed++
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(conc, needProbe.length) }, () => worker()))
+    if (changes.length > 0) await repo.applyVideoChanges(changes)
+    return { ok, failed, skipped: videos.length - needProbe.length }
   })
 
   // ---------- 应用信息 ----------

@@ -1,20 +1,72 @@
 # 更新日志（Changelog）
 
-## v2.2.14（2026-08-30）
+- **补齐结果告知剩余无封面数**：`libraryFetchJavdbAll` 返回 `remainingNoPoster`，完成 toast 增加一行「仍有 N 部无封面（每轮最多补 200 部，可再跑一轮「补齐信息」）」——此前用户不知道要不要再跑一轮。
 
-**持久化修复 + DMM 图床兼容 + 批量失败循环重试弹窗 + 抓取日志去重**
+## v2.3.11（2026-08-30）
 
-### Bug 修复
-- **设置项不持久化**：`store.ts` 防抖写盘逻辑存在致命缺陷 —— 300ms 窗口内第二次调用 `scheduleSave` 会 `clearTimeout` 掉唯一的落盘定时器，但 `pendingWrite` 不重置、它的 `resolve` 又写在这个已被清掉的定时器回调里 → Promise 永不 resolve，本进程从此再也不落盘。重写防抖逻辑为「调用方 resolve 收集 + 定时器每次重排」，写盘串行化。
-- **DMM 图床 Referer 被拒**：Electron Chromium 网络栈对跨站 Referer 校验严格，`*.dmm.co.jp` 图床带 JavBus 域名 Referer 会被 Chromium 直接取消请求（`ERR_BLOCKED_BY_CLIENT` / `invalid referrer`）。改为对所有 `*.dmm.co.jp` 域名的图片请求不传 Referer。
-- **补齐信息覆盖预览帧**：详情页点「补齐信息」时，无论截图有没有拿到都无条件用截图（可能为空数组）覆盖 `previewPaths` 并删除 ffmpeg 预览帧文件。修复为仅当截图实际下载到时才覆盖，否则保留原有预览帧。
-- **抓取日志重复打印**：`preload/index.ts` 的 `onScanProgress` 只 `ipcRenderer.on` 没有 `removeListener`，React StrictMode 让 useEffect 执行两次导致注册两个监听器 → 每条进度显示两次。修复为返回 cleanup 函数，useEffect 返回它。
-- **tagCategories 标签值重复**：分类名标准化去重了但分类内部的标签值没去重，`["/"]` 出现两次导致 React key 重复警告。加 `Array.from(new Set(...))` 去重。
-- **批量补齐重复触发**：详情页 useEffect 自动补抓 + 用户手动点按钮同时触发同一番号请求。加 `fetchingRef` 共享锁互斥。
+**修复损坏视频卡死批量补齐 + 无片单提示可关闭**
 
-### 功能新增
-- **批量抓取失败明细弹窗**：批量补齐结束后，若存在失败影片，居中弹出明细窗口显示标题 + 原因。浮层自动收起。
-- **失败循环重试**：弹窗底部「全部重试」按钮，逐个重试失败项目；若仍有失败则再次弹出明细窗口，循环直到全部成功或用户手动关闭。
+- **损坏文件卡死补齐（P0）**：`generatePreviewSet` 的封面截帧 spawn **既没有超时、也没有消费 stderr**——`thumbnail=n=<最多200>` 要解码整个文件，损坏的 wmv 会让 ffmpeg 无限转下去；同时 ffmpeg 刷出的错误输出填满管道缓冲区后子进程会阻塞在写入上，连退出都做不到。结果是整个 `generatePreviewSet` 永不返回，批量补齐的 worker 永久卡住（表现为进度条停在某一部不动，反复重开都卡在同一条）。
+  改动：统一 `spawnWithTimeout`（消费 stdout/stderr + 超时 SIGKILL，封面 60s / 单帧 30s）；封面**超时**视为文件异常，直接跳过后续十余个预览帧 ffmpeg。
+- **损坏文件不再每轮都重试**：新增 `video.frameFailedAt`，截帧无产出时打时间戳，7 天冷却期内批量任务自动跳过（手动「重新截帧」不受限）。此前同一个坏文件每跑一轮都要白白吃几分钟超时。
+- **兜底截帧上限可见**：原来 `slice(0, 200)` 静默截断，用户不知道还剩多少部。现在日志打印「待处理 N 部，本轮截 M 部（剩余 X 部需再跑一轮）」。
+- **设置-通用新增「不提示『无片单 Excel』」**：无片单用户每次对账都会被这条不会自动消失的 toast 打断。勾选后仅屏蔽「未配置片单」这一类，片单解析失败等真实错误仍照常提示。
+
+## v2.3.10（2026-08-30）
+
+**修复「一直正在对账」卡死（写盘防抖死锁）+ 大库落盘 O(n²)**
+
+- **写盘防抖死锁（P0，卡死根因）**：原 `scheduleSave` 把 `resolve()` 只挂在 debounce 计时器回调里，且「`pendingWrite` 非空时不重建计时器」——只要 300ms 窗口内有第二次写入调用（另一个库的对账、设置保存等），就会 `clearTimeout` 掉唯一的计时器，`await saveDB()` 的 Promise 永不 resolve，对账收尾的 `applyVideoChanges` 永久挂起 → 对账 IPC 不返回 → UI 一直显示"正在对账"、reconcile-cache 也写不出来。表现为**偶发**（取决于窗口内有没有并发写入）。
+  重写为 `dirty` 标志 + 写盘串行化 + waiters 唤醒：计时器只负责触发，Promise 由落盘完成统一 resolve，写盘期间的新改动自动续写一轮不丢数据；并加 2s 防饥饿上限（连续改动也能推进）。
+- **大库落盘 O(n²) → O(n)**：`applyVideoChanges` 原来对每条变更都 `findIndex` 全表扫描（4494 条变更 × 6253 条记录 ≈ 2800 万次比较），改为 Map 建 id→下标索引。
+- **可诊断性**：对账完成/缓存写入结果打点落 main.log（此前缓存写失败被静默吞掉，卡死时日志一片空白无从定位）；落盘超过 1s 记录耗时。
+- **批量补齐分段落盘**：`libraryFetchJavdbAll` 原来「全部抓完才一次落盘」，长任务（4494 部）中途关闭/崩溃会丢掉已抓到的全部元数据（51% 关掉 = 2300 部白抓）。现在每 100 条落盘一次（后台异步、不阻塞抓取），中断最多丢一批；收尾时等待在途落盘后再写剩余部分。
+
+## v2.3.9（2026-08-30）
+
+**修复列表时长/元数据陈旧（要点进详情再返回才刷新）**
+
+- `store.ts` 的内存 DB 加载后永不重载磁盘，外部脚本/另一实例改过 data.json 后内存与磁盘分叉，对账用陈旧数据构建 entries 并写进 reconcile-cache，列表一直吃旧快照。现在每次取 DB 前比对 mtime（1s 节流），发现外部修改即重载。
+
+## v2.3.8（2026-08-30）
+
+**扫描库真正建记录 + 补时长覆盖全部**
+
+- **「扫描库」改为真正扫描**：原来只跑 reconcile（对账），无片单时临时生成 entry 不落盘记录，导致大库大量视频无 data.json 记录（补不到时长、点不开详情）。现在扫描库先调 `videoScan`（scanLibrary 批量写盘，fix7 秒级补全磁盘视频记录）再 reconcile 刷新。
+- **补时长覆盖全部**：扫描补全记录后，「补齐视频时长」可对全库所有视频写 techInfo（原来只处理有记录的）。
+
+## v2.3.7（2026-08-30）
+
+**时长改角标 + 批量补时长功能**
+
+- **时长改右下角角标**：卡片右下角时长从底部信息行改为悬浮角标（参考「截帧」角标风格，`bottom-9 right-1.5`，位于底部信息条上方），底部只保留 code + 评分。
+- **新增「补齐视频时长」**：工具栏「补齐信息」下拉新增「补齐视频时长」——对当前库所有缺时长视频批量 ffprobe 读取时长写入 `techInfo`（复用 `probeVideo`，批量落盘一次 `applyVideoChanges`），完成后 toast 显示 成功/失败/跳过 数。
+
+## v2.3.6（2026-08-30）
+
+**时长显示 fallback 到 techInfo**
+
+- EntryCard / ListView / 相关推荐 三处时长读取改为 `video.durationSec ?? video.techInfo.durationSec` fallback——v2.3.5 改动后仍有视频不显示时长（顶层 durationSec 缺失），现在如果 `techInfo` 里有 ffprobe 时长也能显示。
+- 注：用户当前 99% 视频仍无任何时长数据（顶层和 techInfo 都缺），UI fallback 只能覆盖已有数据；要在 G 库完整显示需批量跑 videoProbe 写 techInfo。
+
+## v2.3.5（2026-08-30）
+
+**列表/相关推荐时长显示**
+
+- **相关推荐卡片底部新增时长**：与列表 EntryCard 风格一致，code 左侧、时长右侧，时长缺失不显示。
+- **EntryCard 网格（竖屏/横屏）新增时长**：卡片底部信息行（code + 评分）旁显示时长（缺失不显示），与列表文件名模式保持一致。
+
+## v2.3.4（2026-08-30）
+
+**相关推荐封面全无修复**
+
+- **resolveEntryPoster 封面优先级修正**：v2.3.3 里 `javdbDetail.cover` 优先于 `posterPath`，但 cover 常指向失效文件（`javapi-cover-*.jpg` 下载失败/被清理），导致相关推荐/封面返回 404 路径全部占位。改为 **posterPath（100% 有效）始终优先，cover 仅在 posterPath 缺失时补充**——相关推荐封面恢复（实测 179/179 全部有效）。
+
+## v2.3.3（2026-08-30）
+
+**相关推荐封面不一致修复**
+
+- **相关推荐用完整封面优先级**：相关推荐（同片商/系列/女演员）原来只看 `video.posterPath`，导致"列表有真实海报、相关推荐显示占位图"的不一致（列表 EntryCard 会优先用 `javdbDetail.cover` 本地真实海报，相关推荐没有）。新增共享 `resolveEntryPoster`（手动封面 > javdbDetail.cover > 真实 posterPath > ffmpeg 截帧），相关推荐改用与列表一致的优先级取封面，占位图问题消除。
 
 ## v2.3.2（2026-08-30）
 
