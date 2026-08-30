@@ -96,13 +96,15 @@ export default function App() {
     search: '',
     sort: 'title',
     desc: false,
-    groupMode: 'grouped' as 'grouped' | 'flat',
+    groupMode: 'flat' as 'grouped' | 'flat',
     category: null
   })
   /** 搜索输入框的值（立即更新 UI）；实际过滤用防抖后的 filter.search */
   const [searchInput, setSearchInput] = useState('')
   /** 多选标签 AND 过滤（侧栏交互） */
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
+  // v2.3.2 类别（genre）筛选：从 javdbDetail.genres 提取单标签，独立于「分类」
+  const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set())
   /** 演员 / 片商 / 系列 维度筛选（各维度内 OR，跨维度 AND；点击详情页字段触发） */
   const [selectedActors, setSelectedActors] = useState<Set<string>>(new Set())
   const [selectedStudios, setSelectedStudios] = useState<Set<string>>(new Set())
@@ -547,6 +549,20 @@ export default function App() {
     return { actors: sort(actors), studios: sort(studios), series: sort(series) }
   }, [applyTagsOnly])
 
+  // v2.3.2 类别（genre）facet：从 javdbDetail.genres 提取单标签 + 计数（基于 applyTagsOnly）
+  const genreFacets = useMemo<MetaFacet[]>(() => {
+    const counts = new Map<string, number>()
+    for (const e of applyTagsOnly) {
+      const d = e.video?.javdbDetail
+      if (d?.genres && d.genres.length > 0) {
+        for (const g of d.genres) counts.set(g, (counts.get(g) ?? 0) + 1)
+      }
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [applyTagsOnly])
+
   // 技术规格 facet：分辨率 / 时长 / 评分 / 年份（基于 applyTagsOnly，计数随搜索+tag 联动）
   const specFacets = useMemo(() => {
     const res = new Map<string, number>()
@@ -600,6 +616,13 @@ export default function App() {
         (e) => !!e.video?.javdbDetail?.series && selectedSeries.has(e.video.javdbDetail.series)
       )
     }
+    // v2.3.2 类别（genre）筛选：选中 genres 内 OR
+    if (selectedGenres.size > 0) {
+      list = list.filter((e) => {
+        const d = e.video?.javdbDetail
+        return !!d?.genres && d.genres.some((g) => selectedGenres.has(g))
+      })
+    }
     if (selectedResolutions.size > 0) {
       list = list.filter((e) => selectedResolutions.has(resolutionBucket(e.video)))
     }
@@ -619,7 +642,7 @@ export default function App() {
       })
     }
     return list
-  }, [applyTagsOnly, selectedActors, selectedStudios, selectedSeries, selectedResolutions, selectedDurations, selectedScores, selectedYears])
+  }, [applyTagsOnly, selectedActors, selectedStudios, selectedSeries, selectedGenres, selectedResolutions, selectedDurations, selectedScores, selectedYears])
 
   // 第三层：应用 智能筛选（我的清单 / 快捷过滤）
   const applySmart = useMemo(() => {
@@ -887,7 +910,7 @@ export default function App() {
   }, [detail, reconcile])
 
   const totalSelected = selectedTags.size
-  const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size
+  const metaSelectedCount = selectedActors.size + selectedStudios.size + selectedSeries.size + selectedGenres.size
   const techSelectedCount = selectedResolutions.size + selectedDurations.size + selectedScores.size + selectedYears.size
   const hasActiveFilters = totalSelected + metaSelectedCount + techSelectedCount + (filter.category ? 1 : 0) > 0 || smart !== 'all'
 
@@ -1342,6 +1365,7 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    setSelectedGenres(new Set())
     clearTechFilters()
   }, [])
 
@@ -1354,6 +1378,7 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    setSelectedGenres(new Set())
     clearTechFilters()
     if (s === 'recent') setFilter((f) => ({ ...f, sort: 'lastPlayed', desc: true }))
   }, [])
@@ -1412,12 +1437,24 @@ export default function App() {
     setSelectedActors(new Set())
     setSelectedStudios(new Set())
     setSelectedSeries(new Set())
+    setSelectedGenres(new Set())
     clearTechFilters()
   }, [])
 
   const clearActors = useCallback(() => setSelectedActors(new Set()), [])
   const clearStudios = useCallback(() => setSelectedStudios(new Set()), [])
   const clearSeries = useCallback(() => setSelectedSeries(new Set()), [])
+
+  // v2.3.2 类别（genre）筛选 toggle/clear
+  const toggleGenre = useCallback((g: string) => {
+    setSelectedGenres((prev) => {
+      const n = new Set(prev)
+      if (n.has(g)) n.delete(g)
+      else n.add(g)
+      return n
+    })
+  }, [])
+  const clearGenres = useCallback(() => setSelectedGenres(new Set()), [])
 
   // ---------- 技术规格 / 时间 维度筛选 ----------
   const toggleResolution = useCallback((v: string) => {
@@ -1591,6 +1628,10 @@ export default function App() {
           onClearStudios={clearStudios}
           onClearSeries={clearSeries}
           onClearMetaFilters={clearMetaFilters}
+          genreFacets={genreFacets}
+          selectedGenres={selectedGenres}
+          onToggleGenre={toggleGenre}
+          onClearGenres={clearGenres}
           resolutionFacets={specFacets.resolutions}
           durationFacets={specFacets.durations}
           scoreFacets={specFacets.scores}
