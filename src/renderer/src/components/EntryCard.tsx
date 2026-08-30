@@ -40,7 +40,7 @@ function hoverVideo(entry: DisplayEntry): Video {
     posterSource: entry.video?.posterSource,
     year: entry.video?.year,
     rating: entry.video?.rating,
-    durationSec: entry.video?.durationSec,
+    durationSec: entry.video?.durationSec ?? entry.video?.techInfo?.durationSec,
     addedAt: 0
   }
 }
@@ -296,8 +296,8 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               {entry.code}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {entry.video?.durationSec ? (
-                <span className="card-title text-[10px] text-white/70 tabular-nums leading-none">{formatDuration(entry.video.durationSec)}</span>
+              {entry.video?.durationSec ?? entry.video?.techInfo?.durationSec ? (
+                <span className="card-title text-[10px] text-white/70 tabular-nums leading-none">{formatDuration((entry.video?.durationSec ?? entry.video?.techInfo?.durationSec)!)}</span>
               ) : null}
               {score != null ? (
                 <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm ring-1 ring-white/10">

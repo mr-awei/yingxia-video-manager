@@ -872,8 +872,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-5">
                       <div className="flex items-end justify-between gap-1">
                         <div className="text-[11px] text-white truncate min-w-0 flex-1">{r.code}</div>
-                        {r.video?.durationSec ? (
-                          <div className="text-[10px] text-white/70 tabular-nums shrink-0">{formatDuration(r.video.durationSec)}</div>
+                        {r.video?.durationSec ?? r.video?.techInfo?.durationSec ? (
+                          <div className="text-[10px] text-white/70 tabular-nums shrink-0">{formatDuration((r.video?.durationSec ?? r.video?.techInfo?.durationSec)!)}</div>
                         ) : null}
                       </div>
                     </div>

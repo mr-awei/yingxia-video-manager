@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v2.3.6（2026-08-30）
+
+**时长显示 fallback 到 techInfo**
+
+- EntryCard / ListView / 相关推荐 三处时长读取改为 `video.durationSec ?? video.techInfo.durationSec` fallback——v2.3.5 改动后仍有视频不显示时长（顶层 durationSec 缺失），现在如果 `techInfo` 里有 ffprobe 时长也能显示。
+- 注：用户当前 99% 视频仍无任何时长数据（顶层和 techInfo 都缺），UI fallback 只能覆盖已有数据；要在 G 库完整显示需批量跑 videoProbe 写 techInfo。
+
 ## v2.3.5（2026-08-30）
 
 **列表/相关推荐时长显示**
