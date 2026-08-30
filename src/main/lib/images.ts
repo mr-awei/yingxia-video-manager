@@ -228,8 +228,7 @@ function spawnWithTimeout(
 
 /** 单次截帧：在指定秒数处截取一帧（带超时 + 消费 stderr） */
 
-async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string, settings: Settings): Promise<boolean> {
-  void settings // 预留：未来 ffmpeg 参数（如 preset / 质量）可从 settings 读取
+async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
   const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
   void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} args=${JSON.stringify(args)}`)
   const r = await spawnWithTimeout(exe, args, FRAME_TIMEOUT_MS, 'spawnFrameAt')
@@ -303,7 +302,7 @@ export async function generatePreviewSet(
   }
   const coverOk = coverRes.ok
   const previewsOk = await mapLimit(previewItems, 4, (it) =>
-    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i), settings)
+    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
   )
   const previewPaths = previewsOk
     .map((ok, i) => (ok ? previewPathFor(video, i) : null))
