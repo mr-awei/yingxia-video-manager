@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
-import { hasDocTags, primaryTags } from '../../../shared/types'
+import { hasDocTags, primaryTags, NON_TAG_CATEGORY_NAMES } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
@@ -617,18 +617,13 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               // 主标签节点：按分类分组 / 平铺（结构化 vs 退化）
               const primaryNode = (() => {
                 if (cats && Object.keys(cats).length > 0) {
-                  // 非标签分类黑名单（Excel 里这些分类是元数据/简介/评分，不是标签，跳过不渲染）
-                  const NON_TAG_CATS = new Set([
-                    '推荐评分', '评分', '简介', '说明', '备注', 'note', 'comment',
-                    '推荐', '描述', 'desc', 'description', 'summary'
-                  ])
                   // 去重 + 过滤空 tag 字符串 + 过滤非标签分类 + key 加索引后缀
                   const seen = new Set<string>()
                   const dedup: [string, string[]][] = []
                   for (const [name, rawList] of Object.entries(cats)) {
-                    const list = (rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)  // 去空白字符串
-                    if (!list.length) continue    // 整个分类全是空 tag → 跳过
-                    if (NON_TAG_CATS.has(name.trim())) continue
+                    if (NON_TAG_CATEGORY_NAMES.has(name.trim())) continue  // 跳过简介/评分等元数据分类
+                    const list = (rawList ?? []).map(t => t?.trim() ?? '').filter(Boolean)
+                    if (!list.length) continue
                     if (seen.has(name)) continue
                     seen.add(name)
                     dedup.push([name, list])

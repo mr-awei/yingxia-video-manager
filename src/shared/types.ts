@@ -369,18 +369,33 @@ export interface ReconcileResult {
 
 // ---------- 标签分层 helpers（共享给主进程与渲染器）----------
 
+/** Excel tagCategories 里这些分类是元数据/简介/评分, 不是标签, 统一跳过不收集
+ *  导出给 UI 层去重渲染时共享, 避免前端自己硬编码一份同名单. */
+export const NON_TAG_CATEGORY_NAMES = new Set([
+  '推荐评分', '评分', '简介', '说明', '备注', 'note', 'comment',
+  '推荐', '描述', 'desc', 'description', 'summary'
+])
+
 /** 视频的「主标签源」扁平化列表：
  *  - 有文档结构化 tagCategories → 优先按分类顺序合并去重
  *  - 退化 → tags（片单平铺标签或旧数据）
- *  UI 筛选/搜索/侧栏 facet 均以它作为「主标签」。 */
+ *  UI 筛选/搜索/侧栏 facet 均以它作为「主标签」。
+ *  内部统一跳过非标签分类(NON_TAG_CATEGORY_NAMES)并 trim 空字符串,
+ *  避免把简介/评分文本当标签渲染导致 React key 冲突 + 视觉错乱. */
 export function primaryTags(v: { tags?: string[]; tagCategories?: Record<string, string[]> }): string[] {
   const cats = v.tagCategories
   if (cats && Object.keys(cats).length > 0) {
     const set = new Set<string>()
-    for (const list of Object.values(cats)) for (const t of list) set.add(t)
-    return [...set]
+    for (const [name, list] of Object.entries(cats)) {
+      if (NON_TAG_CATEGORY_NAMES.has(name.trim())) continue   // 跳过简介/评分等元数据分类
+      for (const t of (list ?? [])) {
+        const trimmed = t?.trim() ?? ''
+        if (trimmed) set.add(trimmed)                         // trim + 去空字符串
+      }
+    }
+    if (set.size) return [...set]
   }
-  return v.tags ?? []
+  return (v.tags ?? []).map(t => t?.trim() ?? '').filter(Boolean)
 }
 
 /** DisplayEntry 的「主标签源」扁平化列表（优先 entry.tagCategories，退化 entry.tags）。
@@ -390,10 +405,18 @@ export function entryPrimaryTags(e: { tags: string[]; tagCategories?: Record<str
 }
 
 /** 判断视频/条目是否定义了「文档标签」（不管平铺或结构化，任一有即 true）。
- *  UI 层用它决定是否把 backupTags 折叠为备用展示，而不是作为主标签。 */
+ *  注意: tagCategories 全是简介/评分等元数据分类 → 算没有文档标签.
+ *  UI 层用它决定是否把 backupTags 折叠为备用展示, 而不是作为主标签. */
 export function hasDocTags(v: { tags?: string[]; tagCategories?: Record<string, string[]> }): boolean {
-  if (v.tagCategories && Object.keys(v.tagCategories).length > 0) return true
-  return Array.isArray(v.tags) && v.tags.length > 0
+  const cats = v.tagCategories
+  if (cats && Object.keys(cats).length > 0) {
+    // 必须至少有一个分类是非 NON_TAG_CATEGORY_NAMES, 且有实际 tag 值
+    for (const [name, list] of Object.entries(cats)) {
+      if (NON_TAG_CATEGORY_NAMES.has(name.trim())) continue
+      if ((list ?? []).some(t => (t?.trim() ?? ''))) return true
+    }
+  }
+  return Array.isArray(v.tags) && v.tags.some(t => (t?.trim() ?? ''))
 }
 
 /** 最终用于展示的「所有标签」，用于搜索兜底（搜备份标签也能命中）时扁平展开；
