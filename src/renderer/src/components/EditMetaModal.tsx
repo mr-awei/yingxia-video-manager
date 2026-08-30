@@ -217,7 +217,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
 
               <FieldGroup
                 label="标签"
-                hint={tags.length > 0 ? `${tags.length} 个 · 回车或逗号添加` : '回车或逗号添加'}
+                hint={tags.length > 0 ? `${tags.length} 个 · 回车或逗号添加（Excel 片单为权威来源，下次对账会被覆盖）` : '回车或逗号添加（Excel 片单为权威来源，下次对账会被覆盖）'}
               >
                 <div className="bg-ink-800/60 rounded-lg px-2.5 py-2 min-h-[44px] focus-within:ring-2 ring-brand/50 focus-within:bg-ink-800 transition-all border border-white/5 focus-within:border-brand/40">
                   <div className="flex flex-wrap gap-1.5 mb-1">
@@ -252,6 +252,26 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                     placeholder={tags.length ? '' : '例如：剧情、收藏、片商…'}
                   />
                 </div>
+
+                {/* v2.2.13 数据源备用标签（只读展示）—— 避免用户完全看不到 genres 来源 */}
+                {video!.backupTags?.length ? (
+                  <div className="mt-2.5 rounded-lg bg-sky-400/5 ring-1 ring-sky-300/15 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 text-[11px] text-sky-200/80 font-medium mb-1.5">
+                      <span>📡</span>
+                      <span>数据源备用标签 · 来自 JavDB/JavBus 等 · 仅用于详情页折叠展示，不可编辑</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {video!.backupTags.map((t) => (
+                        <span
+                          key={t}
+                          className="px-1.5 py-0.5 rounded bg-sky-400/10 text-sky-200/90 text-[10px] ring-1 ring-sky-300/20"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </FieldGroup>
 
               <FieldGroup

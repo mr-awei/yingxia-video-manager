@@ -207,24 +207,35 @@ async function ensureVideo(
   filePath: string,
   library: Library,
   settings: Settings,
-  meta: { code: string; description: string; tags: string[]; score?: number },
+  meta: {
+    code: string
+    description: string
+    tags: string[]
+    score?: number
+    /** Excel 片单结构化分类标签（新格式）；无片单时为 undefined */
+    tagCategories?: Record<string, string[]>
+  },
   changes: VideoChange[]
 ): Promise<Video> {
   const folderName = path.basename(path.dirname(filePath))
   const domestic = isDomestic(folderName, path.basename(filePath))
   const existing = await findVideoByPath(filePath)
   if (existing) {
-    // Excel 为权威来源：简介/标签/评分以 Excel 为准（仅在变化时记录一次 update，不逐条写盘）
+    // Excel 为权威来源：简介/标签/评分/tagCategories 以 Excel 为准（仅在变化时记录一次 update，不逐条写盘）
+    const nextTags = [...meta.tags]
+    const nextCats = meta.tagCategories && Object.keys(meta.tagCategories).length ? { ...meta.tagCategories } : undefined
     if (
       existing.description !== meta.description ||
-      JSON.stringify(existing.tags) !== JSON.stringify(meta.tags) ||
+      JSON.stringify(existing.tags) !== JSON.stringify(nextTags) ||
+      JSON.stringify(existing.tagCategories ?? null) !== JSON.stringify(nextCats ?? null) ||
       existing.rating !== meta.score ||
       !!existing.domestic !== domestic
     ) {
       const updated: Video = {
         ...existing,
         description: meta.description,
-        tags: [...meta.tags],
+        tags: nextTags,
+        tagCategories: nextCats,
         descriptionSource: 'manual',
         rating: meta.score ?? existing.rating,
         domestic
@@ -246,6 +257,7 @@ async function ensureVideo(
     description: meta.description,
     descriptionSource: 'manual',
     tags: [...meta.tags],
+    tagCategories: meta.tagCategories && Object.keys(meta.tagCategories).length ? { ...meta.tagCategories } : undefined,
     rating: meta.score,
     addedAt: Date.now(),
     fileSize: stat?.size

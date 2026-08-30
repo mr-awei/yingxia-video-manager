@@ -165,9 +165,11 @@ function localSamples(detail: JavdbDetail | null | undefined): string[] {
 
 /**
  * 把数据源详情回填到 Video 顶层字段（无 Excel 片单视频用得上）。
+ * v2.2.13 标签分层后：
  * - actors：演员名单
  * - year / rating：缺失时从详情补全
- * - tags：合并数据源 genres（去重）
+ * - tags：**不再**与数据源 genres 合并（文档定义的标签保持权威纯净）
+ * - backupTags：数据源 genres 单独写入（UI 折叠为一行「备用标签」，无文档时兜底作为主标签）
  * - title：仅当视频未受简介管理（无 descriptionSource）且当前标题就是文件名时，用数据源标题覆盖
  */
 function backfillFromDetail(v: Video, detail: JavdbDetail): Partial<Video> {
@@ -182,8 +184,12 @@ function backfillFromDetail(v: Video, detail: JavdbDetail): Partial<Video> {
     const r = parseFloat(String(detail.rating).replace(/[^0-9.]/g, ''))
     if (!Number.isNaN(r)) patch.rating = r
   }
-  const mergedTags = Array.from(new Set([...(v.tags ?? []), ...(detail.genres ?? [])]))
-  if (mergedTags.length) patch.tags = mergedTags
+  // 数据源 genres 不再与 v.tags 合并：有文档标签时 genres 仅作 backupTags（备用展示），
+  // 无文档标签时 backupTags 也会被 UI 兜底作为主标签渲染。
+  if (detail.genres?.length) {
+    const existing = Array.isArray(v.backupTags) ? v.backupTags : []
+    patch.backupTags = Array.from(new Set([...existing, ...detail.genres]))
+  }
   const nameWithoutExt = v.fileName ? v.fileName.replace(/\.[^.]+$/, '') : ''
   if (!v.descriptionSource && v.title && nameWithoutExt && v.title === nameWithoutExt) {
     patch.title = detail.title
