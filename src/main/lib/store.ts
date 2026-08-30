@@ -23,6 +23,14 @@ export const SCHEMA_VERSION = 2026083001
 
 let cache: DBShape | null = null
 let dbPath = ''
+// v2.3.9 外部修改检测：data.json 可能被外部工具/另一实例改写（如数据修复脚本、手动编辑），
+// 内存缓存若永不重载，会用陈旧数据覆盖磁盘（丢数据）或把陈旧 entries 写进 reconcile-cache
+// （列表看不到新写入的时长/元数据，"点详情再返回才刷新"）。每次取 DB 前比对新 mtime，
+// 发现外部修改即丢弃内存重载。lastSelfWrite 记录自己写盘的 mtime，避免把自己的写当外部修改。
+let lastSelfWriteMs = 0
+let lastLoadMs = 0
+const STAT_THROTTLE_MS = 1000
+let lastStatMs = 0
 
 // v2.2.10-fix5：写盘 debounce——连续写入合并为一次落盘（300ms 窗口），
 // 避免连点收藏/改名等单条操作每次都全量序列化 4.7MB data.json（几百 ms 卡顿）。
@@ -37,8 +45,24 @@ function resolveDbPath(): string {
 }
 
 async function ensureLoaded(): Promise<DBShape> {
-  if (cache) return cache
-  dbPath = resolveDbPath()
+  if (!dbPath) dbPath = resolveDbPath()
+  // 外部修改检测（1s 节流）：磁盘 mtime 既不是自己写的也不是上次加载的 → 内存已陈旧，丢弃重载
+  if (cache) {
+    const now = Date.now()
+    if (now - lastStatMs > STAT_THROTTLE_MS) {
+      lastStatMs = now
+      try {
+        const st = await fs.stat(dbPath)
+        if (st.mtimeMs !== lastSelfWriteMs && st.mtimeMs !== lastLoadMs) {
+          console.log('[store] 检测到 data.json 被外部修改，重载内存缓存')
+          cache = null
+        }
+      } catch {
+        /* 文件暂时不可访问（被占用等）：保守沿用内存 */
+      }
+    }
+    if (cache) return cache
+  }
   try {
     const raw = await fs.readFile(dbPath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<DBShape> & { schemaVersion?: number }
@@ -50,10 +74,15 @@ async function ensureLoaded(): Promise<DBShape> {
     }
     migrateInPlace(current)
     cache = current
+    const st = await fs.stat(dbPath).catch(() => null)
+    lastLoadMs = st?.mtimeMs ?? 0
+    lastSelfWriteMs = 0
   } catch {
     // 文件不存在或解析失败 -> 用默认值（新 schema）
     cache = structuredClone(DEFAULT_DB)
     cache.schemaVersion = SCHEMA_VERSION
+    lastLoadMs = 0
+    lastSelfWriteMs = 0
   }
   return cache
 }
@@ -111,6 +140,10 @@ async function writeNow(): Promise<void> {
   const tmp = `${dbPath}.tmp`
   await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
   await fs.rename(tmp, dbPath)
+  // 记录自己写盘后的 mtime：外部修改检测以此为基准区分"自己写的"和"别人改的"
+  const st = await fs.stat(dbPath).catch(() => null)
+  lastSelfWriteMs = st?.mtimeMs ?? Date.now()
+  lastLoadMs = lastSelfWriteMs
 }
 
 /** 触发一次防抖写盘；返回本次合并批次的完成 Promise（同一 debounce 窗口内的多次写入合并为一次） */
