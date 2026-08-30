@@ -685,6 +685,29 @@ export function registerIpc(): void {
     // v2.2.10-fix4：批量写盘——worker 内只收集变更，全部结束后一次 applyVideoChanges，
     // 不再逐条 updateVideo 全量写 4.7MB data.json（大库 4680 部 = 4680 次全量写 → 小时级）。
     const pendingChanges: repo.VideoChange[] = []
+    // v2.3.10 分段落盘：批量补齐是长任务（4494 部可能跑几十分钟），中途关掉/崩溃时
+    // pendingChanges 里已抓到的元数据会全部丢失（原来只在全部跑完才一次落盘）。
+    // 现在每 CHECKPOINT_SIZE 条落盘一次，中断最多丢一小批；落盘用锁串行且不阻塞 worker。
+    const CHECKPOINT_SIZE = 100
+    let flushing = false
+    const flushPending = async (): Promise<void> => {
+      if (flushing || pendingChanges.length === 0) return
+      flushing = true
+      const batch = pendingChanges.splice(0, pendingChanges.length)
+      try {
+        await repo.applyVideoChanges(batch)
+        console.log(`[ipc] 补齐进度落盘：${batch.length} 条`)
+      } catch (e) {
+        console.error('[ipc] 补齐进度落盘失败:', (e as Error)?.message || e)
+      } finally {
+        flushing = false
+      }
+    }
+    /** 等待在途落盘结束后再落最后一批（收尾调用） */
+    const flushPendingSync = async (): Promise<void> => {
+      for (let i = 0; i < 100 && flushing; i++) await new Promise((r) => setTimeout(r, 20))
+      await flushPending()
+    }
     const applyPatch = (v: Video, patch: Partial<Video>): void => {
       const existing = pendingChanges.find((c) => c.type === 'update' && c.video.id === v.id)
       if (existing && existing.type === 'update') {
@@ -830,13 +853,14 @@ export function registerIpc(): void {
         if (smartState.stop) break
         done++
         emitProgress({ libraryId, total: videos.length, done, current: v.title })
+        // 分段落盘（不阻塞 worker）：攒够一批就落盘，避免中途关闭丢掉全部进度
+        if (pendingChanges.length >= CHECKPOINT_SIZE) void flushPending()
       }
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, videos.length) }, () => worker()))
-    // v2.2.10-fix4：worker 全部结束后一次性批量落盘（原来逐条全量写，大库下小时级）
-    if (pendingChanges.length > 0) {
-      await repo.applyVideoChanges(pendingChanges)
-    }
+    // v2.2.10-fix4：worker 全部结束后批量落盘（原来逐条全量写，大库下小时级）
+    // v2.3.10：剩余不足一批的收尾落盘（等可能的在途落盘结束后再写）
+    await flushPendingSync()
     emitProgress({ libraryId, total: videos.length, done: videos.length })
     // 无封面兜底：多数据源都抓不到数据的视频，后台 ffmpeg 截帧显示真实画面（不阻塞补齐返回）
     void (async () => {
