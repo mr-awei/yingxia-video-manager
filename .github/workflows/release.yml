@@ -32,7 +32,6 @@ on:
       - 'v*'
     branches: [main]         # 模式 D：push 到 main 自动校验（朋友合完冲突直接推 main，无需作者审核也能跑 CI）
                               #         仅 Typecheck + Build；签名/打包/发版仍只在 v* tag 时做（env.DO_RELEASE=false）
-    branches-ignore: []      # 预留；如要 feature/* 分支也单独跑校验，在下方 auto-merge-feature.yml 中已覆盖
   pull_request:             # 模式 A：PR 校验（分支合并前）
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
