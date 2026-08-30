@@ -1,7 +1,14 @@
 import type { Video } from '../../../shared/types'
+import { hasDocTags, primaryTags } from '../../../shared/types'
 import { formatDuration } from '../lib/util'
 
 export default function HoverDetail({ video }: { video: Video }) {
+  // v2.2.13 标签分层：卡片悬浮空间小 → 展示「文档主标签优先」的前 6 个，
+  // 无文档但有 backupTags 时把数据源标签作展示（避免旧影片无片单时变空白）
+  const docPrimary = primaryTags({ tags: video.tags, tagCategories: video.tagCategories })
+  const back = video.backupTags ?? []
+  const hasDoc = hasDocTags({ tags: video.tags, tagCategories: video.tagCategories })
+  const displayTags = hasDoc ? docPrimary : [...new Set([...docPrimary, ...back])]
   return (
     // min-w-0 让 flex 子项能收缩到 0；break-words 让超长 token 断行
     <div className="pointer-events-none min-w-0 max-w-full break-words">
@@ -14,9 +21,9 @@ export default function HoverDetail({ video }: { video: Video }) {
         {video.durationSec ? <span className="shrink-0">{formatDuration(video.durationSec)}</span> : null}
       </div>
 
-      {video.tags.length > 0 && (
+      {displayTags.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5 min-w-0">
-          {video.tags.slice(0, 6).map((t) => (
+          {displayTags.slice(0, 6).map((t) => (
             <span
               key={t}
               className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-white/80 max-w-full min-w-0 break-words"

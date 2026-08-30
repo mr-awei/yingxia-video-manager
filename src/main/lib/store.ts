@@ -2,11 +2,14 @@ import { app } from 'electron'
 import { promises as fs, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, type Library, type Settings, type Video } from '../../shared/types'
+import type { JavdbDetail } from '../../shared/types'
 
 export interface DBShape {
   libraries: Library[]
   videos: Video[]
   settings: Settings
+  /** 数据结构迁移的最后版本号，用于启动时只跑新增迁移；缺失视为 v0（v2.2.12 及以前）*/
+  schemaVersion?: number
 }
 
 const DEFAULT_DB: DBShape = {
@@ -14,6 +17,9 @@ const DEFAULT_DB: DBShape = {
   videos: [],
   settings: { ...DEFAULT_SETTINGS }
 }
+
+/** v2.2.13 schemaVersion：标签分层（tagCategories / backupTags）已完成迁移 */
+export const SCHEMA_VERSION = 2026083001
 
 let cache: DBShape | null = null
 let dbPath = ''
@@ -35,17 +41,64 @@ async function ensureLoaded(): Promise<DBShape> {
   dbPath = resolveDbPath()
   try {
     const raw = await fs.readFile(dbPath, 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<DBShape>
-    cache = {
+    const parsed = JSON.parse(raw) as Partial<DBShape> & { schemaVersion?: number }
+    const current: DBShape = {
+      schemaVersion: parsed.schemaVersion,
       libraries: parsed.libraries ?? [],
       videos: parsed.videos ?? [],
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) }
     }
+    migrateInPlace(current)
+    cache = current
   } catch {
-    // 文件不存在或解析失败 -> 用默认值
+    // 文件不存在或解析失败 -> 用默认值（新 schema）
     cache = structuredClone(DEFAULT_DB)
+    cache.schemaVersion = SCHEMA_VERSION
   }
   return cache
+}
+
+/** v2.2.13 标签分层迁移（一次性）：
+ *  - 保证每个 Video 至少 tags=[], tagCategories 字段存在或为 undefined（正确类型）
+ *  - 若视频同时有「文档来源」(descriptionSource==='manual' 或 reconciliation 写过 tags) + javdbDetail.genres：
+ *    原来 mergedTags 已经把 genres 合并进 tags，迁移把「genres 里不是文档平铺 tags 子集的部分」移到 backupTags，
+ *    避免数据源标签与文档标签混在一起（等价于把 backfillFromDetail 的旧合并行为 undo 一部分）。
+ *  - schemaVersion < SCHEMA_VERSION 才执行，之后不重复跑。
+ */
+function migrateInPlace(db: DBShape): void {
+  const from = db.schemaVersion ?? 0
+  if (from >= SCHEMA_VERSION) return
+  let moved = 0
+  for (const v of db.videos) {
+    // tags 必须存在（旧数据 JSON 可能缺）
+    if (!Array.isArray(v.tags)) (v as Video & { tags?: unknown }).tags = []
+    const doc = v as Video & { tagCategories?: Record<string, string[]>; backupTags?: string[]; javdbDetail?: JavdbDetail }
+    const docTagSet = new Set<string>()
+    if (doc.tagCategories) for (const list of Object.values(doc.tagCategories)) for (const t of list) docTagSet.add(t)
+    for (const t of v.tags) docTagSet.add(t)
+    const genres = doc.javdbDetail?.genres ?? []
+    if (genres.length > 0 && (v.descriptionSource === 'manual' || v.tags.length > 0 || doc.tagCategories)) {
+      // 有文档权威标签：把 genres 中「不属于文档标签集合」的项移到 backupTags，去除旧合并的冗余
+      const movedTags: string[] = []
+      for (const g of genres) if (!docTagSet.has(g)) movedTags.push(g)
+      if (movedTags.length) {
+        // 不覆盖已经存在的用户/数据迁移写过的 backupTags，合并去重
+        const old = Array.isArray(doc.backupTags) ? doc.backupTags : []
+        const merged = Array.from(new Set([...old, ...movedTags]))
+        doc.backupTags = merged
+        // 从 tags 里去掉这些非文档项（undo 旧版 backfill 的合并行为）
+        if (v.tags.some((t) => movedTags.includes(t))) {
+          v.tags = v.tags.filter((t) => !movedTags.includes(t))
+        }
+        moved++
+      }
+    } else if (genres.length > 0 && !v.tags.length && !doc.tagCategories && !doc.backupTags?.length) {
+      // 无文档：原来 tags 可能被旧版合并填进了 genres，或者一直是空；把 genres 放 backupTags 做主标签
+      doc.backupTags = Array.from(new Set(genres))
+    }
+  }
+  db.schemaVersion = SCHEMA_VERSION
+  console.log(`[store] schema migrate v${from} -> v${SCHEMA_VERSION}：迁移了 ${moved} 条视频的数据源标签至 backupTags`)
 }
 
 async function writeNow(): Promise<void> {

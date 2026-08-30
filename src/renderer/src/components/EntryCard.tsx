@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DisplayEntry, Video } from '../../../shared/types'
+import { hasDocTags, primaryTags } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, titleSecondary, formatDuration } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
@@ -22,7 +23,8 @@ interface Props {
   aspect?: 'portrait' | 'landscape'
 }
 
-/** 把 DisplayEntry 组装成 Video 视图，供 HoverDetail / 预览面板复用 */
+/** 把 DisplayEntry 组装成 Video 视图，供 HoverDetail / 预览面板复用。
+ *  v2.2.13 标签分层：结构化 tags / backupTags 一并透传，H 面板也会用 helper 选对展示层级。 */
 function hoverVideo(entry: DisplayEntry): Video {
   return {
     id: entry.video?.id ?? entry.code,
@@ -32,6 +34,8 @@ function hoverVideo(entry: DisplayEntry): Video {
     title: entry.title,
     description: entry.description,
     tags: entry.tags,
+    tagCategories: entry.tagCategories,
+    backupTags: entry.video?.backupTags,
     posterPath: entry.video?.posterPath,
     posterSource: entry.video?.posterSource,
     year: entry.video?.year,
@@ -372,26 +376,35 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                     {v.durationSec ? <span>{formatDuration(v.durationSec)}</span> : null}
                   </div>
 
-                  {/* 标签 chips：填充右信息区下方空白（用户建议的位置）；点击标签一键筛选 */}
-                  {v.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 mt-2 max-h-[64px] overflow-hidden">
-                      {v.tags.slice(0, 8).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setPreview(null)
-                            onPickTag?.(t)
-                          }}
-                          title={`筛选「${t}」`}
-                          className="px-1.5 py-0.5 rounded bg-white/8 ring-1 ring-white/5 text-[10px] text-white/70 max-w-full min-w-0 break-words hover:bg-brand/25 hover:text-brand hover:ring-brand/30 transition-colors"
-                        >
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  {/* 标签 chips：填充右信息区下方空白（用户建议的位置）；点击标签一键筛选。
+                       卡片空间有限 → 展示「文档主标签优先」的前 8 个；
+                       无文档但有 backupTags 时拿数据源标签填充。 */}
+                  {(() => {
+                    const p = primaryTags({ tags: v.tags, tagCategories: v.tagCategories })
+                    const back = v.backupTags ?? []
+                    const doc = hasDocTags({ tags: v.tags, tagCategories: v.tagCategories })
+                    const displayTags = doc ? p : [...new Set([...p, ...back])]
+                    if (!displayTags.length) return null
+                    return (
+                      <div className="flex flex-wrap gap-1 mt-2 max-h-[64px] overflow-hidden">
+                        {displayTags.slice(0, 8).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPreview(null)
+                              onPickTag?.(t)
+                            }}
+                            title={`筛选「${t}」`}
+                            className="px-1.5 py-0.5 rounded bg-white/8 ring-1 ring-white/5 text-[10px] text-white/70 max-w-full min-w-0 break-words hover:bg-brand/25 hover:text-brand hover:ring-brand/30 transition-colors"
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 

@@ -32,7 +32,19 @@ export interface Video {
   description?: string
   descriptionSource?: 'manual' | null
   rating?: number
+  /** 文档标签（平铺）：有 Excel 片单时 = IntroItem.tags（去重平铺的文档来源标签）；
+   *  无片单时 = 空数组或旧数据遗留的 genres。展示 / 搜索 / 筛选的「主标签源」。
+   *  配合 tagCategories 字段可以还原结构化分组。
+   *  ⚠️ 从 v2.2.13 起，数据源抓取的 genres 不再合并到 tags，改写入独立的 backupTags。 */
   tags: string[]
+  /** 文档结构化标签（Excel 分栏「主题/角色/服装/…」分类 → 各自标签列表）；
+   *  仅在有条目匹配到 Excel 片单且片单行定义了结构化标签时存在。
+   *  详情页按分类分组展示主标签；无分类时退化到 tags 平铺展示。 */
+  tagCategories?: Record<string, string[]>
+  /** 备用来源标签（数据源 genres）：有文档标签时折叠为一行，点击展开；
+   *  无文档标签时作为主标签源使用（tags 空时 UI 自动兜底渲染它）。
+   *  v2.2.13 起由 backfillFromDetail 单独写入，不再与 tags 合并去重。 */
+  backupTags?: string[]
   /** 解析后的海报本地路径（缓存文件或手动指定文件） */
   posterPath?: string
   posterSource?: ImageSource
@@ -353,4 +365,43 @@ export interface ReconcileResult {
     unlisted: number
   }
   generatedAt: number
+}
+
+// ---------- 标签分层 helpers（共享给主进程与渲染器）----------
+
+/** 视频的「主标签源」扁平化列表：
+ *  - 有文档结构化 tagCategories → 优先按分类顺序合并去重
+ *  - 退化 → tags（片单平铺标签或旧数据）
+ *  UI 筛选/搜索/侧栏 facet 均以它作为「主标签」。 */
+export function primaryTags(v: { tags?: string[]; tagCategories?: Record<string, string[]> }): string[] {
+  const cats = v.tagCategories
+  if (cats && Object.keys(cats).length > 0) {
+    const set = new Set<string>()
+    for (const list of Object.values(cats)) for (const t of list) set.add(t)
+    return [...set]
+  }
+  return v.tags ?? []
+}
+
+/** DisplayEntry 的「主标签源」扁平化列表（优先 entry.tagCategories，退化 entry.tags）。
+ *  侧栏 facet / 搜索 / 标签筛选用它代替直接读 entry.tags，做到有结构化标签就用结构化。 */
+export function entryPrimaryTags(e: { tags: string[]; tagCategories?: Record<string, string[]> }): string[] {
+  return primaryTags({ tags: e.tags, tagCategories: e.tagCategories })
+}
+
+/** 判断视频/条目是否定义了「文档标签」（不管平铺或结构化，任一有即 true）。
+ *  UI 层用它决定是否把 backupTags 折叠为备用展示，而不是作为主标签。 */
+export function hasDocTags(v: { tags?: string[]; tagCategories?: Record<string, string[]> }): boolean {
+  if (v.tagCategories && Object.keys(v.tagCategories).length > 0) return true
+  return Array.isArray(v.tags) && v.tags.length > 0
+}
+
+/** 最终用于展示的「所有标签」，用于搜索兜底（搜备份标签也能命中）时扁平展开；
+ *  顺序：文档结构化 + 文档平铺 + 备份标签，保证用户看到的优先级一致。 */
+export function flattenAllTags(v: { tags?: string[]; tagCategories?: Record<string, string[]>; backupTags?: string[] }): string[] {
+  const set = new Set<string>()
+  const p = primaryTags({ tags: v.tags, tagCategories: v.tagCategories })
+  for (const t of p) set.add(t)
+  for (const t of v.backupTags ?? []) set.add(t)
+  return [...set]
 }

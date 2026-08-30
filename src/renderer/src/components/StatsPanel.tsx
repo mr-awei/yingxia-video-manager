@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { DisplayEntry, ReconcileResult } from '../../../shared/types'
+import { entryPrimaryTags, hasDocTags } from '../../../shared/types'
 import Icon from './Icon'
 
 interface Props {
@@ -207,7 +208,12 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
 
     const tagCount = new Map<string, number>()
     for (const e of entries) {
-      for (const t of e.tags) tagCount.set(t, (tagCount.get(t) ?? 0) + 1)
+      // v2.2.13 标签分层：统计项仅考虑「文档主标签」，
+      // 无文档标签时才把 backupTags 纳入（与 UI 选主策略对齐）
+      const primary = entryPrimaryTags(e)
+      const back = e.video?.backupTags ?? []
+      const countArr = hasDocTags({ tags: e.tags, tagCategories: e.tagCategories }) ? primary : [...new Set([...primary, ...back])]
+      for (const t of countArr) tagCount.set(t, (tagCount.get(t) ?? 0) + 1)
     }
     const topTags = [...tagCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
 

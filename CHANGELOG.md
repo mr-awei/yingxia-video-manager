@@ -1,5 +1,48 @@
 # 更新日志（Changelog）
 
+## v2.2.13（2026-08-30）
+
+**Roadmap P0：文档标签分层 —— 文档标签为主，数据源 genres 折叠为备用展示**
+
+### 1. 核心设计：标签分三类（类型 + 数据层 + UI 全链路）
+- **新增字段**：`Video.tagCategories?: Record<string, string[]>`（Excel 结构化分类，如「风格/题材/演员分组」）+ `Video.backupTags?: string[]`（数据源 JavDB/JavBus genres 备用标签，不参与展示主逻辑）
+- **共享 helpers**：`primaryTags / entryPrimaryTags / hasDocTags / flattenAllTags`（主进程 & 渲染通用，保证「谁做主标签」的判断全局一致）
+- **选主规则**：有 `tagCategories` → 取全部分类并集；否则取平铺 `tags`；两者都视为「文档标签」；都空才算「无文档」。
+
+### 2. 旧数据一次性迁移（`store.ts` 启动 schemaVersion）
+- v2.2.13 前的旧逻辑：`backfillFromDetail` 会把 `detail.genres`（数据源）合并进 `Video.tags`，导致「文档标签 + 数据源标签混成一锅，UI 分不清谁是谁」。
+- 启动 `migrateInPlace`（仅 `schemaVersion < 2026083001` 时跑一次）：
+  - 有文档标签 + 有 `javdbDetail.genres` → 从 tags 里剔除「genres 中不属于文档标签」的项，移到 `backupTags`；
+  - 无文档但全是 genres → 直接填 `backupTags`；
+  - 不会重复跑，完成后写入 `schemaVersion=2026083001`。
+- **升级提示**：已有老数据的用户，启动一次会自动分层；如发现标签异常，可在「对账」后刷新（对账会把 Excel 结构化 `tagCategories` 真正写回 Video 顶层字段）。
+
+### 3. 主进程改造：写入不再混合
+- `reconcile.ts`：`ensureVideo` 的 `meta` 参数新增 `tagCategories?`，update/upsert 均写入 `video.tagCategories`，并纳入变化深对比（避免无用写盘）。
+- `ipc.ts`：`backfillFromDetail` 不再把 `detail.genres` 合并进 `Video.tags`（已删除旧 `Array.from(new Set([...(v.tags ?? []), ...(detail.genres ?? [])]))` 行），改为只写 `patch.backupTags = ...去重并集`。
+
+### 4. 全 UI 改造：文档标签=权威主，数据源=备用折叠
+- **详情页（VideoDetail）**：
+  - 有 `tagCategories` → 按「分类名（分类条目数）」分组展示主标签；
+  - 否则退化平铺 tags；
+  - 有文档标签且有 backupTags → `数据源` 分类下**默认只显示前 3 个，点击「还有 N 个… · 展开」展开全部，点「收起」折叠回 3 个**，sky 色系 + 提示文字「来自 JavDB/JavBus 等数据源 · 仅作备用参考」；
+  - 无文档标签但有 backupTags → 直接作主标签，info 色系展示（不让空白）。
+- **EntryCard / HoverDetail / ListView**：卡片 chips、悬停面板、列表行标签预览全部换成「主标签优先 + 无 doc 时拿 backupTags 兜底」。
+- **侧栏筛选（App.tsx）**：
+  - 标签 facet 生成分 3 层：① entry.tagCategories 按分类分 ② entryPrimaryTags 字典兜底分类 ③ backupTags（有 doc → 归入新分类「备用来源」；无 doc → 字典分类）
+  - 搜索：`applyTagsOnly` 改用 `flattenAllTags`（主 + 备用 全命中）；筛选匹配：`entryPrimaryTags(e) ∪ backupTags` 并集
+- **StatsPanel**：TOP10 标签计数改用 entryPrimaryTags 选主规则，不再统计被迁移出的 genres。
+- **EditMetaModal**：
+  - 手动编辑的标签仍写 tags 平铺；新增 hint 文字「Excel 片单为权威来源，下次对账会被覆盖」
+  - 新增一块 **只读** 的「数据源备用标签」sky 色系展示（带 📡 图标），用户可直观看到此片的 genres 来源，不再混淆"为什么标签不是我加的"。
+
+### 5. 修改的文件
+- 类型/共享：`src/shared/types.ts`（Video 加 2 字段 + 4 个 helper）
+- 主进程：`src/main/lib/store.ts`（`SCHEMA_VERSION` + `migrateInPlace`）、`src/main/lib/reconcile.ts`（写 `tagCategories`）、`src/main/lib/ipc.ts`（backupTags 分流）
+- 渲染：`App.tsx`（侧栏/搜索/筛选）、`components/VideoDetail.tsx`（详情页标签分组+折叠）、`components/EntryCard.tsx`、`components/HoverDetail.tsx`、`components/ListView.tsx`、`components/StatsPanel.tsx`、`components/EditMetaModal.tsx`
+
+---
+
 ## v2.2.12（2026-08-30）
 
 **朋友合入三件套（P0 性能三连修 + P1 对账缓存+写盘防抖 + 数据目录名修复）**
