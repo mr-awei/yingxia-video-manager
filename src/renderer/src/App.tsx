@@ -335,14 +335,26 @@ export default function App() {
   useEffect(() => {
     if (view !== 'home') return
     if (libraries.length === 0) return
-    for (const l of libraries) {
-      if (allReconciles[l.id]) continue
-      void api
-        .libraryReconcile(l.id)
-        .then((res) => setAllReconciles((prev) => ({ ...prev, [l.id]: res })))
-        .catch(() => {})
+    // v2.2.10-fix4：原来并发发起所有缺失库 reconcile → 多库同时 walk 扫描 + 与主对账
+    // effect 并发写盘（applyVideoChanges 非原子，可能丢更新）。改串行 + 跳过当前库
+    // （当前库由主对账 effect 负责），依赖不再含 allReconciles（避免 setAllReconciles 反复重跑）。
+    let cancelled = false
+    ;(async () => {
+      for (const l of libraries) {
+        if (cancelled) return
+        if (l.id === libraryId) continue
+        try {
+          const res = await api.libraryReconcile(l.id)
+          if (!cancelled) setAllReconciles((prev) => (prev[l.id] ? prev : { ...prev, [l.id]: res }))
+        } catch {
+          /* 单库失败不影响其他库 */
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [view, libraries, allReconciles])
+  }, [view, libraries, libraryId])
 
   // JavDB 批量抓取：每抓到一张实时刷新该卡片的封面
   useEffect(() => {

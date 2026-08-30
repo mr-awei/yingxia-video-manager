@@ -512,3 +512,10 @@ body {
   backdrop-filter: blur(22px) saturate(1.5);
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
 }
+
+/* ---------- 列表虚拟化：content-visibility（大库几千条一次性渲染卡顿） ---------- */
+/* Chromium 原生跳过视口外元素渲染，滚动时按需渲染；contain-intrinsic-size 提供占位高度 */
+.cv-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}

@@ -53,7 +53,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
             return (
               <div
                 key={v?.id ?? e.code}
-                className="group flex items-center gap-3 px-3 py-2 rounded-lg bg-ink-800/40 hover:bg-ink-700/60 ring-1 ring-white/5 transition-colors cursor-pointer"
+                className="cv-list-item group flex items-center gap-3 px-3 py-2 rounded-lg bg-ink-800/40 hover:bg-ink-700/60 ring-1 ring-white/5 transition-colors cursor-pointer"
                 onClick={() => (isMissing ? onOpenMissing(e) : onOpen(e))}
               >
                 {/* 文件名 */}
@@ -172,7 +172,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
           return (
             <div
               key={e.code}
-              className={`group flex items-center gap-3 px-2.5 py-2 rounded-xl bg-ink-800/50 hover:bg-ink-700/70 ring-1 ring-white/5 transition-colors cursor-pointer ${
+              className={`cv-list-item group flex items-center gap-3 px-2.5 py-2 rounded-xl bg-ink-800/50 hover:bg-ink-700/70 ring-1 ring-white/5 transition-colors cursor-pointer ${
                 isMissing ? 'opacity-80' : ''
               }`}
               onClick={() => (isMissing ? onOpenMissing(e) : onOpen(e))}
