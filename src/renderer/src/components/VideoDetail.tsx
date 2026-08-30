@@ -564,17 +564,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               </MetaRow>
               {/* javdb 评分仅在没有我的评分时兜底显示 */}
               <MetaRow label="评分" value={video.rating != null ? undefined : d?.rating} />
-              {d?.genres && d.genres.length > 0 ? (
-                <MetaRow label="类别">
-                  <div className="flex flex-wrap gap-1.5 min-w-0">
-                    {d.genres.map((g) => (
-                      <span key={g} className="px-2 py-0.5 rounded-md bg-white/6 ring-1 ring-white/5 text-white/75 text-xs">
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </MetaRow>
-              ) : null}
+              {/* 
+                朋友 v2.3.2 在此处加了一行 <MetaRow label="类别"> 直接展示 d.genres。
+                v2.2.13 文档标签分层改造后：
+                - 文档标签（tagCategories 结构化 / tags 平铺）在下方统一「标签」MetaRow 里按 brand 色系分组展示；
+                - 数据源 genres 在 store.ts schemaVersion 迁移时已剥离进 backupTags，
+                  由下方「标签」MetaRow 的「数据源」分类（sky 色系 + 默认折叠 3 个）统一承载；
+                - 朋友这行完全冗余，删除避免两处重复展示 genres + MetaRow label 冲突告警。
+              */}
               {(() => {
                 const female = d?.actresses?.length ? d.actresses : d?.actors ?? []
                 return female.length > 0 ? (
@@ -609,28 +606,35 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               // 主标签节点：按分类分组 / 平铺（结构化 vs 退化）
               const primaryNode = (() => {
                 if (cats && Object.keys(cats).length > 0) {
+                  // 去重 + key 加索引后缀（防止分类名重复如"分类"、"类别"时 React 告警 + 渲染错乱）
+                  const entries = Object.entries(cats)
+                  const seen = new Set<string>()
+                  const dedup = entries.filter(([name, list]) => {
+                    if (!list?.length) return false
+                    if (seen.has(name)) return false
+                    seen.add(name)
+                    return true
+                  })
                   return (
                     <div className="space-y-1.5 min-w-0">
-                      {Object.entries(cats).map(([catName, list]) =>
-                        list?.length ? (
-                          <div key={catName} className="flex flex-wrap gap-1.5 min-w-0 items-center">
-                            <span className="text-[11px] text-white/40 shrink-0 pr-1 min-w-[3.5rem]">{catName}</span>
-                            <div className="flex flex-wrap gap-1.5 min-w-0">
-                              {list.map((t) => (
-                                <button
-                                  key={`${catName}:${t}`}
-                                  type="button"
-                                  onClick={() => onPickTag?.(t)}
-                                  title={`「${catName}」类 · 筛选「${t}」全部影片`}
-                                  className="px-2 py-0.5 rounded-md bg-brand/12 ring-1 ring-brand/20 text-brand text-xs hover:bg-brand/25 hover:ring-brand/40 transition-colors"
-                                >
-                                  {t}
-                                </button>
-                              ))}
-                            </div>
+                      {dedup.map(([catName, list], idx) => (
+                        <div key={`${catName}_${idx}`} className="flex flex-wrap gap-1.5 min-w-0 items-center">
+                          <span className="text-[11px] text-white/40 shrink-0 pr-1 min-w-[3.5rem]">{catName}</span>
+                          <div className="flex flex-wrap gap-1.5 min-w-0">
+                            {list.map((t) => (
+                              <button
+                                key={`${catName}:${t}`}
+                                type="button"
+                                onClick={() => onPickTag?.(t)}
+                                title={`「${catName}」类 · 筛选「${t}」全部影片`}
+                                className="px-2 py-0.5 rounded-md bg-brand/12 ring-1 ring-brand/20 text-brand text-xs hover:bg-brand/25 hover:ring-brand/40 transition-colors"
+                              >
+                                {t}
+                              </button>
+                            ))}
                           </div>
-                        ) : null
-                      )}
+                        </div>
+                      ))}
                     </div>
                   )
                 }
