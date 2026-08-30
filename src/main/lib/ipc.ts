@@ -19,7 +19,7 @@ import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
 import { probeVideo, probeImage } from './ffprobe'
 import { previewRenames, applyRenames } from './rename'
-import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource } from '../../shared/types'
+import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource, type TechInfo } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
 import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
@@ -1183,6 +1183,46 @@ export function registerIpc(): void {
     const info = await probeVideo(v.path, settings)
     if (!info) return null
     return repo.updateVideo(id, { techInfo: info })
+  })
+
+  // v2.3.7 批量补齐时长：对当前库所有缺时长视频 ffprobe 读时长写 techInfo（复用 probeVideo）
+  ipcMain.handle(IPC.libraryBatchProbe, async (_e, libraryId: string) => {
+    if (!isSafeId(libraryId)) throw new Error('非法库 id')
+    const settings = await repo.getSettings()
+    const videos = await repo.listVideos({ libraryId })
+    const needProbe = videos.filter((v) => !v.techInfo?.durationSec && !v.durationSec)
+    const changes: repo.VideoChange[] = []
+    const applyTech = (v: Video, info: TechInfo) => {
+      const existing = changes.find((c) => c.type === 'update' && c.video.id === v.id)
+      if (existing && existing.type === 'update') {
+        existing.video = { ...existing.video, techInfo: info }
+      } else {
+        changes.push({ type: 'update', video: { ...v, techInfo: info } })
+      }
+    }
+    let ok = 0
+    let failed = 0
+    const conc = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
+    let idx = 0
+    const worker = async () => {
+      while (idx < needProbe.length) {
+        const v = needProbe[idx++]
+        try {
+          const info = await probeVideo(v.path, settings)
+          if (info?.durationSec) {
+            applyTech(v, info)
+            ok++
+          } else {
+            failed++
+          }
+        } catch {
+          failed++
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(conc, needProbe.length) }, () => worker()))
+    if (changes.length > 0) await repo.applyVideoChanges(changes)
+    return { ok, failed, skipped: videos.length - needProbe.length }
   })
 
   // ---------- 应用信息 ----------

@@ -1274,6 +1274,27 @@ export default function App() {
     }
   }, [libraryId, runReconcile])
 
+  // v2.3.7 批量补齐时长：对当前库所有缺时长视频 ffprobe 读时长写 techInfo
+  const handleBatchProbe = useCallback(async () => {
+    if (!libraryId) return
+    setScanning(true)
+    setProgress(null)
+    try {
+      const res = await api.libraryBatchProbe(libraryId)
+      toast({
+        text: `补时长完成：成功 ${res.ok} 部 / 失败 ${res.failed} 部 / 跳过 ${res.skipped} 部`,
+        tone: res.failed > 0 ? 'warn' : 'ok',
+        duration: 6000
+      })
+      await runReconcile(libraryId)
+    } catch (e) {
+      toast({ text: `补时长失败：${(e as Error)?.message ?? e}`, tone: 'err' })
+    } finally {
+      setTimeout(() => setProgress(null), 1000)
+      setScanning(false)
+    }
+  }, [libraryId, runReconcile])
+
   const handlePreviewRenames = useCallback(async () => {
     if (!libraryId) return []
     return api.libraryPreviewRenames(libraryId)
@@ -1585,6 +1606,7 @@ export default function App() {
         libraryName={currentLibrary?.name}
         onScan={handleScan}
         onBatchJavdb={handleBatchJavdb}
+        onBatchProbe={handleBatchProbe}
       />
 
       <div className="flex-1 flex min-h-0">

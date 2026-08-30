@@ -31,6 +31,8 @@ export const IPC = {
   videoSetPreviewAsCover: 'video:setPreviewAsCover',
   // ffprobe 读取视频技术参数
   videoProbe: 'video:probe',
+  // v2.3.7 批量补齐视频时长：对当前库所有缺时长视频 ffprobe 读取时长写 techInfo
+  libraryBatchProbe: 'library:batchProbe',
   // 分享：扫描视频文件夹的 .torrent 并转磁链
   videoShareTorrents: 'video:shareTorrents',
   // 从磁盘删除视频文件（按需连带删除同目录种子文件夹）

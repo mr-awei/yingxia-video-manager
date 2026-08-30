@@ -14,12 +14,14 @@ interface Props {
   onScan: () => void
   /** 批量补齐当前库 JavDB 信息；force=true 时忽略缓存逐部重抓 */
   onBatchJavdb: (force: boolean) => void
+  /** v2.3.7 批量补时长：对当前库所有缺时长的视频 ffprobe 读取时长写 techInfo */
+  onBatchProbe: () => void
 }
 
 export default function Toolbar(props: Props) {
   const {
     search, onSearch, onHome, onAddLibrary, privacy, onTogglePrivacy,
-    libraryName, onScan, onBatchJavdb
+    libraryName, onScan, onBatchJavdb, onBatchProbe
   } = props
   const [batchMenuOpen, setBatchMenuOpen] = useState(false)
 
@@ -106,6 +108,16 @@ export default function Toolbar(props: Props) {
                   <div>
                     <div className="font-medium">强制重新获取全部信息</div>
                     <div className="text-[11px] text-white/45 leading-tight">忽略缓存，逐部重新抓取所有影片信息</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 hover:bg-ink-700 text-white/90 flex items-start gap-2 border-t border-white/5"
+                  onClick={() => { setBatchMenuOpen(false); onBatchProbe() }}
+                >
+                  <Icon name="clock" size={14} className="text-sky-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-medium">补齐视频时长</div>
+                    <div className="text-[11px] text-white/45 leading-tight">ffprobe 读取当前库所有视频时长（写 techInfo）</div>
                   </div>
                 </button>
               </div>

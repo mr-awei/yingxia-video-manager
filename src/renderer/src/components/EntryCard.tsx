@@ -289,25 +289,27 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
           </div>
         ) : null}
 
+        {/* 时长角标（右下角悬浮，位于底部信息条上方避免重叠） */}
+        {entry.video?.durationSec ?? entry.video?.techInfo?.durationSec ? (
+          <span className="absolute bottom-9 right-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-white text-[10px] font-semibold tabular-nums z-[5]">
+            {formatDuration((entry.video?.durationSec ?? entry.video?.techInfo?.durationSec)!)}
+          </span>
+        ) : null}
+
         {/* 底部名字条 + 评分 */}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-2 pb-1.5 pt-8">
           <div className="flex items-end justify-between gap-1.5 min-w-0">
             <div className="card-title text-[13px] font-medium text-white truncate leading-tight min-w-0 flex-1">
               {entry.code}
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {entry.video?.durationSec ?? entry.video?.techInfo?.durationSec ? (
-                <span className="card-title text-[10px] text-white/70 tabular-nums leading-none">{formatDuration((entry.video?.durationSec ?? entry.video?.techInfo?.durationSec)!)}</span>
-              ) : null}
-              {score != null ? (
-                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm ring-1 ring-white/10">
-                  <Icon name="star" size={10} className="text-brand fill-brand" />
-                  <span className="card-title text-[11px] font-bold text-white tabular-nums leading-none">
-                    {score.toFixed(2)}
-                  </span>
+            {score != null ? (
+              <span className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm ring-1 ring-white/10">
+                <Icon name="star" size={10} className="text-brand fill-brand" />
+                <span className="card-title text-[11px] font-bold text-white tabular-nums leading-none">
+                  {score.toFixed(2)}
                 </span>
-              ) : null}
-            </div>
+              </span>
+            ) : null}
           </div>
         </div>
 

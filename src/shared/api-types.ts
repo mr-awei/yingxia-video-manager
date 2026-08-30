@@ -123,6 +123,8 @@ export interface AppApi {
   videoFetchJavdbDetail(id: string): Promise<FetchDetailResult>
   /** 用 ffprobe 读取视频技术参数（分辨率/编码/码率/帧率/时长），并缓存到视频 */
   videoProbe(id: string): Promise<Video | null>
+  /** v2.3.7 批量补齐当前库视频时长（ffprobe 读时长写 techInfo），返回处理统计 */
+  libraryBatchProbe(libraryId: string): Promise<{ ok: number; failed: number; skipped: number }>
   /** 预览：库内可安全改名的文件（清理文件名广告） */
   libraryPreviewRenames(libraryId: string): Promise<RenamePreviewItem[]>
   /** 执行改名，返回成功数与失败列表 */
