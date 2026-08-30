@@ -229,6 +229,7 @@ function spawnWithTimeout(
 /** 单次截帧：在指定秒数处截取一帧（带超时 + 消费 stderr） */
 
 async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string, settings: Settings): Promise<boolean> {
+  void settings // 预留：未来 ffmpeg 参数（如 preset / 质量）可从 settings 读取
   const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
   void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} args=${JSON.stringify(args)}`)
   const r = await spawnWithTimeout(exe, args, FRAME_TIMEOUT_MS, 'spawnFrameAt')
