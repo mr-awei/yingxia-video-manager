@@ -1990,10 +1990,10 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
     }
   }
   return (
-    <div className="fixed right-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast"
-         style={{ bottom: 'calc(1.5rem + 310px)' }}
-         title="抓取过程日志（Toast 堆叠区上方）"
-    >
+    // 抓取过程浮层：移到左下角（left-4 bottom-4），与右下角 Toast 系统通知区左右分流。
+    // 详情/批量补齐时两边同时出现互不遮挡、视觉更平衡；左边刚好是侧栏导航，
+    // 浮层高度 max-h-300 ≈ 侧栏导航下方的空白区，不挡任何主内容。
+    <div className="fixed bottom-4 left-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast">
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
         <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
