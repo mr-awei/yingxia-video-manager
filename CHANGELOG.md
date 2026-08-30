@@ -1,5 +1,19 @@
 # 更新日志（Changelog）
 
+## v2.3.13（2026-08-31）
+
+**代理覆盖全云端 API + 隐私锁删除密码校验 + 数据源介绍卡 + 设置页跳转修复 + 批量抓取/启动重扫文案升级**
+
+- **代理覆盖 Chromium 网络栈（P0）**：`cacheRemoteImage`（JavDB 批量抓取封面）和渲染进程图片请求走的是 Chromium `net.fetch` / `<img>`，之前只给 Node.js `fetch` 配了 undici Dispatcher，Chromium 那条路完全裸奔——代理开了但 JavDB/JavBus/Javinfo/Javapi 四个云端 API 的远程抓图还是直连被墙。新增 `applyProxyToSession()` 调 `session.defaultSession.setProxy()`，在 `applyRuntimeSettings` 里与 undici dispatcher 同步调用；HTTP/HTTPS/SOCKS5 全部映射过去，auth 信息一并带上。
+- **Javapi 代理也覆盖**：之前 Javapi 单独走了 `getDispatcher(settings)`，修掉后统一走 `applyProxyToSession`。
+- **隐私锁删除加密码校验**：新增 IPC `lockDelete`，清除锁前必须校验当前密码（SHA-256(salt + pwd)），防止误点「清除锁」直接解锁，也防止别人操作 settings 绕过。
+- **设置页不再自动跳回第一页**：`SettingsModal` 的 draft 初始化链路 + useEffect 依赖数组修复，打开弹窗保持上次的 tab/卡片位置。
+- **批量抓取设置升级为对所有云端 API 生效**：原来的 UI 文案只写 JavDB，实际已经覆盖五个源，改了文案避免用户误解。
+- **代理设置升级为对所有云端 API 生效**：同上。
+- **启动时自动重扫改为 Excel 驱动**：原来 UI 文案模糊，实际 autoRescan 和 scanOnStartup 已经走 `libraryReconcile`（Excel 驱动的对账流程），改了文案让用户知道重扫用的是「片单 Excel」而不是全盘扫。
+- **五个数据源各加一段介绍**：设置页「云端 API」tab 的 SegmentedControl 切换时条件渲染对应数据源的简介。
+- **卸载逻辑加固**：`appUninstall` 的 spawn 加了 `detached` + `env: {...process.env}` + shell 显式 false，卸载程序等待应用退出后才继续；主进程 spawn 后 500ms 主动 `app.quit()`，避免 NSIS 静默卸载因为主进程还活着而卡住。
+
 ## v2.3.12（2026-08-30）
 
 **合并作者 v2.2.14 修复集 + 朋友 v2.3.3~v2.3.11 功能集，保留双方最优解**

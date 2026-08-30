@@ -1,5 +1,6 @@
 import { Agent, EnvHttpProxyAgent, ProxyAgent, type Dispatcher } from 'undici'
 import { SocksClient } from 'socks'
+import { session } from 'electron'
 import type { ProxyMode, Settings } from '../../shared/types'
 
 const UA =
@@ -81,5 +82,44 @@ export async function testProxyConnectivity(
     return { ok: false, error: String(err instanceof Error ? err.message : err).slice(0, 200) }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * 把代理配置同步到 Electron Chromium session —— 这样 net.fetch（主进程）和渲染进程
+ * 的图片请求也会走代理，与 Node.js fetch + undici dispatcher 保持一致。
+ * 必须在 app.whenReady() 之后调用（session.defaultSession 此时才可用）。
+ */
+export function applyProxyToSession(settings: Settings): void {
+  try {
+    const mode: ProxyMode = settings.proxyMode ?? 'none'
+    if (mode === 'none') {
+      session.defaultSession.setProxy({ mode: 'direct' })
+      return
+    }
+    if (mode === 'system') {
+      session.defaultSession.setProxy({ mode: 'system' })
+      return
+    }
+    if (mode === 'http' || mode === 'https') {
+      const proto = mode === 'https' ? 'https' : 'http'
+      let auth = ''
+      if (settings.proxyUser) {
+        auth = `${encodeURIComponent(settings.proxyUser)}:${encodeURIComponent(settings.proxyPass)}@`
+      }
+      const url = `${proto}://${auth}${settings.proxyHost}:${settings.proxyPort}`
+      session.defaultSession.setProxy({ proxyRules: url })
+      return
+    }
+    // socks4 / socks5：Chromium 只支持 socks5，把 socks4 也映射过去
+    const socksProto = mode === 'socks5' ? 'socks5' : 'socks5'
+    let auth = ''
+    if (settings.proxyUser) {
+      auth = `${encodeURIComponent(settings.proxyUser)}:${encodeURIComponent(settings.proxyPass)}@`
+    }
+    const url = `${socksProto}://${auth}${settings.proxyHost}:${settings.proxyPort}`
+    session.defaultSession.setProxy({ proxyRules: url })
+  } catch {
+    /* session 可能尚未 ready，静默跳过；下次 applyRuntimeSettings 会再试 */
   }
 }

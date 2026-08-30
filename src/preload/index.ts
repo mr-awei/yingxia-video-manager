@@ -35,7 +35,9 @@ const api: AppApi = {
   ffmpegStatus: () => ipcRenderer.invoke(IPC.ffmpegStatus),
   appUninstall: () => ipcRenderer.invoke(IPC.appUninstall),
   onJavdbFetched: (cb) => {
-    ipcRenderer.on(IPC.javdbFetched, (_e, payload) => cb(payload))
+    const handler = (_e: Electron.IpcRendererEvent, payload: unknown) => cb(payload as never)
+    ipcRenderer.on(IPC.javdbFetched, handler)
+    return () => ipcRenderer.removeListener(IPC.javdbFetched, handler)
   },
   shellRevealInFolder: (p) => ipcRenderer.invoke(IPC.shellRevealInFolder, p),
   settingsGet: () => ipcRenderer.invoke(IPC.settingsGet),
@@ -47,6 +49,7 @@ const api: AppApi = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   lockSet: (password) => ipcRenderer.invoke(IPC.lockSet, password),
   lockVerify: (password) => ipcRenderer.invoke(IPC.lockVerify, password),
+  lockDelete: (password) => ipcRenderer.invoke(IPC.lockDelete, password),
   appQuit: () => ipcRenderer.invoke(IPC.appQuit),
   updateCheck: () => ipcRenderer.invoke(IPC.updateCheck),
   videoGeneratePreviews: (id) => ipcRenderer.invoke(IPC.videoGeneratePreviews, id),

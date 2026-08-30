@@ -71,6 +71,7 @@ export const IPC = {
   // 隐私锁：设置/清除密码、校验密码、退出应用
   lockSet: 'lock:set',
   lockVerify: 'lock:verify',
+  lockDelete: 'lock:delete',
   appQuit: 'app:quit',
   // 检查更新：按所选源（GitHub / Gitee）查询最新版本
   updateCheck: 'update:check',

@@ -152,7 +152,7 @@ export interface AppApi {
   /** 卸载应用（危险操作）：调用 NSIS 卸载程序，静默卸载 */
   appUninstall(): Promise<{ ok: boolean; error?: string }>
   /** 监听：批量抓取时每抓到一张实时回调 {videoId, posterPath} */
-  onJavdbFetched(cb: (p: { videoId: string; posterPath: string }) => void): void
+  onJavdbFetched(cb: (p: { videoId: string; posterPath: string }) => void): () => void
   /** 在系统文件管理器中显示并选中该文件（用于改名） */
   shellRevealInFolder(path: string): Promise<void>
   settingsGet(): Promise<Settings>
@@ -166,10 +166,12 @@ export interface AppApi {
   appInfo(): Promise<AppInfo>
   /** 用默认浏览器打开外部链接（官网 / 仓库 / issue） */
   openExternal(url: string): Promise<void>
-  /** 设置 / 修改 / 清除隐私锁密码（password 为空表示清除锁） */
+  /** 设置 / 修改隐私锁密码 */
   lockSet(password: string): Promise<void>
   /** 校验隐私锁密码，返回是否正确 */
   lockVerify(password: string): Promise<boolean>
+  /** 清除隐私锁（需校验当前密码，密码错误返回 { ok:false, error }） */
+  lockDelete(password: string): Promise<{ ok: boolean; error?: string }>
   /** 退出应用（密码错误超次 / 锁界面退出用） */
   appQuit(): Promise<void>
   /** 按所选源（GitHub / Gitee）检查更新，返回最新版本与发布链接 */

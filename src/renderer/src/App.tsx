@@ -373,7 +373,7 @@ export default function App() {
 
   // JavDB 批量抓取：每抓到一张实时刷新该卡片的封面
   useEffect(() => {
-    api.onJavdbFetched(
+    return api.onJavdbFetched(
       ({ videoId, posterPath, posterSource }: { videoId: string; posterPath: string; posterSource?: string }) => {
         setReconcile((prev) =>
           prev

@@ -1011,9 +1011,21 @@ export function registerIpc(): void {
         const p = path.join(dir, name)
         try {
           await fs.access(p)
-          // 静默卸载（NSIS /S 参数），卸载程序自己会关闭应用
-          const child = spawn(p, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true })
+          // 静默卸载（NSIS /S 参数），卸载程序会等待应用退出后继续
+          // 关键：必须 detached + 继承环境 + 脱离进程组，否则卸载程序会随主进程一起被杀
+          const child = spawn(p, ['/S'], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+            shell: false,
+            env: { ...process.env }
+          })
           child.unref()
+          // 给卸载程序 500ms 启动时间，然后主动退出应用
+          // 卸载程序会检测到应用退出后继续完成卸载
+          setTimeout(() => {
+            app.quit()
+          }, 500)
           return { ok: true }
         } catch {
           /* 继续找下一个 */
@@ -1463,6 +1475,16 @@ export function registerIpc(): void {
     if (!s.lockHash || !s.lockSalt) return false
     const hash = createHash('sha256').update(s.lockSalt + password).digest('hex')
     return hash === s.lockHash
+  })
+
+  // v2.3.12：清除锁前必须校验当前密码，防止误操作或他人直接清掉锁
+  ipcMain.handle(IPC.lockDelete, async (_e, password: string) => {
+    const s = await repo.getSettings()
+    if (!s.lockHash || !s.lockSalt) return { ok: true } // 本来就没锁
+    const hash = createHash('sha256').update(s.lockSalt + password).digest('hex')
+    if (hash !== s.lockHash) return { ok: false, error: '密码错误' }
+    await repo.saveSettings({ lockHash: undefined, lockSalt: undefined })
+    return { ok: true }
   })
 
   ipcMain.handle(IPC.appQuit, () => {

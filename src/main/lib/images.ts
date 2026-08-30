@@ -75,39 +75,26 @@ async function generateFrame(video: Video, settings: Settings): Promise<string |
   // n=100 覆盖常见短片；超长片（>2h）按比例放大 n 但封顶 200 避免太慢
   const dur = video.durationSec ?? 0
   const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
+  const baseArgs = [
+    '-y',
+    '-i', video.path,
+    '-vf', `thumbnail=n=${n},scale=480:-1`,
+    '-frames:v', '1',
+    '-q:v', '2',
+    out
+  ]
   return new Promise<string | null>((resolve) => {
-    const p = spawn(
-      exe,
-      [
-        '-y',
-        '-i', video.path,
-        '-vf', `thumbnail=n=${n},scale=480:-1`,
-        '-frames:v', '1',
-        '-q:v', '2',
-        out
-      ],
-      { windowsHide: true }
-    )
+    const p = spawn(exe, baseArgs, { windowsHide: true })
     // 超时兜底：thumbnail 全片分析较慢，30s 未结束强制 kill
     const timer = setTimeout(() => {
-      try {
-        p.kill('SIGKILL')
-      } catch {}
+      try { p.kill('SIGKILL') } catch {}
       resolve(null)
     }, FRAME_TIMEOUT_MS)
-    p.on('error', () => {
-      clearTimeout(timer)
-      resolve(null)
-    })
+    p.on('error', () => { clearTimeout(timer); resolve(null) })
     p.on('close', async (code) => {
       clearTimeout(timer)
       if (code === 0) {
-        try {
-          await fs.access(out)
-          resolve(out)
-        } catch {
-          resolve(null)
-        }
+        try { await fs.access(out); resolve(out) } catch { resolve(null) }
       } else resolve(null)
     })
   })
@@ -241,9 +228,9 @@ function spawnWithTimeout(
 
 /** 单次截帧：在指定秒数处截取一帧（带超时 + 消费 stderr） */
 
-async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
+async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string, settings: Settings): Promise<boolean> {
   const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
-  void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
+  void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} args=${JSON.stringify(args)}`)
   const r = await spawnWithTimeout(exe, args, FRAME_TIMEOUT_MS, 'spawnFrameAt')
   if (!r.ok) {
     void frameLog(`[spawnFrameAt] failed code=${r.code} err=${r.err}`)
@@ -315,7 +302,7 @@ export async function generatePreviewSet(
   }
   const coverOk = coverRes.ok
   const previewsOk = await mapLimit(previewItems, 4, (it) =>
-    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
+    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i), settings)
   )
   const previewPaths = previewsOk
     .map((ok, i) => (ok ? previewPathFor(video, i) : null))

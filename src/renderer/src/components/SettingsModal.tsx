@@ -99,13 +99,43 @@ function normalizeSourceOrder(order?: string[]): Array<'javapi' | 'javinfo' | 'j
   return order as Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
 }
 
-/** 数据源展示信息（标签 + 三维度评估） */
-const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string }> = {
-  javapi: { label: 'Javapi', tier: '★★★★★ 信息最全', risk: '无风控（本地自托管）', cost: '免费' },
-  javinfo: { label: 'Javinfo', tier: '★★★★ 全面', risk: '★☆☆ 低（聚合 API）', cost: '免费额度 + 按量' },
-  javdb: { label: 'JavDB', tier: '★★★★ 全面', risk: '★★★ 中（Cloudflare 偶发 403）', cost: '免费' },
-  javbus: { label: 'JavBus', tier: '★★★ 中', risk: '★★☆ 中（Cloudflare）', cost: '免费' },
-  javlibrary: { label: 'JavLibrary', tier: '★★☆ 偏简', risk: '★☆☆ 低（但偶发 503）', cost: '免费' }
+/** 数据源展示信息（标签 + 三维度评估 + 介绍） */
+const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string; desc: string }> = {
+  javapi: {
+    label: 'Javapi',
+    tier: '★★★★★ 信息最全',
+    risk: '无风控（本地自托管）',
+    cost: '免费',
+    desc: '开源自托管的 JavDB API 聚合服务，在本地跑一个 Go 服务即可使用。数据来自 JavDB + JavBus + JavLibrary + JavInfo 等多个上游，合并后返回最完整的番号详情。纯本地请求、无 Cloudflare/IP 封禁，推荐作为首选数据源。'
+  },
+  javinfo: {
+    label: 'Javinfo',
+    tier: '★★★★ 全面',
+    risk: '★☆☆ 低（聚合 API）',
+    cost: '免费额度 + 按量',
+    desc: 'javinfo.dev 提供的聚合 API，后端对接多个 Jav 站点统一返回结构化数据。优势是免爬虫、不走 Cloudflare 反爬，稳定性极佳。注册后赠送 1000+ 次免费查询额度，之后按量计费。'
+  },
+  javdb: {
+    label: 'JavDB',
+    tier: '★★★★ 全面',
+    risk: '★★★ 中（Cloudflare 偶发 403）',
+    cost: '免费',
+    desc: 'javdb.com 是最主流的番号数据库，内容全、更新快。缺点是 Cloudflare 防护较强，高并发或短时间频繁访问会触发 HTTP 403。建议配合合理的抓取间隔使用，或通过代理访问。'
+  },
+  javbus: {
+    label: 'JavBus',
+    tier: '★★★ 中',
+    risk: '★★☆ 中（Cloudflare）',
+    cost: '免费',
+    desc: 'javbus.com 覆盖面仅次于 JavDB，番号搜索和详情页结构稳定。同样有 Cloudflare 防护，但触发频率略低于 JavDB。在智能降级链路中排在 JavDB 之后、JavLibrary 之前。'
+  },
+  javlibrary: {
+    label: 'JavLibrary',
+    tier: '★★☆ 偏简',
+    risk: '★☆☆ 低（但偶发 503）',
+    cost: '免费',
+    desc: 'javlibrary.com 老牌番号库，页面简洁、反爬宽松。但数据量偏少（部分冷门番号缺失），且偶尔出现 503 维护。适合作为兜底降级源，在其他源都失败时补充抓取。'
+  }
 }
 
 /**
@@ -464,7 +494,8 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
         .catch(() => setFfmpegStatus({ source: 'missing' }))
         .finally(() => setFfmpegChecking(false))
     }
-  }, [open, settings])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
   if (!open) return null
   const inputCls =
     'w-full bg-ink-900/50 text-white text-sm rounded-lg px-3 py-2 outline-none border border-white/10 focus:border-brand/60 focus:ring-1 focus:ring-brand/40 transition-colors placeholder:text-white/25'
@@ -694,7 +725,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   <FieldRow label="开机自启" hint="随系统启动自动运行影匣">
                     <Toggle on={!!draft.launchAtLogin} onChange={(v) => setDraft({ ...draft, launchAtLogin: v })} />
                   </FieldRow>
-                  <FieldRow label="启动时自动对账" hint="打开应用后自动扫描当前库">
+                  <FieldRow label="启动时自动对账" hint="打开应用后自动扫描当前库（Excel 驱动）">
                     <Toggle on={!!draft.scanOnStartup} onChange={(v) => setDraft({ ...draft, scanOnStartup: v })} />
                   </FieldRow>
                   <FieldRow label="最小化到托盘" hint="关闭窗口时最小化到系统托盘，不退出">
@@ -706,13 +737,13 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 网络 ===== */}
             {activeCategory === 'network' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="globe" title="网络" description="代理、数据源与 JavDB 抓取参数" />
+                <SectionHeader icon="globe" title="网络" description="代理、数据源与云端 API 抓取参数" />
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="globe" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">代理设置</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-4">配置访问 JavDB / JavBus 时使用的网络代理</div>
+                  <div className="text-white/40 text-xs mb-4">对所有云端 API（JavDB / JavBus / JavLibrary / Javinfo）和封面下载统一生效；本地 Javapi 不走代理。</div>
                   <Field label="代理模式">
                     <Select
                       value={draft.proxyMode ?? 'none'}
@@ -826,6 +857,22 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     ]}
                     onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary' })}
                   />
+                  {/* 选中具体数据源时显示介绍；auto 模式不显示 */}
+                  {(draft.dataSource && draft.dataSource !== 'auto') ? (
+                    <div className="mt-3 rounded-lg border border-white/10 bg-white/3 p-3 animate-fadeIn">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-white/90 text-xs font-medium">
+                          {SOURCE_META[draft.dataSource].label}
+                        </span>
+                        <span className="text-[10px] text-white/50">
+                          {SOURCE_META[draft.dataSource].tier} · {SOURCE_META[draft.dataSource].risk} · {SOURCE_META[draft.dataSource].cost}
+                        </span>
+                      </div>
+                      <div className="text-white/60 text-[11.5px] leading-relaxed">
+                        {SOURCE_META[draft.dataSource].desc}
+                      </div>
+                    </div>
+                  ) : null}
                   {/* v2.2.6：自定义数据源采集顺序。auto 模式下生效，按这个顺序降级。
                       推荐顺序：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary
                       （任一源连续网络失败 3 部自动跳过；JavBus 连续失败 3 部直接停止整批）
@@ -945,9 +992,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="download" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">JavDB 批量抓取</div>
+                    <div className="text-white/90 text-sm font-medium">云端 API 批量抓取</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">并发越高抓取越快，但更易触发 javdb 风控；间隔用于限速兜底。</div>
+                  <div className="text-white/40 text-xs mb-3">并发越高抓取越快，但更易触发各数据源风控；间隔用于限速兜底。对 JavDB / JavBus / JavLibrary / Javinfo / Javapi 全部生效。</div>
                   <div className="flex gap-3">
                     <div className="flex-1">
                       <label className="block text-white/60 text-xs mb-1.5">并发数（1-8）</label>
@@ -1061,11 +1108,11 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       {settings.lockHash ? '已上锁' : '未上锁'}
                     </span>
                   </FieldRow>
-                  <Field label="密码" hint={settings.lockHash ? '输入新密码即修改；留空则解除锁' : '设置你的锁屏密码'}>
+                  <Field label="新密码" hint={settings.lockHash ? '输入新密码即修改；留空则显示「解除锁」按钮' : '设置你的锁屏密码'}>
                     <input
                       type="password"
                       className={inputCls}
-                      placeholder="输入密码"
+                      placeholder={settings.lockHash ? '输入新密码（留空不改密码）' : '输入密码'}
                       value={lockPwd}
                       onChange={(e) => {
                         setLockPwd(e.target.value)
@@ -1086,18 +1133,43 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   ) : null}
                   <div className="flex gap-2">
                     {settings.lockHash ? (
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors cursor-pointer"
-                        onClick={async () => {
-                          await api.lockSet(lockPwd)
-                          setLockPwd('')
-                          setLockMsg(lockPwd ? '已修改密码' : '已解除锁')
-                          onSaved?.()
-                        }}
-                      >
-                        {lockPwd ? '修改密码' : '解除锁'}
-                      </button>
+                      <>
+                        {lockPwd ? (
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm transition-colors cursor-pointer"
+                            onClick={async () => {
+                              await api.lockSet(lockPwd)
+                              setLockPwd('')
+                              setLockMsg('已修改密码')
+                              onSaved?.()
+                            }}
+                          >
+                            修改密码
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 text-sm ring-1 ring-red-500/30 transition-colors cursor-pointer"
+                          onClick={async () => {
+                            const current = prompt('请输入当前密码以解除隐私锁：')
+                            if (current === null) return
+                            if (!current) {
+                              setLockMsg('请输入当前密码')
+                              return
+                            }
+                            const r = await api.lockDelete(current)
+                            if (r.ok) {
+                              setLockMsg('已解除锁')
+                              onSaved?.()
+                            } else {
+                              setLockMsg(r.error ?? '密码错误，解除失败')
+                            }
+                          }}
+                        >
+                          解除锁
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -1128,7 +1200,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name="refresh" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">扫描</div>
                   </div>
-                  <FieldRow label="启动时自动重扫" hint="每次打开软件自动对账所有媒体库（MD 驱动）。">
+                  <FieldRow label="启动时自动重扫" hint="每次打开软件自动对账所有媒体库（Excel 驱动）。">
                     <Toggle on={!!draft.autoRescan} onChange={(v) => setDraft({ ...draft, autoRescan: v })} />
                   </FieldRow>
                   <FieldRow label="扫描并发数" hint="扫描库时 ffprobe 探测 / 截帧的并行任务数，越大越快。">
