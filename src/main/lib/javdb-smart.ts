@@ -125,11 +125,17 @@ export interface SmartFetchEvent {
 }
 
 export async function fetchDetailSmart(
-  code: string,
+  rawInput: string,
   settings: Settings,
   state: SmartFetchState,
   onEvent?: (e: SmartFetchEvent) => void
 ): Promise<MovieDetailResult> {
+  // v2.2.14：入口统一清洗搜索番号 — 之前三处调用方（ipc 单点/批量补齐、reconcile 兜底）
+  // 都直接把 v.title / folderName / fileName 原样当 code 传，遇到 SONE-560_1 / 【中文字幕】SONE-280
+  // 这种脏字符串时，JavDB/JavBus 搜不到。fetchPosterSmart 已经做对了，这里在 fetchDetailSmart
+  // 入口统一 extractCode → extractBaseCode，所有调用方自动受益。
+  const rawCode = extractCode(rawInput)
+  const code = extractBaseCode(rawCode) || rawCode || rawInput.trim()
   const mode = settings.dataSource ?? 'auto'
   const errors: string[] = []
   const onError = (m: string) => errors.push(m)

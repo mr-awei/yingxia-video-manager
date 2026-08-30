@@ -774,10 +774,11 @@ export function registerIpc(): void {
           d.parseVer !== 2 ||
           (d.cover ? /^https?:\/\//.test(d.cover) : false) ||
           (d.samples ? d.samples.some((s) => /^https?:\/\//.test(s)) : false)
-        const fetchCode = v.title || v.folderName || v.fileName || ''
-        const base = extractBaseCode(fetchCode)
+        const fetchCodeRaw = v.title || v.folderName || v.fileName || ''
+        const raw = extractCode(fetchCodeRaw)
+        const base = extractBaseCode(raw) || raw
         // 同系列已在本次抓取过 → 直接复用，不重复请求
-        const seriesHit = base && base !== fetchCode.toUpperCase() ? seriesCache.get(base) : undefined
+        const seriesHit = base && base !== raw.toUpperCase() ? seriesCache.get(base) : undefined
         if (seriesHit) {
           applyPatch(v, { javdbDetail: seriesHit, ...backfillFromDetail(v, seriesHit) })
           ok++
@@ -787,7 +788,7 @@ export function registerIpc(): void {
           madeRequest = true
           // 智能抓取：JavDB 连续失败自动切 JavBus；JavBus 也连续失败自动停止
           // v2.2.10：onEvent 把每次源尝试推给 renderer（UI 实时显示"javdb 失败 → 降级 javbus"）
-          const mr = await fetchDetailSmart(fetchCode, settings, smartState, (e) => {
+          const mr = await fetchDetailSmart(fetchCodeRaw, settings, smartState, (e) => {
             emitProgress({ libraryId, total: videos.length, done, current: v.title, fetchEvent: e })
           })
           if (mr.detail) {
