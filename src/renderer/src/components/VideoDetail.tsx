@@ -199,6 +199,16 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const closeTimer = useRef<number | null>(null)
   const openTimer = useRef<number | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  /** 当前 zoom 浮层显示的图片属于哪一组, 用于滚轮切换 */
+  const zoomGroup = useRef<string[]>([])   // 当前轮播的图片 URL 组
+  const zoomGroupKey = useRef<'samples' | 'preview' | null>(null)
+  const zoomIndex = useRef(0)
+  /** 右键关闭后短暂禁用 hover 自动打开 (防止鼠标还停在缩略图上 scheduleOpen 又开出来) */
+  const hoverDisabledUntil = useRef(0)
+  const disableHover = () => {
+    hoverDisabledUntil.current = performance.now() + 2000
+  }
+  const isHoverDisabled = () => performance.now() < hoverDisabledUntil.current
   const cancelClose = () => {
     if (closeTimer.current) {
       clearTimeout(closeTimer.current)
@@ -209,11 +219,19 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     cancelClose()
     closeTimer.current = window.setTimeout(() => setZoomUrl(null), 180)
   }
-  /** 延迟打开：hover 停留 350ms 稳定后才开，避免划过误触 */
+  /** 记录当前 hover/click 打开的图片属于哪一组, 用于滚轮切换 */
+  const setZoomGroup = (group: string[], key: 'samples' | 'preview', currentUrl: string) => {
+    zoomGroup.current = group
+    zoomGroupKey.current = key
+    zoomIndex.current = Math.max(0, group.findIndex(u => u === currentUrl))
+  }
+  /** 延迟打开：hover 停留 350ms 稳定后才开，避免划过误触；右键关闭后 2s 内禁用 */
   const scheduleOpen = (url: string) => {
+    if (isHoverDisabled()) return
     if (openTimer.current) clearTimeout(openTimer.current)
     openTimer.current = window.setTimeout(() => {
       openTimer.current = null
+      if (isHoverDisabled()) return
       setZoomUrl(url)
     }, 350)
   }
@@ -782,6 +800,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           const localOnly = all.filter(isLocal)
           const remoteOnly = all.filter(u => !isLocal(u))
           console.log('[VideoDetail 关键截图 debug]', { videoId: video.id, total: all.length, local: localOnly.length, remote: remoteOnly.length, source: d?.source })
+          // 本地图数组（滚轮切换也只在本地图上生效, 远程 URL 无法预览所以跳过）
+          const localGroup = all.filter(isLocal)
           return all.length > 0 ? (
             <div>
               <div className="text-white/80 font-medium mb-2">
@@ -792,7 +812,10 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   <div
                     key={`${url}_${i}`}
                     className={`aspect-video rounded-lg overflow-hidden bg-ink-800 ${isLocal(url) ? 'cursor-zoom-in' : 'opacity-30'}`}
-                    onMouseEnter={isLocal(url) ? () => { cancelClose(); scheduleOpen(url) } : undefined}
+                    onMouseEnter={isLocal(url) ? () => {
+                      setZoomGroup(localGroup, 'samples', url)
+                      cancelClose(); scheduleOpen(url)
+                    } : undefined}
                     onMouseLeave={isLocal(url) ? clearOpenTimer : undefined}
                   >
                     {isLocal(url) ? (
@@ -827,8 +850,16 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                 <div
                   key={url}
                   className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative group/preview"
-                  onClick={() => setZoomUrl(url)}
-                  title="点击放大预览"
+                  title="hover 查看大图 · 滚轮切换 · 右键关闭"
+                  onMouseEnter={() => {
+                    setZoomGroup(localVideo.previewPaths, 'preview', url)
+                    cancelClose(); scheduleOpen(url)
+                  }}
+                  onMouseLeave={clearOpenTimer}
+                  onClick={() => {
+                    setZoomGroup(localVideo.previewPaths, 'preview', url)
+                    setZoomUrl(url)
+                  }}
                 >
                   <img
                     src={posterUrl(url) ?? ''}
@@ -901,7 +932,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         <div
           ref={overlayRef}
           data-zoom-overlay
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-sm p-6 cursor-zoom-out"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-sm p-6 cursor-zoom-out select-none"
           onMouseMove={(e) => {
             // 实时检测光标是否在图片内：不在（图片外灰色区域）就 scheduleClose
             // 在图片内就 cancelClose（保持大图）
@@ -919,15 +950,45 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           onMouseLeave={scheduleClose}
           onClick={(e) => {
             e.stopPropagation()
+            disableHover()            // 左键关闭也短暂禁用, 防止马上又开
             setZoomUrl(null)
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            disableHover()            // 右键关闭后 2s 内禁用 hover 自动打开
+            setZoomUrl(null)
+          }}
+          onWheel={(e) => {
+            e.preventDefault()
+            const grp = zoomGroup.current
+            if (!grp.length) return
+            let next = zoomIndex.current + (e.deltaY > 0 ? 1 : -1)
+            if (next < 0) next = grp.length - 1
+            if (next >= grp.length) next = 0
+            zoomIndex.current = next
+            cancelClose()
+            setZoomUrl(grp[next])
           }}
         >
           <img
             src={posterUrl(zoomUrl) ?? ''}
             alt="sample-zoom"
             onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              disableHover()
+              setZoomUrl(null)
+            }}
             className="max-w-[94vw] max-h-[94vh] object-contain rounded-lg shadow-2xl"
           />
+          {/* 右下角小提示: 当前位置 + 滚轮/右键 */}
+          {zoomGroup.current.length > 1 ? (
+            <div className="absolute bottom-3 right-4 text-[11px] text-white/50 bg-black/50 rounded-md px-2 py-1 pointer-events-none">
+              {zoomIndex.current + 1} / {zoomGroup.current.length} · 滚轮切换 · 右键关闭
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
