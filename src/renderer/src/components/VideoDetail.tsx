@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
+import { hasDocTags, primaryTags } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize, resolveEntryPoster } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
@@ -183,6 +184,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const [error, setError] = useState<string | null>(null)
   /** hover 样本图时显示原尺寸大图 */
   const [zoomUrl, setZoomUrl] = useState<string | null>(null)
+  /** 备用来源标签（backupTags）默认折叠为一行；点开才展开全部 */
+  const [showBackupTags, setShowBackupTags] = useState(false)
   /** ESC：放大图打开时先关放大图，否则关闭详情页（非组合键，用户要求保留） */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -593,24 +596,141 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               })()}
             </div>
 
-            {/* MD 标签（点击一键筛选该标签全部影片） */}
-            {video.tags && video.tags.length > 0 ? (
-              <MetaRow label="标签">
-                <div className="flex flex-wrap gap-1.5 min-w-0">
-                  {video.tags.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => onPickTag?.(t)}
-                      title={`筛选「${t}」全部影片`}
-                      className="px-2 py-0.5 rounded-md bg-brand/12 ring-1 ring-brand/20 text-brand text-xs hover:bg-brand/25 hover:ring-brand/40 transition-colors"
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </MetaRow>
-            ) : null}
+            {/* v2.2.13 文档标签分层：
+                有结构化 tagCategories → 按分类分组展示主标签；
+                无结构化但有文档平铺 tags → 退化一组展示；
+                无文档标签 + 有 backupTags → 直接把数据源 tags 作主标签展示（不在「备用」里折叠）。
+                按钮样式：文档主标签用 brand 色系；备用数据源标签（展开后）用 info 色系区分来源。 */}
+            {(() => {
+              const cats = localVideo.tagCategories
+              const primary = primaryTags({ tags: localVideo.tags, tagCategories: cats })
+              const backup = localVideo.backupTags ?? []
+              const hasDoc = hasDocTags({ tags: localVideo.tags, tagCategories: cats })
+              // 主标签节点：按分类分组 / 平铺（结构化 vs 退化）
+              const primaryNode = (() => {
+                if (cats && Object.keys(cats).length > 0) {
+                  return (
+                    <div className="space-y-1.5 min-w-0">
+                      {Object.entries(cats).map(([catName, list]) =>
+                        list?.length ? (
+                          <div key={catName} className="flex flex-wrap gap-1.5 min-w-0 items-center">
+                            <span className="text-[11px] text-white/40 shrink-0 pr-1 min-w-[3.5rem]">{catName}</span>
+                            <div className="flex flex-wrap gap-1.5 min-w-0">
+                              {list.map((t) => (
+                                <button
+                                  key={`${catName}:${t}`}
+                                  type="button"
+                                  onClick={() => onPickTag?.(t)}
+                                  title={`「${catName}」类 · 筛选「${t}」全部影片`}
+                                  className="px-2 py-0.5 rounded-md bg-brand/12 ring-1 ring-brand/20 text-brand text-xs hover:bg-brand/25 hover:ring-brand/40 transition-colors"
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  )
+                }
+                if (primary.length > 0) {
+                  return (
+                    <div className="flex flex-wrap gap-1.5 min-w-0">
+                      {primary.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => onPickTag?.(t)}
+                          title={`筛选「${t}」全部影片（文档平铺）`}
+                          className="px-2 py-0.5 rounded-md bg-brand/12 ring-1 ring-brand/20 text-brand text-xs hover:bg-brand/25 hover:ring-brand/40 transition-colors"
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                }
+                return null
+              })()
+
+              // 备用数据源标签节点：
+              //  - 有文档标签（即上面展示了主标签）→ 折叠为一行，点开才展开（用户要求的折叠备用展示）
+              //  - 无文档标签 → 不作为「备用」折叠，而作主标签直接展示（info 色系标识来源）
+              const backupNode = (() => {
+                if (!backup.length) return null
+                if (!hasDoc) {
+                  // 无文档：backupTags 就是主标签
+                  return (
+                    <div className="flex flex-wrap gap-1.5 min-w-0">
+                      {backup.map((t) => (
+                        <button
+                          key={`b:${t}`}
+                          type="button"
+                          onClick={() => onPickTag?.(t)}
+                          title={`筛选「${t}」全部影片（数据源 genres，无文档标签时作为主展示）`}
+                          className="px-2 py-0.5 rounded-md bg-sky-500/12 ring-1 ring-sky-400/20 text-sky-300 text-xs hover:bg-sky-500/25 hover:ring-sky-400/40 transition-colors"
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                }
+                // 有文档：折叠为一行（默认展示前 3 个 + 展开按钮）
+                const shown = showBackupTags ? backup : backup.slice(0, 3)
+                return (
+                  <div className="mt-0.5 min-w-0">
+                    <div className="flex flex-wrap gap-1.5 items-center min-w-0">
+                      <span className="text-[11px] text-white/35 shrink-0 pr-1 min-w-[3.5rem]">数据源</span>
+                      <div className="flex flex-wrap gap-1.5 min-w-0">
+                        {shown.map((t) => (
+                          <button
+                            key={`b:${t}`}
+                            type="button"
+                            onClick={() => onPickTag?.(t)}
+                            title={`筛选「${t}」全部影片（数据源 genres 备用）`}
+                            className="px-2 py-0.5 rounded-md bg-sky-500/10 ring-1 ring-sky-400/15 text-sky-300/80 text-[11px] hover:bg-sky-500/20 hover:ring-sky-400/35 transition-colors"
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      {backup.length > 3 && !showBackupTags ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowBackupTags(true)}
+                          className="text-[11px] text-white/45 hover:text-white/70 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors"
+                        >
+                          还有 {backup.length - 3} 个… · 展开
+                        </button>
+                      ) : showBackupTags ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowBackupTags(false)}
+                          className="text-[11px] text-white/45 hover:text-white/70 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors"
+                        >
+                          收起
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="text-[10px] text-white/30 mt-1">
+                      文档标签为权威分类；数据源 genres 折叠为备用展示，可筛选搜索。
+                    </div>
+                  </div>
+                )
+              })()
+
+              if (!primaryNode && !backupNode) return null
+              return (
+                <MetaRow label="标签">
+                  <div className="space-y-1.5 min-w-0">
+                    {primaryNode}
+                    {backupNode}
+                  </div>
+                </MetaRow>
+              )
+            })()}
 
             {loading ? (
               <div className="mt-4 text-white/40 text-xs">正在抓取 javdb 详情…</div>

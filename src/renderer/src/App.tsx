@@ -9,7 +9,7 @@ import type {
   Video,
   ViewMode
 } from '../../shared/types'
-import { DEFAULT_IMAGE_PRIORITY, DEFAULT_SETTINGS } from '../../shared/types'
+import { DEFAULT_IMAGE_PRIORITY, DEFAULT_SETTINGS, entryPrimaryTags, flattenAllTags, hasDocTags } from '../../shared/types'
 import { categorizeTag } from '../../shared/tagCategories'
 import { extractBaseCode } from '../../shared/code'
 import { api } from './lib/api'
@@ -442,13 +442,22 @@ export default function App() {
         if (qBase && qBase !== q && codeLower.includes(qBase)) return true
         if (e.title.toLowerCase().includes(q)) return true
         if ((e.description ?? '').toLowerCase().includes(q)) return true
-        if (e.tags.some((t) => t.toLowerCase().includes(q))) return true
+        // v2.2.13 标签分层：搜索扩展到「文档标签 + 备用数据源标签」，
+        // 保证用户按 genres 关键词也能命中（backupTags 折叠并不代表不可搜索）
+        const allTags = flattenAllTags({ tags: e.tags, tagCategories: e.tagCategories, backupTags: e.video?.backupTags })
+        if (allTags.some((t) => t.toLowerCase().includes(q))) return true
         return false
       })
     }
     if (selectedTags.size > 0) {
       list = list.filter((e) => {
-        for (const t of selectedTags) if (!e.tags.includes(t)) return false
+        // 有结构化标签时优先按结构化算「主标签」，无则回退平铺 tags；
+        // 筛选命中范围 = 文档主标签 + 备用标签的并集（用户在侧栏点了数据源的 tag 也能命中）
+        const primary = entryPrimaryTags(e)
+        const union = new Set<string>()
+        for (const t of primary) union.add(t)
+        for (const t of e.video?.backupTags ?? []) union.add(t)
+        for (const t of selectedTags) if (!union.has(t)) return false
         return true
       })
     }
@@ -468,7 +477,8 @@ export default function App() {
       .sort((a, b) => a.order - b.order)
   }, [applyTagsOnly])
 
-  // 标签集合：文档结构化分类优先，未知标签用内置字典兜底归类；类别顺序按文档首次出现动态排列
+  // 标签集合：文档结构化分类优先，e.tags/backupTags 中未归属者走内置字典兜底归类；
+  // 类别顺序按文档 tagCategories 首次出现排列，之后 push 其他 +「其他」
   const { categories: tagCategoriesOrder, tags } = useMemo<{ categories: string[]; tags: TagInfo[] }>(() => {
     const counts = new Map<string, { count: number; category: string }>()
     const catOrder: string[] = []
@@ -476,6 +486,7 @@ export default function App() {
       if (cat !== '其他' && !catOrder.includes(cat)) catOrder.push(cat)
     }
     for (const e of applyTagsOnly) {
+      // 1) 文档结构化 tagCategories：按分类分栏展示，计数 + 归属为其分类
       const cats = e.tagCategories ?? {}
       for (const [cat, list] of Object.entries(cats)) {
         ensureCat(cat)
@@ -489,9 +500,25 @@ export default function App() {
           }
         }
       }
-      for (const t of e.tags) {
+      // 2) entry 主标签（tagCategories 已记录过的会 continue；文档只有平铺 tags 时在这里归入字典分类）
+      for (const t of entryPrimaryTags(e)) {
         if (counts.has(t)) continue
         const cat = categorizeTag(t)
+        ensureCat(cat)
+        counts.set(t, { count: 1, category: cat })
+      }
+      // 3) 备用数据源标签（backupTags）：有文档标签时归入「备用来源」分类展示，
+      // 无文档标签时按字典兜底归类（因为它会作为主标签展示）
+      const back = e.video?.backupTags ?? []
+      const hasDoc = hasDocTags({ tags: e.tags, tagCategories: e.tagCategories })
+      for (const t of back) {
+        const existing = counts.get(t)
+        if (existing) {
+          existing.count++
+          // 已经被文档分类记录过 → 不动 category（主来源优先）
+          continue
+        }
+        const cat = hasDoc ? '备用来源' : categorizeTag(t)
         ensureCat(cat)
         counts.set(t, { count: 1, category: cat })
       }

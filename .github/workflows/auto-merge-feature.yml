@@ -1,0 +1,126 @@
+# 自动合并 feature/* / fix* / hotfix* 分支到 main（朋友推 feature 分支 → CI 绿灯 → 自动合 main → 无需作者审核）
+#
+# 使用方式（朋友端）：
+#   1. 改完代码 → 本地合冲突（如需要）
+#   2. git push origin feature/你的功能名   或   git push origin fix7/xxx   （任一分支名匹配下方 branches）
+#   3. 无需开 PR，无需作者审核
+#   4. 本 workflow 自动：Typecheck + Build → 通过后 merge 到 main → push main → 再触发 release.yml 模式 D 校验
+#   5. 若 typecheck/build 失败 或 merge 有冲突 → workflow 变红，把冲突 diff 上传为 artifact（朋友本地修冲突再 push）
+#
+# 说明：
+#   - 需要在仓库 Settings → Actions → General 把「Workflow permissions」改为
+#     「Read and write permissions」（让本 workflow 有 git push main 权限 + 创建 Release 权限），
+#     并且勾选「Allow GitHub Actions to create and approve pull requests」。
+#   - 需要在仓库 Settings → Branches → Branch protection rule (main) →
+#     关闭/不勾选「Require a pull request before merging」（否则即使是 Actions push 到 main 也会被拒）。
+name: auto-merge-feature
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix*/**'
+      - 'hotfix/**'
+      - 'refactor/**'
+      - 'perf/**'
+      - 'chore/**'
+
+# 同一个 feature 分支后续 push → 取消上一次还在跑的（省 CI）
+concurrency:
+  group: auto-merge-feature-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Build + Auto-merge to main
+    runs-on: windows-latest
+    permissions:
+      contents: write   # 允许 git push origin main
+    steps:
+      - name: Checkout (完整 history，确保能 merge 到 main)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # 必须完整历史，git merge 才不会报 "refusing to merge unrelated histories"
+          # GITHUB_TOKEN 默认是 Actions 临时 token，contents:write 已开启；
+          # 如仓库启用了「Require signed commits」，请改用带签名权限的 Personal Access Token（PAT）并配置在这里
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (CI 校验，绿灯才允许 merge)
+        run: npm run typecheck
+
+      - name: Build (CI 校验，绿灯才允许 merge)
+        run: npm run build
+
+      # ---------- 通过 CI → 尝试 merge 到 main ----------
+      - name: Configure Git (Actions bot 身份)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        shell: pwsh
+
+      - name: Try merge feature branch into main (fast-forward 优先，失败走 --no-ff)
+        id: merge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $Feature = "${{ github.ref_name }}"
+          Write-Host "==> 当前 feature 分支: $Feature"
+
+          # 先切到 main，拉最新（防止 Actions 本地的 main 已落后于远端）
+          git checkout main
+          if ($LASTEXITCODE -ne 0) { throw "git checkout main 失败" }
+          git pull origin main
+          if ($LASTEXITCODE -ne 0) { throw "git pull origin main 失败" }
+
+          # 先尝试 --ff-only（最快、无冲突时 main 线更干净）
+          Write-Host "==> 尝试 fast-forward merge: main ← $Feature"
+          git merge --ff-only "origin/$Feature" 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -eq 0) {
+            "MERGE_MODE=ff" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          # 非 fast-forward → 用 --no-ff（保留 feature 节点，方便回滚）
+          Write-Host "==> fast-forward 不行，改为 --no-ff merge"
+          git merge --no-ff -m "auto-merge: $Feature  → main (CI pass, 自动合入)" "origin/$Feature" 2>&1 | Tee-Object -Variable mergeOut | Out-String | Write-Host
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::merge 发生冲突或失败，请朋友本地运行：git fetch origin; git checkout main; git pull origin main; git merge $Feature；解决冲突后 git push origin main；或在 feature 分支上 git rebase main 修完再 push。"
+            # 把冲突状态的 diff 存为 artifact，方便朋友看
+            git status -s               | Out-File -FilePath merge-conflict-status.txt -Encoding utf8
+            git diff --name-only --diff-filter=U | Out-File -FilePath merge-conflict-files.txt  -Encoding utf8
+            git diff --diff-filter=U    | Out-File -FilePath merge-conflict-diff.txt   -Encoding utf8
+            exit 1
+          }
+
+          "MERGE_MODE=no-ff" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload merge-conflict artifact (仅冲突时存在)
+        if: failure() && steps.merge.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-conflict-${{ github.ref_name }}
+          path: |
+            merge-conflict-status.txt
+            merge-conflict-files.txt
+            merge-conflict-diff.txt
+          retention-days: 14
+
+      - name: Push merged main 到 origin (触发 release.yml 模式 D 再校验一遍 main)
+        if: steps.merge.outcome == 'success'
+        shell: pwsh
+        run: |
+          git push origin main 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::git push origin main 失败。通常 3 种原因：`n  1) main 分支保护勾选了「Require pull request reviews / Require status checks / Do not allow direct pushes」→ 去 Settings → Branches 关闭或给 Actions bypass 权限；`n  2) 朋友在你运行期间又 push 了新 commit 到 main → 本 workflow 下次 push 会自动重试；`n  3) 需要 signed commits → 改用带签名权限的 PAT 替换 checkout 的 token。"
+            exit 1
+          }

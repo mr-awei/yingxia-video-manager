@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
+import { entryPrimaryTags, hasDocTags } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatDuration, formatSize } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
@@ -47,7 +48,15 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                 : v?.javdbDetail?.actors?.length
                   ? v.javdbDetail.actors
                   : []
-            const tags = e.tags.length ? e.tags : v?.tags ?? []
+            const tags = (() => {
+              // 主标签来源优先 entry.tagCategories → entry.tags（文档权威）；
+              // 无文档标签但视频有 backupTags（数据源 genres）→ 也显示，避免列表空白
+              const primary = entryPrimaryTags(e)
+              const back = v?.backupTags ?? []
+              if (hasDocTags({ tags: e.tags, tagCategories: e.tagCategories })) return primary
+              if (primary.length) return primary
+              return back
+            })()
             const studio = v?.javdbDetail?.studio
             const series = v?.javdbDetail?.series
             return (
@@ -199,22 +208,27 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                 </div>
               </div>
 
-              {/* 标签预览 */}
+              {/* 标签预览：列表行空间小，优先文档主标签；无文档时兜底 backupTags */}
               <div className="hidden md:flex items-center gap-1 max-w-[240px] overflow-hidden shrink-0">
-                {e.tags.slice(0, 4).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    title={`筛选「${t}」`}
-                    onClick={(ev) => {
-                      ev.stopPropagation()
-                      onPickTag?.(t)
-                    }}
-                    className="px-1.5 py-0.5 rounded bg-white/6 text-white/55 text-[10px] truncate max-w-[90px] hover:bg-brand/25 hover:text-brand hover:ring-1 hover:ring-brand/30 transition-colors"
-                  >
-                    {t}
-                  </button>
-                ))}
+                {(() => {
+                  const p = entryPrimaryTags(e)
+                  const back = v?.backupTags ?? []
+                  const show = hasDocTags({ tags: e.tags, tagCategories: e.tagCategories }) ? p : [...new Set([...p, ...back])]
+                  return show.slice(0, 4).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      title={`筛选「${t}」`}
+                      onClick={(ev) => {
+                        ev.stopPropagation()
+                        onPickTag?.(t)
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-white/6 text-white/55 text-[10px] truncate max-w-[90px] hover:bg-brand/25 hover:text-brand hover:ring-1 hover:ring-brand/30 transition-colors"
+                    >
+                      {t}
+                    </button>
+                  ))
+                })()}
               </div>
 
               {/* 操作 */}
