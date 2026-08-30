@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
 import { IPC } from '../../shared/ipc'
+import type { ReconcileResult } from '../../shared/types'
 import * as repo from './repo'
 import { scanLibrary, walk } from './scanner'
 import path from 'node:path'
@@ -22,6 +23,26 @@ import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgre
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
 import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
+
+// ---------- v2.2.10-fix5：对账结果磁盘缓存（启动/切库先秒出，后台全量对账刷新） ----------
+function reconcileCachePath(libraryId: string): string {
+  return path.join(app.getPath('userData'), 'reconcile-cache', `${libraryId}.json`)
+}
+
+async function writeReconcileCache(libraryId: string, result: ReconcileResult): Promise<void> {
+  const p = reconcileCachePath(libraryId)
+  await fs.mkdir(path.dirname(p), { recursive: true })
+  await fs.writeFile(p, JSON.stringify(result), 'utf-8')
+}
+
+async function readReconcileCache(libraryId: string): Promise<ReconcileResult | null> {
+  try {
+    const raw = await fs.readFile(reconcileCachePath(libraryId), 'utf-8')
+    return JSON.parse(raw) as ReconcileResult
+  } catch {
+    return null
+  }
+}
 
 /**
  * 多源详情聚合：JavDB（最准，已有 Cookie）→ JavBus（自动绕过年龄验证）。
@@ -508,7 +529,15 @@ export function registerIpc(): void {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
     const settings = await repo.getSettings()
-    return reconcileLibrary(lib, settings, emitProgress)
+    const result = await reconcileLibrary(lib, settings, emitProgress)
+    // v2.2.10-fix5：对账结果写磁盘缓存——启动/切库先秒出缓存界面，后台再全量对账刷新
+    void writeReconcileCache(libraryId, result).catch(() => {})
+    return result
+  })
+
+  // v2.2.10-fix5：读上次对账结果缓存（无缓存返回 null，由 renderer 决定是否等待全量对账）
+  ipcMain.handle(IPC.libraryReconcileCache, async (_e, libraryId: string) => {
+    return readReconcileCache(libraryId)
   })
 
   // ---------- 视频 ----------
@@ -623,6 +652,17 @@ export function registerIpc(): void {
     // 系列去重：同 base code 只抓一次，其余分集复用（HUNTA-468CD1/CD2 → 抓一次）
     const seriesCache = new Map<string, JavdbDetail>()
     let idx = 0
+    // v2.2.10-fix4：批量写盘——worker 内只收集变更，全部结束后一次 applyVideoChanges，
+    // 不再逐条 updateVideo 全量写 4.7MB data.json（大库 4680 部 = 4680 次全量写 → 小时级）。
+    const pendingChanges: repo.VideoChange[] = []
+    const applyPatch = (v: Video, patch: Partial<Video>): void => {
+      const existing = pendingChanges.find((c) => c.type === 'update' && c.video.id === v.id)
+      if (existing && existing.type === 'update') {
+        existing.video = { ...existing.video, ...patch }
+      } else {
+        pendingChanges.push({ type: 'update', video: { ...v, ...patch } })
+      }
+    }
     const worker = async () => {
       while (idx < videos.length && !smartState.stop) {
         const v = videos[idx++]
@@ -642,7 +682,7 @@ export function registerIpc(): void {
                 patch.posterPath = set.coverPath
               }
               if (set.previewPaths.length) patch.previewPaths = set.previewPaths
-              await repo.updateVideo(v.id, patch)
+              await applyPatch(v, patch)
               if (set.coverPath) {
                 for (const w of BrowserWindow.getAllWindows()) {
                   if (!w.isDestroyed()) {
@@ -707,7 +747,7 @@ export function registerIpc(): void {
         // 同系列已在本次抓取过 → 直接复用，不重复请求
         const seriesHit = base && base !== fetchCode.toUpperCase() ? seriesCache.get(base) : undefined
         if (seriesHit) {
-          await repo.updateVideo(v.id, { javdbDetail: seriesHit, ...backfillFromDetail(v, seriesHit) })
+          applyPatch(v, { javdbDetail: seriesHit, ...backfillFromDetail(v, seriesHit) })
           ok++
           const src = seriesHit.source ?? 'javdb'
           bySource[src] = (bySource[src] ?? 0) + 1
@@ -720,7 +760,7 @@ export function registerIpc(): void {
           })
           if (mr.detail) {
             if (base) seriesCache.set(base, mr.detail)
-            await repo.updateVideo(v.id, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
+            applyPatch(v, { javdbDetail: mr.detail, ...backfillFromDetail(v, mr.detail) })
             // **关键**：如果之前的封面是 ffmpeg 兜底（无 JavDB 海报时），但 detail.cover 有真实海报
             // （JavBus 来源常见），用 detail.cover 下载本地海报覆盖错误的截帧，保证列表/详情一致；
             // 同时删除旧的 ffmpeg 截帧预览图，预览图换成真实截图（本地）
@@ -734,7 +774,7 @@ export function registerIpc(): void {
                 const samples = localSamples(mr.detail)
                 if (samples.length) patch.previewPaths = samples
                 await removeFfmpegPreviewFiles(v.id)
-                await repo.updateVideo(v.id, patch)
+                await applyPatch(v, patch)
                 for (const w of BrowserWindow.getAllWindows()) {
                   if (!w.isDestroyed()) {
                     w.webContents.send(IPC.javdbFetched, {
@@ -763,6 +803,10 @@ export function registerIpc(): void {
       }
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, videos.length) }, () => worker()))
+    // v2.2.10-fix4：worker 全部结束后一次性批量落盘（原来逐条全量写，大库下小时级）
+    if (pendingChanges.length > 0) {
+      await repo.applyVideoChanges(pendingChanges)
+    }
     emitProgress({ libraryId, total: videos.length, done: videos.length })
     // 无封面兜底：多数据源都抓不到数据的视频，后台 ffmpeg 截帧显示真实画面（不阻塞补齐返回）
     void (async () => {
@@ -777,18 +821,26 @@ export function registerIpc(): void {
         if (noPoster.length === 0) return
         const conc2 = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         let i2 = 0
+        // fix4：截帧兜底也批量落盘（最多 200 次全量写 → 1 次）
+        const frameChanges: repo.VideoChange[] = []
         const w2 = async () => {
           while (i2 < noPoster.length) {
             const v = noPoster[i2++]
             try {
               const set = await generatePreviewSet(v, settings)
               if (set?.coverPath) {
-                await repo.updateVideo(v.id, {
-                  posterSource: 'ffmpeg',
+                const patch = {
+                  posterSource: 'ffmpeg' as const,
                   posterPath: set.coverPath,
                   posterPathFfmpeg: set.coverPath,
                   previewPaths: set.previewPaths
-                })
+                }
+                const existing = frameChanges.find((c) => c.type === 'update' && c.video.id === v.id)
+                if (existing && existing.type === 'update') {
+                  existing.video = { ...existing.video, ...patch }
+                } else {
+                  frameChanges.push({ type: 'update', video: { ...v, ...patch } })
+                }
                 for (const w of BrowserWindow.getAllWindows()) {
                   if (!w.isDestroyed()) {
                     w.webContents.send(IPC.javdbFetched, { videoId: v.id, posterPath: set.coverPath, posterSource: 'ffmpeg' })
@@ -801,6 +853,9 @@ export function registerIpc(): void {
           }
         }
         await Promise.all(Array.from({ length: Math.min(conc2, noPoster.length) }, () => w2()))
+        if (frameChanges.length > 0) {
+          await repo.applyVideoChanges(frameChanges)
+        }
       } catch {
         /* 静默 */
       }

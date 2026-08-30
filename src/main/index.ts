@@ -4,6 +4,10 @@ import { promises as fs, appendFileSync, mkdirSync } from 'node:fs'
 import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
 
+// 数据目录固定为 %APPDATA%\local-video-manager（换回旧版目录，避免 productName「影匣」
+// 造成的中文目录名；必须在任何 app.getPath('userData') 调用之前设置）
+app.setPath('userData', path.join(app.getPath('appData'), 'local-video-manager'))
+
 const POSTER_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',

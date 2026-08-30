@@ -1,5 +1,22 @@
 # 更新日志（Changelog）
 
+## v2.2.12（2026-08-30）
+
+**朋友合入三件套（P0 性能三连修 + P1 对账缓存+写盘防抖 + 数据目录名修复）**
+
+### 1. P0 性能三连修（fix4）
+- **批量补齐批量写盘**：「批量补齐信息」原来每抓完一部就 `updateVideo` → 4.7MB data.json 全量写盘一次（4680 部 = 4680 次全量写，小时级）。改为 worker 内收集变更、全部结束后一次 `applyVideoChanges` 落盘；末尾无封面截帧兜底同样批量落盘。
+- **首页补齐改串行**：进入首页时原来并发发起所有缺失库的 reconcile（多库同时 walk + 与主对账并发写盘竞态，可能丢更新）。改为串行补齐 + 跳过当前库（由主对账负责）。
+- **列表虚拟化（content-visibility）**：浏览列表原来一次性渲染几千条 DOM 卡片，打开/滚动卡顿、内存高。给列表项加 `content-visibility: auto` + `contain-intrinsic-size`（Chromium 原生跳过视口外渲染，滚动按需渲染，零依赖），大库滚动流畅度明显提升。
+
+### 2. P1 双修：启动/切库秒出 + 写盘防抖（fix5）
+- **对账结果磁盘缓存**：每次对账结果写入 `userData/reconcile-cache/<libraryId>.json`。打开软件/切换媒体库时**先读缓存秒出界面**（不再空白"正在加载媒体库…"等 walk 扫描十几秒），后台再全量对账刷新；对账失败时保留缓存展示。新增 IPC：`libraryReconcileCache`。
+- **写盘 debounce**：`data.json` 落盘改为 300ms 防抖合并（`saveDB → scheduleSave`）——连点收藏/改名等单条操作不再每次全量序列化 4.7MB；`mutate` 不阻塞立即返回；进程 `before-quit` 同步兜底落盘 + 提供 `flushSave()`，保证 debounce 窗口内的写入不丢。
+
+### 3. 数据目录换回英文路径（fix6）
+- main 入口用 `app.setPath('userData', %APPDATA%\local-video-manager)` 强制数据目录为英文路径（productName「影匣」不改，窗口标题/安装包名均不变），避免中文目录名带来的潜在兼容问题。
+- **迁移提醒**：旧数据目录 `%APPDATA%\影匣` 的 `data.json / posters / logs` 需要手工拷贝到 `%APPDATA%\local-video-manager`，老用户升级后如发现库空了请手动迁移一次。
+
 ## v2.2.11（2026-08-30）
 
 **大库性能优化三件套（根治启动风暴 / 卡顿 / 切库变慢）+ md→Excel 迁移脚本**

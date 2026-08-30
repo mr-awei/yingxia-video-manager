@@ -8,6 +8,8 @@ export const IPC = {
   libraryUpdate: 'library:update',
   // 对账（MD 驱动 + 文件夹对账）
   libraryReconcile: 'library:reconcile',
+  // 对账结果磁盘缓存（上次 reconcile 的快照，启动/切库先秒出，后台再全量对账刷新）
+  libraryReconcileCache: 'library:reconcileCache',
   // 视频
   videoList: 'video:list',
   videoGet: 'video:get',
