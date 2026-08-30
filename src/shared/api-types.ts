@@ -29,6 +29,11 @@ export interface BatchFetchResult {
   stopped?: boolean
   /** 停止时剩余未处理部数 */
   remaining?: number
+  /**
+   * v2.3.11：本库仍无封面的部数（不含刚截帧失败被冷却的损坏文件）。
+   * 兜底截帧每轮上限 200 部，用户需要知道"要不要再来一轮"。
+   */
+  remainingNoPoster?: number
 }
 
 /** 应用信息（关于模块展示） */

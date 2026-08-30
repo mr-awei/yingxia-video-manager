@@ -1188,6 +1188,8 @@ export default function App() {
     remaining: number
     /** v2.2.7：按用户的 customSourceOrder 渲染来源分布条，让展示顺序跟实际采集顺序一致 */
     customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
+    /** v2.3.11：补充提示（如「仍有 N 部无封面，可再跑一轮」） */
+    hint?: string
   }
   const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
@@ -1235,6 +1237,7 @@ export default function App() {
         {data.stopped ? (
           <div className="text-[11px] text-amber-400/90">⚠ 已自动停止，剩余 {data.remaining} 部未处理</div>
         ) : null}
+        {data.hint ? <div className="text-[11px] text-white/50">{data.hint}</div> : null}
       </div>
     )
     toast({ title, text: subtitle, tone, detail, duration: 9000 })
@@ -1259,6 +1262,9 @@ export default function App() {
       const tone: 'ok' | 'warn' | 'err' = res.stopped || res.failed > 0 ? 'warn' : 'ok'
       showBatchToast({
         title: tone === 'ok' ? '补齐完成' : '补齐部分失败',
+        hint: res.remainingNoPoster
+          ? `仍有 ${res.remainingNoPoster} 部无封面（每轮最多补 200 部，可再跑一轮「补齐信息」）`
+          : undefined,
         tone,
         ok: res.ok,
         failed: res.failed,

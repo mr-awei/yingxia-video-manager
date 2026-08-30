@@ -945,13 +945,25 @@ export function registerIpc(): void {
         /* 静默 */
       }
     })()
+    // v2.3.11：统计本轮结束后仍无封面的部数（兜底截帧每轮上限 200，需要告知用户是否再来一轮）
+    let remainingNoPoster = 0
+    try {
+      const after = await repo.listVideos({ libraryId })
+      remainingNoPoster = after.filter(
+        (v) =>
+          (!v.posterPath || v.posterSource === 'placeholder') && !frameFailedRecently(v)
+      ).length
+    } catch {
+      /* 统计失败不影响主流程 */
+    }
     return {
       ok,
       failed,
       bySource,
       failures,
       stopped: smartState.stop,
-      remaining: smartState.stop ? Math.max(0, videos.length - idx) : 0
+      remaining: smartState.stop ? Math.max(0, videos.length - idx) : 0,
+      remainingNoPoster
     }
   })
 
