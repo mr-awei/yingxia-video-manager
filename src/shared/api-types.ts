@@ -21,8 +21,8 @@ export interface BatchFetchResult {
   ok: number
   /** 失败部数 */
   failed: number
-  /** 成功来源分布 */
-  bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
+  /** 成功来源分布（v2.2.7 加 javlibrary —— 自定义顺序里也可能命中） */
+  bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number }
   /** 失败明细（标题 + 原因） */
   failures: Array<{ title: string; reason: string }>
   /** 是否因连续失败自动停止 */
@@ -105,7 +105,7 @@ export interface AppApi {
   libraryAdd(input: Omit<Library, 'id' | 'createdAt'>): Promise<Library>
   libraryRemove(id: string): Promise<void>
   libraryUpdate(id: string, patch: Partial<Library>): Promise<Library | null>
-  /** 按简介 md 对账文件夹，返回分类展示数据 */
+  /** 按 Excel 片单对账文件夹，返回分类展示数据 */
   libraryReconcile(libraryId: string): Promise<ReconcileResult>
   videoList(filter?: VideoFilter): Promise<Video[]>
   videoGet(id: string): Promise<Video | null>
@@ -149,9 +149,9 @@ export interface AppApi {
   settingsGet(): Promise<Settings>
   settingsSet(patch: Partial<Settings>): Promise<Settings>
   dialogSelectFolder(): Promise<string | null>
-  /** 选择单个文件（用于选择简介 md） */
+  /** 选择单个文件（Excel 片单 / 其他） */
   dialogSelectFile(): Promise<string | null>
-  /** 用系统默认程序打开文件 / 文件夹（如打开简介 md 供编辑） */
+  /** 用系统默认程序打开文件 / 文件夹（如打开 Excel 片单供编辑） */
   openPath(path: string): Promise<void>
   /** 应用信息（版本 / 运行环境 / 数据目录 / 更新日志） */
   appInfo(): Promise<AppInfo>
@@ -214,22 +214,15 @@ export interface AppApi {
     otherFileCount?: number
     error?: string
   }>
+  /**
+   * 切换封面来源：'data' = 数据源图（javdb/javbus/javlibrary 缓存，没有则抓取）；
+   * 'ffmpeg' = FFmpeg 随机截帧图（没有则生成）。两套图片独立保存，可自由来回切换。
+   */
+  videoSwitchPoster(
+    id: string,
+    source: 'data' | 'ffmpeg'
+  ): Promise<{ ok: boolean; posterPath?: string; posterSource?: string; error?: string }>
   onScanProgress(cb: (p: ScanProgress) => void): void
-  /** 监听：简介 md 文件变化（需自动重新对账） */
-  onMdChanged(cb: (libraryId: string) => void): void
-  /** 读取内置《通用评分与简介规范》全文（新建 md 向导）；返回内容与磁盘路径 */
-  specGet(): Promise<{ content: string; path: string }>
-  /** 批量导出媒体库番号清单（弹出保存对话框；txt 同时复制剪贴板）；format 默认 txt，xlsx 生成 Excel 工作簿 */
-  libraryExportCodes(
-    libraryId: string,
-    format?: 'txt' | 'xlsx'
-  ): Promise<{
-    ok: boolean
-    path?: string
-    count: number
-    codes: string[]
-    error?: string
-  }>
   /** 仅扫描媒体库番号清单（不弹保存对话框、不写文件），供向导打开时自动加载 */
   libraryGetCodes(libraryId: string): Promise<{ count: number; codes: string[] }>
 }

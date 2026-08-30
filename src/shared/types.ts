@@ -1,19 +1,19 @@
 // 跨主进程/渲染进程的共享类型定义（纯接口，无 Node/DOM 依赖）
 
-export type ImageSource = 'manual' | 'sidecar' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'ffmpeg' | 'placeholder'
+export type ImageSource = 'manual' | 'sidecar' | 'javdb' | 'javbus' | 'javlibrary' | 'javapi' | 'javinfo' | 'ffmpeg' | 'placeholder'
 export type SortKey = 'title' | 'year' | 'added' | 'lastPlayed' | 'random' | 'score'
 /** 浏览页视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */
 export type ViewMode = 'grid-portrait' | 'grid-landscape' | 'list-filename'
 /** 更新检查源 */
 export type UpdateSource = 'github' | 'gitee'
 
-/** 媒体库：对应一个被扫描的本地文件夹 + 一个简介 md 文件 */
+/** 媒体库：对应一个被扫描的本地文件夹 + 一个 Excel 片单文件 */
 export interface Library {
   id: string
   name: string
   folderPath: string
-  /** 简介 md 文件路径（分类/简介/标签的权威来源）；为空则仅按文件夹展示 */
-  introMdPath?: string
+  /** Excel 片单文件路径（片单/分类/简介/标签的权威来源）；为空则仅按文件夹展示 */
+  introExcelPath?: string
   /** 海报图片来源优先级链，越靠前优先级越高 */
   imagePriority: ImageSource[]
   createdAt: number
@@ -36,6 +36,8 @@ export interface Video {
   /** 解析后的海报本地路径（缓存文件或手动指定文件） */
   posterPath?: string
   posterSource?: ImageSource
+  /** FFmpeg 截帧生成的封面路径（与 posterPath 独立保存，供「数据源图/FFmpeg 截图」自由切换） */
+  posterPathFfmpeg?: string
   /** 封面缓存失效版本号（仅渲染进程内存使用，不落盘）：posterPath 文件被覆盖但路径不变时自增，
    *  列表/详情页用它给 lm:// URL 加 ?v=N，强制立即刷新封面而不依赖重开/切库 */
   coverVersion?: number
@@ -55,6 +57,9 @@ export interface Video {
   previewPaths?: string[]
   /** 国产片：纯中文文件夹且无番号，不自动抓取元数据，仅用 ffmpeg 截帧 */
   domestic?: boolean
+  /** v2.2.4：reconcile else 分支自动抓 javdb 元数据时的最后尝试时间戳；
+   *  7 天内抓过且失败的跳过，避免反复浪费 JavDB 配额。缺失字段 = 从未抓过 */
+  lastMetaFetchAt?: number
 }
 
 /** javdb 视频详情页抓取的元数据 */
@@ -81,8 +86,8 @@ export interface JavdbDetail {
   samples: string[]
   /** 解析器版本标记：v2 = zip 配对解析器（2026-08-26 修复男演员混入）。旧数据无此字段。 */
   parseVer?: number
-  /** 数据来源：javapi / javinfo / javdb / javbus（旧数据无此字段，默认视为 javdb） */
-  source?: 'javapi' | 'javinfo' | 'javdb' | 'javbus'
+  /** 数据来源：javdb / javbus / javlibrary / javapi / javinfo（旧数据无此字段，默认视为 javdb） */
+  source?: 'javdb' | 'javbus' | 'javlibrary' | 'javapi' | 'javinfo'
   fetchedAt: number
 }
 
@@ -118,8 +123,10 @@ export interface Settings {
   posterDensity: 'large' | 'standard' | 'compact'
   /** 可选：javdb.com 登录 Cookie（某些网络/登录态下搜索需带 Cookie） */
   javdbCookie: string
-  /** 数据源：auto 自动降级（Javapi→Javinfo→JavDB→JavBus）/ javapi 只用本地 Javapi / javinfo 只用 Javinfo / javdb 只用 JavDB / javbus 只用 JavBus（调试用） */
-  dataSource: 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus'
+  /** 数据源：auto 自动降级（Javapi→Javinfo→JavDB→JavBus→JavLibrary）/ javapi 只用本地 Javapi / javinfo 只用 Javinfo / javdb 只用 JavDB / javbus 只用 JavBus / javlibrary 只用 JavLibrary（调试用） */
+  dataSource: 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+  /** auto 模式下的自定义源优先级（1-5）；未设置时用推荐顺序 Javapi→Javinfo→JavDB→JavBus→JavLibrary */
+  customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
   /** 本地自托管 javapi 服务地址（如 http://127.0.0.1:8080），留空则跳过该源 */
   javapiUrl: string
   /** 本地自托管 javapi 的 API key（启动时 AUTH_API_KEYS 指定的值） */
@@ -142,6 +149,8 @@ export interface Settings {
   fetchConcurrency: number
   /** JavDB 批量抓取每条之间的间隔毫秒（限速，降低封禁风险，默认 600） */
   fetchIntervalMs: number
+  /** 扫描时跳过小于该体积（MB）的视频文件（过滤短视频/广告样片；0 = 不过滤） */
+  scanMinSizeMB: number
   /** 开机自启 */
   launchAtLogin: boolean
   /** 启动时自动对账当前库 */
@@ -152,10 +161,11 @@ export interface Settings {
   defaultSort: SortKey
   /** 隐私护盾默认开启（启动时自动进入隐私模式） */
   privacyDefaultOn: boolean
+  /** 删除密码锁：开启后删除视频/媒体库需输入密码验证（防误删/防小孩/防陌生人） */
+  lockEnabled: boolean
   /** 扫描富集并发数（1-8：ffprobe 探测 / 截帧等） */
   scanConcurrency: number
   /** 扫描最小文件大小（MB）；0 = 不限。小于该值的视频不进入媒体库（过滤短视频/广告） */
-  scanMinSizeMb: number
   /** 隐私锁密码哈希（SHA-256 salt+password）；为空表示未上锁 */
   lockHash?: string
   /** 隐私锁随机盐（十六进制），与 lockHash 配套 */
@@ -181,6 +191,8 @@ export interface Settings {
   } | null
   /** 用户已选择忽略的对账未收录文件路径列表（不再弹窗/不再进入「未收录」分类） */
   ignoredUnlistedPaths: string[]
+  /** 用户须知弹窗已确认（勾选了下次不再显示）；未勾选/未确认则首次启动仍弹 */
+  noticeDismissed?: boolean
 }
 
 export interface VideoFilter {
@@ -196,6 +208,13 @@ export interface ScanProgress {
   total: number
   done: number
   current?: string
+  /** v2.2.10：实时抓取事件（每个源尝试一次推一条），渲染层可显示"javdb 失败 → 降级 javbus"这类过程提示 */
+  fetchEvent?: {
+    code: string
+    src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'
+    status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
+    detail?: string
+  }
 }
 
 export interface OpenResult {
@@ -221,17 +240,19 @@ export const DEFAULT_SETTINGS: Settings = {
   autoRescan: false,
   fetchConcurrency: 2,
   fetchIntervalMs: 600,
+  scanMinSizeMB: 100,
   launchAtLogin: false,
   scanOnStartup: true,
   minimizeToTray: false,
   defaultSort: 'title',
   privacyDefaultOn: false,
+  lockEnabled: false,
   scanConcurrency: 4,
-  scanMinSizeMb: 0,
   updateSource: 'gitee',
   autoUpdateFrequency: 'off',
   pendingUpdate: null,
-  ignoredUnlistedPaths: []
+  ignoredUnlistedPaths: [],
+  noticeDismissed: false
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javapi（本地免费）> javinfo > javdb > javbus > 截帧 > 占位 */
@@ -246,9 +267,9 @@ export const DEFAULT_IMAGE_PRIORITY: ImageSource[] = [
   'placeholder'
 ]
 
-// ---------- 简介 md 解析结果 ----------
+// ---------- Excel 片单解析结果 ----------
 
-/** md 文件中的单条影片信息（名字=番号，简介，标签） */
+/** Excel 片单中的单条影片信息（名字=番号，简介，标签） */
 export interface IntroItem {
   /** 番号 / 文件名匹配键，如 SONE-560 */
   code: string
@@ -258,7 +279,7 @@ export interface IntroItem {
   tags: string[]
   /** 结构化标签：分类 → 标签列表（新格式 `**标签**：` 块解析；旧格式无此块为空） */
   tagCategories?: Record<string, string[]>
-  /** 推荐评分（md `- **推荐评分**：9.60 / 10`，0-10 分；权威，覆盖 javdb） */
+  /** 推荐评分（Excel 片单中的评分列，0-10 分；权威，覆盖 javdb） */
   score?: number
   /** 原始行文本 */
   raw: string
@@ -272,13 +293,13 @@ export interface IntroCategory {
   items: IntroItem[]
 }
 
-/** 整篇简介 md 的解析结果 */
+/** 整份 Excel 片单的解析结果 */
 export interface IntroDoc {
   categories: IntroCategory[]
   totalCount: number
 }
 
-// ---------- 对账展示（MD 驱动 + 文件夹对账） ----------
+// ---------- 对账展示（Excel 片单驱动 + 文件夹对账） ----------
 
 /** 海报墙展示条目 */
 export interface DisplayEntry {

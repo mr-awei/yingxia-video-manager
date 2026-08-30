@@ -89,7 +89,7 @@ async function lookupMovie(
       return null
     }
     if (res.status === 404) {
-      onError?.(`Javinfo 无结果：${code}`)
+      // 无结果正常静默（与 javdb/javbus 约定一致，不触发批量失败计数）
       return null
     }
     if (res.status === 429) {

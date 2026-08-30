@@ -11,10 +11,11 @@ import path from 'node:path'
  */
 export function cleanVideoFileName(fileName: string): string | null {
   const ext = path.extname(fileName)
-  const name = fileName.slice(0, fileName.length - ext.length)
-  // 番号必须大写字母开头（不带 i 标志，避免把 com_xxx 之类域名残留误当番号）。
-  // 用负向断言而非 \b：域名+下划线+番号（com_IPZZ-586）的 `_` 是 word 字符，\b 会失效
-  const re = /(?<![A-Za-z0-9])[A-Z]{2,}[-_][A-Z0-9]+/
+  const upper = fileName.toUpperCase()
+  const name = upper.slice(0, upper.length - ext.length)
+  // 2026-08-30 修复：原版正则不带 /i，导致 sone-566-uc.mp4 / ALDN606.mp4 都返回 null。
+  // 改成统一大写后再匹配；用负向断言而非 \b：域名+下划线+番号（com_IPZZ-586）的 `_` 是 word 字符，\b 会失效
+  const re = /(?<![A-Z0-9])[A-Z]{2,}[-_][A-Z0-9]+/
   const m = re.exec(name)
   if (!m) return null
   const code = m[0]
@@ -32,7 +33,9 @@ export function cleanVideoFileName(fileName: string): string | null {
   const cleanSuffix = AD_RE.test(suffix) ? '' : suffix
   const clean = cleanSuffix ? `${code}-${cleanSuffix}` : code
   const result = clean + ext
-  return result === fileName ? null : result
+  // 2026-08-30 修复：原版直接 compare fileName（区分大小写），导致用户原小写 → 误判"需要改名为 uppercase"。
+  // 统一按大写比较（result 内部本就是大写）
+  return result === upper ? null : result
 }
 
 /** 预览：扫描文件夹中可安全改名的文件（只处理无 video 记录、未被用户忽略的文件） */

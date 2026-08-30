@@ -409,7 +409,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               </div>
             )}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex flex-col">
             {d ? (
               <span
                 className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 ${
@@ -616,6 +616,25 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               <div className="mt-4 text-white/40 text-xs">正在抓取 javdb 详情…</div>
             ) : null}
             {error ? <div className="mt-4 text-amber-400 text-xs">{error}</div> : null}
+
+            {/* 文件信息：始终展示在右栏底部，填满 grid 拉伸后的剩余高度，避免大片空白 */}
+            <div className="mt-auto pt-4 border-t border-white/5 space-y-1">
+              <div className="text-white/40 text-[11px] mb-1.5 flex items-center gap-1.5">
+                <Icon name="info" size={11} className="text-white/30" />
+                文件信息
+              </div>
+              <MetaRow label="文件名" value={video.fileName} />
+              {video.addedAt ? (
+                <MetaRow label="添加于" value={new Date(video.addedAt).toLocaleString('zh-CN')} />
+              ) : null}
+              {video.lastPlayedAt ? (
+                <MetaRow label="上次播放" value={new Date(video.lastPlayedAt).toLocaleString('zh-CN')} />
+              ) : null}
+              {video.durationSec ? (
+                <MetaRow label="时长" value={`${Math.floor(video.durationSec / 60)} 分 ${Math.round(video.durationSec % 60)} 秒`} />
+              ) : null}
+              {video.path ? <MetaRow label="完整路径" value={video.path} /> : null}
+            </div>
           </div>
         </div>
 

@@ -1,357 +1,370 @@
 # 更新日志（Changelog）
 
-## v1.9.4（2026-08-29）
+## v2.2.10（2026-08-30）
 
-**新增**
-- **首页「全库随机」**：随机推荐不再局限于当前选中媒体库，新增一行「全库随机」（多库时显示，单库自动隐藏），合并所有媒体库随机出片；独立「换一批」按钮，只刷新全库随机，不影响当前库随机。
-- **收藏/详情不再刷新随机**：点收藏爱心、进详情页不会再把随机推荐重新洗牌，随机顺序只在点「换一批」时刷新；收藏状态仍实时更新到卡片上。
+**UI 实时显示数据源降级过程（用户："用户界面也应该能看到类似'javdb 失败了 → 降级 javbus'的提示，而不只是后台能看到"）**
 
-**修复**
-- **设为封面立即生效且持久**：手动选的预览帧改用 `posterSource='manual'`（优先级高于自动抓取的真实封面），详情页/列表/缩略图点击后立即切换，无需重启；后续抓详情也不会被真实封面覆盖。
-- **「补齐信息」与「重新截帧」loading 独立**：两个按钮各自的进行中状态不再互相转圈（fetching / framing 分开）。
-- **「补齐信息」与「重新截帧」拆分为两个按钮**：非国产片现在也可以直接 ffmpeg 重新截帧（1 封面 + 预览帧），再挑一帧设为封面；国产片保持只有「重新截帧」。
-- **预览帧交互优化**：悬停预览帧不再自动放大/弹大图（避免盖住按钮点不到「设为封面」），改为**点击图片才放大预览**，悬停只显示「设为封面」按钮。
-- **截帧预览帧支持设为封面**：详情页「预览帧」悬停每张预览图出现「设为封面」按钮，点击即把该帧复制为封面文件 `<id>.jpg` 并更新记录（posterSource='ffmpeg'），封面立即刷新。
-- **封面替换前校验图片有效性（坏图不替换）**：javapi/javdb 下载的封面可能是损坏/截断/空内容的坏图（文件存在但 ffprobe 读不出尺寸），此前会直接覆盖现有 ffmpeg 截帧导致封面黑屏。现在所有「真实封面替换」入口（单条/批量抓详情、单独抓封面、帧兜底）都会先用 ffprobe 验证分辨率（≥100px），**验证不通过则不替换**，并删除坏图、走截帧兜底。`resolveDetailCover` 下载 key 从 videoId 改为 `cover-<CODE>`，避免真实封面与 ffmpeg 截帧 `<id>.jpg` 同名覆盖。
-- **截帧封面与真实封面共存时优先真实封面，并清理截帧残留**：
-  - 列表卡片/缩略图/详情页封面优先级调整为 **真实封面 > ffmpeg 截帧**：只要详情里缓存了本地真实海报（javdbDetail.cover）或 posterPath 来自非截帧来源，就显示真实封面，不再被截帧覆盖。
-  - 抓详情成功、真实封面就位后，**自动删除旧的 ffmpeg 截帧预览图**（`<id>_preview_N.jpg`），预览图换成真实截图（本地）；封面文件 `<id>.jpg` 会被真实封面下载覆盖复用。
-  - 「截帧」角标只在确实展示视频画面一帧时显示（有真实封面不显示）。
-  - 修复虚拟墙卡片复用导致封面加载失败状态残留（imgError 不重置）的问题。
-- **本地 Javapi 首次查询超时（This operation was aborted）**：javapi 首次查番号需聚合 8 个上游站约 90 秒（之后 5 分钟内存缓存秒回），而客户端超时只有 15 秒，导致请求被提前 abort、详情抓取失败。超时提高到 120 秒，并在失败提示中注明「首次查询需聚合约 90 秒」。
-- **搜索番号只提非中文番号**：提取正则兼容无分隔符番号（KSJK013 / MIDE123），纯中文/纯英文/纯数字返回空，中文标题不再被整段发去搜索。
-- **扫描最小文件大小过滤**：设置新增「扫描最小文件大小（MB）」，可跳过短视频/广告（默认 0=不限）。
-- **批量抓取延时与停止条件修复**：并发/间隔设 0 不再失效；封面+详情都抓时只延时一次；JavBus 连续失败 3 部自动停止。
-- **片单导出 Excel**：新建 md 向导新增「导出 Excel」，与原 txt 并存。
+### P0：实时抓取过程浮层（右下角）
+- `ScanProgress` 加 `fetchEvent` 字段（code / src / status / detail）
+- `fetchDetailSmart` 加第 4 参 `onEvent` 回调，每个源尝试一次推一条：
+  - `trying` → 尝试前
+  - `hit` → 命中（绿色 ✓）
+  - `skipped` → 跳过（未配置 key / 已被禁用）
+  - `no-result` → 无结果（琥珀色）
+  - `network-failed` → 网络失败（红色 ✗，含错误详情）
+- 三条入口全接上事件：
+  - 批量补齐（`libraryFetchJavdbAll`）
+  - 单点补齐（`videoFetchJavdbDetail`）
+  - reconcile 无片单兜底（`fetchDetailSmart` 兜底抓取）
+- renderer 右下角浮层滚动展示（保留最近 60 条），批量补齐结束后 2.5s 自动收起，可手动 ✕ 关闭
 
-## v1.9.3（2026-08-28）
+### 效果
+批量补齐时右下角实时显示：
+```
+→ 尝试 JavDB…
+✗ JavDB 网络失败（fetch failed）
+→ 尝试 JavBus…
+✓ JavBus 命中
+```
+用户直接看到"javdb 失败了 → 降级 javbus"，不再需要翻 main.log。
 
-**优化**
-- **删除视频时彻底清除全部关联数据（文本元数据 + 缓存图片）**：
-  - **删除 data.json 里的视频记录**：`repo.removeVideo(id)` 移除整条记录——其中 `javdbDetail` 字段包含的**全部 javdb/javbus 文本信息**（演员、女演员、时长、导演、片商、系列、评分、类别、关键截图 URL 等）随记录一并消失；视频记录回填的顶层字段（title/year/rating/durationSec 等）也一并清除。
-  - 与 v1.9.2 已清理的**缓存图片**（封面、ffmpeg 预览图、javdb/javbus 封面与截图）叠加，删除后该视频在软件里不再残留任何数据。
-- **对账不再把"已删除"的视频标回缺失**：之前删除视频文件并清记录后，若简介 md 里仍有该条目的编号，下一次扫描会把已删视频重新标记为「缺失」挂回来。现在 reconcile 会先检查该编号在 data.json 中是否仍有记录——**记录已被删的 md 条目会直接跳过**（不再标 missing），彻底"删干净"。
-- 删除成功 toast 会显示「已清除该视频的 javdb 元数据（演员/时长/导演/片商等）」。
+### 技术债
+- `fetchMovieDetail` 加第 4 参 onEvent 透传
+- `reconcileLibrary` onProgress 类型加 fetchEvent 字段
 
-## v1.9.2（2026-08-28）
+---
 
-**优化**
-- **删除视频时一并清理全部关联缓存文件**：除了把视频文件（或整个种子目录）挪到回收站，还会清理该视频在 `userData/posters/` 缓存目录下的所有相关文件：
-  - **封面**（`<videoId>.jpg`）
-  - **ffmpeg 预览图 / 截帧**（`<videoId>_preview_N.jpg`，最多 15 张）
-  - **javdb/javbus 信息图**（`javdb-cover-<CODE>.jpg`、`javdb-sample-<CODE>-N.jpg`、`javbus-cover-<CODE>.jpg`、`javbus-sample-<CODE>-N.jpg`）
-- **共享缓存安全保护**：javdb/javbus 缓存按**番号 CODE** 命名，同系列多分集视频可能共享同一份元数据图片。删除前会检查库中其他视频是否仍引用这些文件——**有其他视频引用则保留，仅清理无引用的**，避免同系列其他影片的封面/截图被误删。
-- 删除成功 toast 会显示「已清理 N 个关联缓存」。
+## v2.2.9（2026-08-30）
 
-## v1.9.1（2026-08-28）
+**main 进程 console.log 落盘 + fetchDetailSmart 总览 log（用户问"怎么还是走的 javbus"）**
 
-**优化**
-- **删除二次确认弹窗重做（Impeccable 设计规范）**：原来的 native `window.confirm` 对话框替换为自研 `ConfirmDeleteModal` 组件——更符合应用整体视觉风格：
-  - 左置大色条承担视觉重量（**琥珀 = 仅删文件** / **红 = 整目录删**，按删除范围自动切换严重程度配色）
-  - 标题区（icon + 标题 + 副标题）、待删文件信息卡（标题 + 完整路径，长路径截断 + tooltip）
-  - 「删除范围」说明卡：根据预检结果动态列出实际会删什么（其他视频数 / 种子数 / 其他文件数），明确「→ 将挪到回收站 / 仅文件挪到回收站」
-  - 「可恢复」警告条：明确告知"文件会挪到系统回收站，可随时恢复"（缓解删除焦虑）
-  - 主次 CTA（危险色填充主按钮 vs 描边取消）、ESC 取消 / Enter 确认快捷键、busy 态防重复点击
-  - 复用项目 Modal 动效（`animate-modal-backdrop` / `animate-modal-panel`）
-- **删除改为"挪到回收站"而非彻底删除**：主进程 `videoDeleteFile` 从 `fs.unlink` / `fs.rm`（彻底删）改为 Electron `shell.trashItem`——文件或整个目录会进入**系统回收站**（Windows 回收站 / macOS 废纸篓 / Linux trash），用户可随时恢复，比直接删安全得多。
-- **删除成功后自动关闭详情页**：从详情页内（"删除文件"按钮）或右键菜单删除后，若当前正打开该视频详情页会自动关闭（之前删除后详情页仍停留在已不存在的视频上）。
+用户反馈日志里"全是 javbus 输出，没 javdb"，担心 customSourceOrder 没生效。实测是 v2.2.8 main 进程 console.log 走 terminal 滚动看不到 + fetchDetailSmart 没打印总览。但 `[search] AVOP-127 getText FAILED`（javdb.ts 自己的 log）证明 javdb 真的先跑了、失败后降级 javbus。
 
-## v1.9.0（2026-08-28）
+### 1. P0：main 进程 console.log 落盘
+- 之前只 `attachRendererLog` 接 renderer 进程的 console-message，**main 进程自己 console.log 不落盘**。
+- v2.2.9 加 `attachMainLog`：劫持 console.log / console.error / console.warn，写到 `userData/logs/main.log` 同时保持原 terminal 输出。
+- 之前排查"为什么走 javbus"只能看 dev 模式 terminal 滚动；现在直接打开 `C:\Users\19218\AppData\Roaming\影匣\logs\main.log` 就能看完整抓取过程。
+
+### 2. P0：fetchDetailSmart 加总览 log
+- 开头：`[smart] ${code} order=${order.join('→')}` —— 每次抓取直接打印**当前生效的顺序**（"javdb→javbus→javapi→javinfo→javlibrary"），用户能立刻确认顺序对不对
+- 命中：`[smart] ${code} HIT ${src}` —— 哪个源 hit 一目了然
+- 全失败：`[smart] ${code} FAILED: ${完整 5 源结果}` —— 一行看完全部 5 源结果
+
+### 3. 用户的 customSourceOrder 现状
+- data.json 里 `settings.customSourceOrder: ["javdb","javbus","javapi","javinfo","javlibrary"]`（v2.2.6 拖拽保存的）
+- fetchDetailSmart v2.2.4 起就完全按 customSourceOrder 降级，**v2.2.8 实际抓取行为是按这个顺序**的
+- javdb 抓不到（`[search] getText FAILED`）→ 降级 javbus 命中 → 这是**预期降级行为**而不是 bug
+
+### 用户装上 v2.2.9 后
+- dev 模式：Ctrl+C 关闭 `npm run dev` 再重启（main 进程才会加载新代码，HMR 只更新 renderer）
+- 生产包：安装新 v2.2.9 后
+- 点「批量补齐」后 → 打开 `%APPDATA%\影匣\logs\main.log` → 能看到完整的 `[smart] ... order=...` + `[smart] ... HIT javbus` / `FAILED ...` 记录
+
+---
+
+## v2.2.8（2026-08-30）
+
+**海报抓取也跟随自定义采集顺序（用户问："真实采集顺序是否也跟着自定义采集顺序改变了？"）**
+
+### 验证结论
+- 元数据抓取（单点补齐 / 批量补齐 / reconcile 兜底）**早就是**按 `settings.customSourceOrder` 降级（v2.2.4 起，v2.2.6 统一了入口）。
+- 但**海报抓取** `fetchJavdbPosterForVideo` 是漏网：它直接调 `searchJavdb`，**不读 customSourceOrder**——用户把 JavDB 排最后、或 JavDB 被 Cloudflare 风控 403 时，海报仍硬试 JavDB 而失败。
+
+### 修复
+- `javdb-smart.ts` 新加 `fetchPosterSmart(video, settings)`：按 `settings.customSourceOrder` 依次降级抓海报——
+  - javdb: `searchJavdb` → `cacheRemoteImage(posterUrl)`
+  - javbus: `fetchJavBusDetail` → detail.cover（内部已下载本地）
+  - javlibrary: `fetchJavLibraryDetail` → detail.cover
+  - javinfo: 需配 key → `fetchJavinfoDetail` → detail.cover
+  - javapi: 需配 config → `fetchJavapiDetail` → detail.cover
+  - 命中第一个有 cover 的源即返回本地路径
+- `ipc.ts` 3 处 `fetchJavdbPosterForVideo` 调用全改成 `fetchPosterSmart`：
+  - `videoFetchJavdbPoster`（手动"抓海报"）
+  - 批量补齐的封面步骤
+  - `videoSwitchPoster` 的"数据源图"切换兜底
+- `DEFAULT_SOURCE_ORDER` 抽到模块底部 export（fetchDetailSmart 和 fetchPosterSmart 共用，消除重复定义）
+
+### 现在全链路一致
+| 场景 | 读 customSourceOrder |
+|---|---|
+| 单点补齐详情 | ✅ |
+| 批量补齐详情 | ✅ |
+| reconcile 无片单兜底 | ✅ |
+| 单点抓海报 | ✅（v2.2.8 修） |
+| 批量补齐封面 | ✅（v2.2.8 修） |
+| 切换数据源封面 | ✅（v2.2.8 修） |
+
+---
+
+## v2.2.7（2026-08-30）
+
+**文案随顺序联动（用户反馈："都已经支持自定义采集顺序了，采集逻辑和文案也要跟着变"）**
+
+v2.2.6 暴露了 customSourceOrder 拖拽 UI，但多处文案还写死默认顺序——拖了顺序后文案不会跟变。v2.2.7 把所有相关文案改成"动态跟随 customSourceOrder"。
+
+### 1. SettingsModal 顶部 auto 降级说明
+- 原来："auto 自动降级（Javapi → Javinfo → JavDB → JavBus → JavLibrary，连续失败自动切换）"
+- 现在：`formatSourceOrder(draft.customSourceOrder)` 函数渲染，**用户拖一下就跟着变**。
+- 顶部文案 + 拖拽列表里 1/2/3/4/5 编号 + "恢复推荐" 按钮——三处共享同一份顺序。
+
+### 2. Javapi/Javinfo API Key 输入框 placeholder
+- 原来：Javapi placeholder "留空则跳过 Javapi，直接走 Javinfo → JavDB → JavBus"（写死）
+- 原来：Javinfo placeholder "留空则跳过 Javinfo，直接走 JavDB → JavBus"（写死）
+- 现在：从 draft.customSourceOrder 过滤掉当前源，剩余顺序拼文案。"留空则跳过 Javinfo，直接走 JavDB → JavBus → JavLibrary"（实际当前顺序）。
+
+### 3. 补齐完成 toast 的「来源分布」条
+- 原来："Javapi X · Javinfo Y · JavDB Z · JavBus W · 失败 N"（写死）
+- 现在：按 `settings.customSourceOrder` 渲染对应源 + 数量，**顺序跟用户实际采集顺序一致**。
+- 顺手在 `api-types.ts` `BatchJavdbResult.bySource` 加了 `javlibrary: number` 字段（之前漏了，自定义顺序里可能命中 javlibrary）。
+
+### 4. 没动的文案
+- 拖拽列表底部的"抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。" — 顺序是动态的、"JavBus" 是事实（无论排在哪位都是连续 3 部 stop），文案本身无需变。
+- "推荐顺序：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary" — JSX 注释不是给用户看的，保留。
+
+---
+
+## v2.2.6（2026-08-30）
+
+**数据源采集：完整流程可见 + 顺序可调（用户反馈"javapi/javinfo 失败应继续试其他源"）**
+
+### 1. P0：fetchDetailSmart auto 模式错误信息完整化
+- v2.2.4 把 `fetchDetailSmart` 抽到独立模块时**漏修一处**——`errors` 数组（javapi 跳过 / javinfo 跳过的提示）没合并到 return error。同时**没在 ipc.ts 删掉旧的 `fetchMovieDetail`**（v2.2.4 漏改），导致用户点「补齐信息」走 `fetchMovieDetail`、批量补齐走 `fetchDetailSmart`，**两套逻辑不一致**。
+- 表现：用户的 SONE-560_1 点「补齐信息」只显示「未配置本地 Javapi，跳过；未配置 Javinfo key，跳过」——看起来像只跑了 javapi 就停了。实际上 javdb/javbus/javlibrary 也跑了但「无结果」（不是异常），所以 `errors` 数组里没反映。
+- v2.2.6 修复：
+  - `fetchDetailSmart` auto 模式用 `srcResults[]` 记录每个源的状态（`hit` / `skipped` / `no-result` / `network-failed`），最后拼成 `javapi=跳过(...); javinfo=跳过(...); javdb=无结果; javbus=无结果; javlibrary=无结果` 这种完整 summary
+  - `ipc.ts fetchMovieDetail` 删掉（保留 wrapper，内部调 `fetchDetailSmart`），保证两套入口行为一致
+  - `ipc.ts` 清理掉 6 个不再直接用的 per-source import（fetchJavapiDetail / fetchJavinfoDetail / fetchJavdbDetail / fetchJavBusDetail / fetchJavLibraryDetail / hasJavapiConfig / hasJavinfoKey）
+
+### 2. P0：SettingsModal 加 customSourceOrder 拖拽排序 UI
+- v2.2.0 时加了 `Settings.customSourceOrder` 字段，v2.2.4 抽到 javdb-smart.ts 的 fetchDetailSmart 也读了，**但 UI 没暴露调整入口**——只能选 auto/单源。
+- v2.2.6 暴露 UI：dataSource=auto 时显示 5 个源的可拖拽列表
+  - 拖拽 ⠿ 调整顺序（HTML5 drag-and-drop）
+  - 点 ↑↓ 按钮也行
+  - 「恢复推荐」一键还原默认顺序
+  - 每个源展示「信息全面度 + 风控 + 成本」三维度评估
+  - 底部说明抓取逻辑：按顺序逐个尝试，任一源命中即停；任一源连续 3 部网络失败自动跳过本轮；JavBus 连续 3 部失败停止整批；所有源都失败 → 走 ffmpeg 截帧兜底
+- 字段已存在 Shared types，store 持久化天然支持
+
+### 3. 数据层未做（留给 v2.2.7）
+- 「文档定义标签优先、其他数据源标签折叠成备用」还没做。当前 v.tags 是文档 tags + 数据源 genres 合并去重。
+- v2.2.7 计划：Video 加 `tagCategories` + `backupTags` 字段；reconcile if (doc) 分支写 tagCategories；backfillFromDetail 把 detail.genres 写 backupTags 不合并；详情页 UI 折叠显示。
+
+---
+
+## v2.2.5（2026-08-30）
+
+**控制台大量 ENOENT 报错修复（用户反馈"控制台大量报错"）**
+
+v2.2.4 升级时 installer 清掉了 posters 目录里的旧 .jpg（`<video.id>_preview_X.jpg` ffmpeg 截帧命名），但 data.json 里的 `video.previewPaths` 还指向这些不存在的文件。hover 视频 / 打开详情页时，渲染 15 张 preview 触发 15 次 `lm://` 协议 ENOENT，main 进程 console.warn 刷屏。
+
+实测：22 部 video / 共 330 个 dead preview 路径在控制台刷屏。
+
+### 1. P0：`lm` 协议 ENOENT 静默
+- `src/main/index.ts`：ENOENT 时 `console.debug`（生产不可见、dev 模式可见），其他错误仍 console.warn
+- 仍返回 404，让渲染端 `<img onError>` 走占位图
+- 刷屏瞬间消失
+
+### 2. P0：reconcile 自动清理 dead previewPaths
+- `src/main/lib/reconcile.ts` 新加 `cleanupDeadPreviewPaths()`，每次 reconcile 完成后扫一遍所有 video
+- `fs.existsSync` 检查，删掉不存在的条目
+- 全删完的 `previewPaths = undefined`（让 UI 走「无预览」分支，不再尝试加载）
+- 改动合并进 `changes` 数组，由末尾 `applyVideoChanges` 一次性落盘
+- 不刷屏、不弹窗：这是修复性的清理，不是用户该被打扰的事件
+
+### 3. v2.2.5 仍未做（留给 patch 2）
+- 不补 ffmpeg 重新截帧：hover 已有 javbus 抓的 cover 顶着用，preview 帧下次手动点"重新生成预览"时再生成
+- 让 v2.2.5 保持最小变更，降低风险
+
+---
+
+## v2.2.4（2026-08-30）
+
+**核心修复（用户反馈："代码有问题导致我收录了说没收录 + 弹窗不能藏起问题 + 万一没 Excel 怎么办"）**
+
+### 1. P0：修 `parseIntroExcel` 中文路径读取（用户 84 部全部"未收录"根因）
+- v2.2.3 用的 `XLSX.readFile(filePath)` 在 Windows 中文路径下**静默失败**——SheetJS v0.18.5 mjs 的 `readFileSync` 对非 ASCII 路径处理不当，会抛 `Cannot access file E:/新建文件夹/收藏整理_2026.xlsx`。
+- 改成 `await fs.readFile(filePath)` + `XLSX.read(buf, { type: 'buffer' })`，绕开 xlsx mjs readFileSync 中文路径 bug。
+- 实测：`E:\新建文件夹\收藏整理_2026.xlsx`（35KB / 74 部片单）buffer 解析成功 → keyMatches 76/76 命中。
+- 同步修 `excelSheetNames`（同样用 buffer）。
+
+### 2. P0：恢复「片单加载失败」弹窗（不再静默吞错）
+- v2.2.3 的 `autoFindIntroExcel` 在 `parseIntroExcel` 返回 null 时**静默 catch**，让用户以为"片单不存在"——实际可能是片单存在但读取失败。
+- v2.2.4 改造：
+  - `readIntroDoc` 返回 `IntroLookupResult`（含 `doc` 和 `error`），区分 `not-configured` / `parse-failed` / `auto-find-failed`。
+  - `autoFindIntroExcel` 同样返回结构化结果，记录 triedPaths。
+  - `reconcileLibrary` 通过 onProgress 顺路把 `introError` 推到 renderer，弹 Toast 提示（title / message / 已尝试的路径列表），**不自动消失**让用户看到。
+- 用户友好优先：找不到 → 告诉用户"在哪找不到"；找到了但解析失败 → 告诉用户"哪个文件坏了"。
+
+### 3. P1：无 Excel 片单兜底：自动后台抓元数据
+- 用户原话："万一哪天用户真没有excel怎么办"。
+- reconcile `else` 分支：遍历时收集 `needFetchAfter`（没 javdbDetail 且非国产片）。
+- 7 天内抓过且失败的跳过（`video.lastMetaFetchAt` 字段），抓到的写回 `video.javdbDetail` 让 UI 立刻按 genres 自动归类。
+- 用 `settings.scanConcurrency` 控制并发（默认 2），与 scanLibrary 行为一致。
+- `fetchDetailSmart` 抽到独立模块 `javdb-smart.ts`（避免 ipc ↔ reconcile 循环依赖）。
+
+### 4. 技术债
+- `MovieDetailResult` / `SmartFetchState` / `fetchDetailSmart` 从 ipc.ts 抽出到 `javdb-smart.ts`，让 reconcile.ts 也能调（无循环依赖）。
+- Video 类型加 `lastMetaFetchAt?: number`（兜底抓取 7 天去重用）。
+
+---
+
+## v2.2.3（2026-08-30）
+
+**核心修复（用户反馈"问题依旧存在 + 两个截帧角标 + 标签两份 + 控制台大量报错"）**
+
+### 1. P0：library 未配 Excel 片单时自动扫描库根目录（最关键）
+- `reconcile.ts` 加 `autoFindIntroExcel(folderPath)`：当 `library.introExcelPath` 未设时，**自动扫描库根目录一层**找 `.xlsx/.xls`（按文件名排序取第一个能解析品番列的）。
+- 用户友好：用户把 `收藏整理_2026.xlsx` 放到 library 根目录即可，无需手动配 `introExcelPath`。
+- 多个 xlsx 时按 zh 排序取第一个；console.log 提示「自动使用库根 Excel 片单」。
+
+### 2. P0：reconcile.ts 双重 push（用户截图「未收录 84 + 未分类 79」根因）
+- `reconcile.ts` else 分支（L260）补 `used.add(f)`：未配 Excel 时按文件维度只产出 1 条 entry。
+- 之前每个 filePath 同时进入「未分类」和「未收录」两条 entry，`code` 完全相同 → `HomeView key={e.code}` 重复 key 警告（`MKMP-542`、`juy-703`）→ 详情页 seriesMembers 出现两次相同 chip。
+
+### 3. P0：EntryCard 双「截帧」徽标
+- `EntryCard.tsx` 删 `bg-violet-500/90` 重复 chip（v2.0.2 + v2.1.0 合并遗留），保留 `bg-fuchsia-500/90` 带 film 图标版。
+- 顺手把数据源徽标改为单 IIFE 来源（防未来再加源时 paste 复制出错）。
+
+### 4. P0：EntryCard 双「JavLibrary」徽标（靛 + 天蓝重叠）
+- `EntryCard.tsx` 删链外 `bg-sky-500/90` 残留块，保留链内 `bg-indigo-500/90` 标准版。
+- 顺手加 `posterSource === 'manual'` 时显示绿色「设为封面」chip（之前没有）。
+
+### 5. P0：撤销 v2.2.2 的 `keyMatches` 字母后缀拒绝（最阴险 bug）
+- v2.2.2 把 `keyMatches` 后缀检查改成 `/[A-Z0-9]/`，**严重过度修改**——把 `JUR-031.mp4` 归一后的 `M`（来自 MP4）误判为「另一番号字母」拒绝，导致**正常文件都匹配不上**。
+- v2.2.3 改回只拒绝数字后缀：`/[0-9]/.test(after)`。`JUR-031.mp4` ↔ `JUR-031` ✅。
+- 系列分集合并（`SONE-566AB` → `SONE-566`）改由 `extractBaseCode/hasSeriesSuffix` 在抓取源显式处理，不要在文件名 keyMatches 上做强约束。
+
+### 6. P1：parseIntroExcel 同 code 多行不去重
+- 解析循环内加 `seenCodes = new Set<string>()`（用归一 key），跳过重复并 warn。
+- 同步把 `normalizeCode` 从 reconcile.ts 抽到 `src/shared/code.ts` 共享（reconcile + excel 两处共用）。
+
+### 7. P1：HomeView key 防御性加固
+- `HomeView.tsx:94` `key={e.code}` → `key={e.video?.id ?? \`code:${e.code}\`}`，未来再出重复 code 也不会 crash。
+
+**回归测试**：14/14 用户截图文件名 → Excel 命中；normalize/autoFindIntroExcel/keyMatches v2.2.3 全部通过。
+
+## v2.2.2（2026-08-30）
+
+**Bug 修复（用户反馈"未收录 84 个"）**
+- **`extractCode` 域名前缀误提取**（P0，github 项目根因）：`hdd800.com@JUR-031.mp4` 之前被错误识别成 `HDD-800`。修复：内部改造为先按 `@` 切多段 → 去方括号包裹 → 含 dashes 的合法番号形态段排序靠前 → plain fallback 用 `[A-Z]{2,}[A-Z]+\d{2,}`（要求额外字母，过滤纯字母+纯数字紧凑形态如 `HDD800`）。**覆盖测试 44/44 通过**（含 `b8s2048.org@EBOD-835`、`[hhd800.com@]DASS-733-C`、`44x.mejuy-703-2` 等用户截图实拍文件名）。
+- **`javdb.ts` 的 extractCode 语义漂移**（P0）：与 code.ts 并行两套，访问 `m[0]` 而非 `m[1]`，独立归一逻辑。统一为从 `src/shared/code.ts` re-export，确保 main/renderer 两侧同语义（缓存前缀 `javdb-cover-SONE-560CD2` 与实际 `javdb-cover-SONE-560.jpg` 不匹配导致老缓存删不掉的 bug 同时修复）。
+
+**其他 P1 解析增强**（按 Agent 全量排查报告逐条修）
+- `reconcile.normalizeCode`：下划线归一（`SONE_566` → `SONE566`，与 `SONE-566` 命中）。
+- `reconcile.keyMatches`：后缀字母也拒绝（防 `SONE-566AB` 误合并到 `SONE-566`；分集合并改由 `extractBaseCode/hasSeriesSuffix` 显式处理）。
+- `rename.cleanVideoFileName`：先 `.toUpperCase()` 入参再匹配（`sone-566-uc.mp4` / `ALDN606.mp4` 之前返回 null 现能正确改名）；"无需改名"判定改为按大写比较（用户原大写即无需改）。
+- `code.extractBaseCode` (`SERIES_SUFFIX_RE`)：尾部字母限制 `[A-DUC]`（之前 `[A-Z]` 太宽，把 `SONE-560X` / `KSJK-013V` 错剥成 `SONE-560` / `KSJK-013`）。
+- `excel`：`品番` 列扫描从仅 B 列改为扫整个表头（用户把品番放 D/F 列之前会全部静默归入"未分类"）。
+
+**P2**
+- `scanner.cleanTitle`：清理中文方括号【】、中文圆括号（）。
+- `reconcile` 未配置 Excel 分支：去掉扩展名后再写入 `code` 字段（之前 UI 卡片显示 `xxx.mp4`）。
+
+**测试**：回归测试 61/61 通过（44 个 extractCode + 17 个 normalizeCode/keyMatches）。
+
+## v2.2.1（2026-08-30）
+
+**数据源自定义优先级（1-5）**
+- 设置 → 数据源 → 「自定义优先级」区块（仅 auto 模式显示）：5 个源可点 ↑↓ 调整任意顺序（谁 1 谁 2 谁 3 谁 4 谁 5 你说了算）；
+- 「重置为推荐顺序」一键恢复默认：Javapi → Javinfo → JavDB → JavBus → JavLibrary（按信息全面度 / 获取难度 / 风控排序）；
+- 批量抓取（fetchDetailSmart）auto 链按该顺序降级，连续网络失败自动跳过当前源；
+- 持久化到 `settings.customSourceOrder`。
+
+**markdown 残留彻底清除（含注释与文案）**
+- 复查全仓并修复 20+ 处注释/文案残留：excel.ts、App.tsx、EditMetaModal（4 处）、ReconcileDialog（2 处）、about.ts（3 处）、api-types.ts（3 处）、ipc.ts、reconcile.ts（4 处）、types.ts（4 处）——全部改为 Excel 表述；
+- 保留：`CHANGELOG.md`（项目更新日志）、`通用评分与简介规范.md`（资源文档），非片单用途。
+
+**CI 修复（GitHub Actions 构建失败）**
+- `electron-builder.yml` 增加 `win.certificateFile: build/yingxia-sign.pfx`；
+- `release.yml` 命令简化为 `npx electron-builder --win`，证书密码改走 `CSC_KEY_PASSWORD` 环境变量（`secrets.CERT_PASSWORD`），不再用会触发 ENOENT 的 `-c.win.certificateFile=...` 写法。
+
+## v2.2.0（2026-08-30）
+
+**全面删除 markdown 片单支持**（用户要求一处不留，已全仓清理）
+- 删除 `src/main/lib/parser.ts`（md 解析器）、`mdWatcher.ts`（md 监听）、`src/renderer/src/components/OnboardMdModal.tsx`（新建 md 向导）三个整文件；
+- 删除 IPC：`specGet`（读取内置规范）、`libraryExportCodes`（导出番号清单）、`onMdChanged`（md 变更事件），含 `shared/ipc.ts` 常量 + `preload/index.ts` 暴露 + `shared/api-types.ts` 类型 + `ipc.ts` handler；
+- `Library.introMdPath` 字段移除；`Settings.library.introExcelPath` 改为唯一的片单权威来源；
+- `LibraryModal` 去掉「简介 md 文件」整块选项 + 「还没有 md？按内置规范让 AI 帮你生成 →」按钮 + `onOnboard` prop；
+- `dialogSelectFile` 通用文件选择器默认 filter 改为 Excel（`xlsx`/`xls`），title/buttonLabel 支持调用方覆盖；
+- `reconcile.ts` 删除 md 兜底分支，仅使用 Excel 片单；
+- 资源 `通用评分与简介规范.md` 仍在 `extraResources` 中保留（项目文档，非片单），未删除；`CHANGELOG.md` 同理保留。
+
+**数据源推荐顺序（已确认 v2.1.0 即为该顺序）**
+- 顺序：Javapi → Javinfo → JavDB → JavBus → JavLibrary；
+- 推荐依据：① Javapi（本地聚合 8 源 + JavDB API，信息最全、无 Cloudflare/IP 风控、免费，但需自托管）；② Javinfo（javinfo.dev 聚合，免风控，按量计费）；③ JavDB（原始最准，但有 Cloudflare 风控）；④ JavBus（备用源，含年龄验证绕过）；⑤ JavLibrary（兜底源，与 javdb/javbus 数据重叠度高）；
+- 用户可手动指定单一源（设置 → 数据源 → 手动选项）。自定义 1-5 优先级拖拽留 v2.3.0。
+
+**新功能：隐私锁删除密码验证**
+- 设置 → 隐私与安全 → 已有「当前状态：已上锁/未上锁」+ 密码输入区（SHA-256 + 随机 salt 哈希存储，明文不落盘）；
+- 开启锁后，删除视频（详情页/卡片/文件列表「删除文件」按钮 → 二次确认 → 走 confirmDelete）和删除媒体库（库设置 → 删除）时，会先弹密码框（window.prompt）要求输入密码；
+- 密码错误或取消则中止删除；连续验证失败不影响下次。
+
+## v2.1.0（2026-08-29）
+
+**合并朋友分支（github.com/z1006670445/yingxia-video-manager）**
+- **新增数据源 Javapi（本地自托管聚合 API）**：settings 配置地址 + Key，免费、无 Cloudflare/IP 风控；auto 降级链最优先；
+- **新增数据源 Javinfo（javinfo.dev 聚合 API）**：注册拿 Key，免风控；auto 链第二顺位；
+- **设为封面 / 预览帧设为封面**：详情页预览帧可设为封面（posterSource=manual 最高优先级），封面替换前 ffprobe 验证图片有效性（坏图不替换 + 删坏图走截帧兜底）；coverVersion 机制让封面即时刷新；
+- **渲染进程侧截帧兜底（frameFallback）**：列表/详情显示时按需 ffmpeg 截帧（与主进程扫描截帧互补）；ListThumb 缩略图组件（blur 背景 + 帧标识）；
+- **首页全库随机**：多库合并洗牌，单库自动隐藏；收藏/详情不再刷新随机；
+- **打包输出移到工作区外**（~/yingxia-release/<时间戳>），根治 app.asar 被占用；
+- 徽标体系扩展：Javapi（青）/ Javinfo（绿）/ JavLibrary（靛）/ JavBus（黄）/ 截帧（品红）。
 
 **新功能**
-- **右键菜单新增「删除文件」**：右击任意视频卡片（仅 !isMissing 时）→ 选择「删除文件」→ 主进程预检后弹二次确认（动态展示实际删除范围）→ 确认后从磁盘删除 → 触发全库扫描。智能判定删除范围：
-  - **整目录删**：视频所在目录**只有它本身** + **至少 1 个 .torrent 种子文件** + **无其他非视频/非种子文件**（"种子文件夹"场景）→ 整个目录（含视频 + 种子）一并删除
-  - **只删视频**：同目录有其他视频、或有其他文件（保守起见）、或没有 .torrent → 仅删除视频文件本身，所在目录保留
-  - 二次确认根据预检结果动态生成文案（明确告诉用户"会删什么"），避免误删
-  - 删除后调用 `runReconcile(libraryId)` 触发全库扫描，让 data.json 重新同步
-- **详情页播放按钮重排（参考大厂设计）**：原来"播放"按钮在顶部 sticky 工具条右侧，与"分享/补齐信息/收藏"并列，离内容区较远。现在主 CTA 放在内容区（评分下方、MetaRow 列表上方），尺寸更大、更显眼——`h-11 px-7 rounded-xl` + 品牌色 + 大阴影。顶栏只保留"分享 / 补齐信息 / 收藏"。同时把"编辑 / 打开文件位置 / 删除文件"作为二级按钮组放内容区，避免再返回顶栏。
+- **无封面视频自动归类（需求 B）**：媒体库未配置 md / Excel 片单时，所有文件原先一律归入「未分类」。现在：
+  - **有数据源元数据**（javdbDetail.genres 非空，如 JavBus 抓到的「高清」「字幕」）的视频，按 genres 自动归类为「【JavBus】高清·字幕」这类自动分类（order 9000，位于用户分类之后、未收录之前）；
+  - **无元数据**的视频仍归「未分类」（行为不变）；
+  - 侧栏「分类」里自动归类项用独立分组「⚡ 自动归类」显示（紫色分隔标题，与用户分类区分）；
+  - 同一 genres 组合的多部视频自动归入同一分类，点击即可筛选查看。
 
-**新增 IPC**
-- `videoDeleteFile(id)` —— 执行删除（含"种子文件夹"整目录删判定）
-- `videoInspectForDelete(id)` —— 预检：列出同目录其他视频数 / .torrent 数 / 其他文件数（不删任何文件）
+**优化（需求 A）**
+- **截帧超时兜底**：ffmpeg 单次截帧（thumbnail 封面 / 预览图）超过 30 秒强制 kill，防止长视频或异常文件卡死扫描/对账/补齐流程；
+- **截帧批次上限**：单轮对账 / 单轮批量补齐后台截帧最多处理 200 部，其余留待下轮，避免长时间占满并发池拖慢操作。
 
-## v1.8.5（2026-08-28）
+**说明**
+- 自动归类在每次对账时按 javdbDetail.genres 实时计算，数据源元数据更新后归类自动跟随变化；
+- 若视频后续在 md / Excel 片单中新增条目，下次对账会优先按片单分类展示，自动归类自动让位。
+
+## v2.0.3（2026-08-29）
+
+**回滚 / 修复**
+- **回滚详情页 UI 改动**：恢复 v1.9.0 时确认的详情页布局（`git checkout a08dbd0 -- VideoDetail.tsx`），撤销 v2.0.0/v2.0.2 引入的"ffmpeg 截帧切换 chips"和"JavLibrary 蓝色徽标"（这两项是导致红框标注的大片空白 + 视觉割裂的根源）。
+- **修复详情页右栏大片空白**：右栏加 `flex flex-col` 让内容垂直排列，底部新增「文件信息」卡片（文件名 / 添加于 / 上次播放 / 时长 / 完整路径），通过 `mt-auto` 推到右栏底，填满 grid 拉伸后的剩余高度，**消除红框区域的空白**。
+
+**新功能**
+- **首次启动强制弹出「用户须知」**：新增 `UserNoticeModal` 组件（正式法律文书风格），涵盖：
+  - 软件性质声明（仅本地管理工具，不提供/不存储/不传播任何片源内容）
+  - 用户行为规范
+  - 详细法律条文（**《刑法》第三百六十三条【制作、复制、出版、贩卖、传播淫秽物品牟利罪】**、**第三百六十四条【传播淫秽物品罪】**、《治安管理处罚法》第六十八条、《网络安全法》第十二条、《未成年人保护法》第五十一条、《民法典》第一千零一十九条）
+  - 未成年人特别保护、免责声明
+  - 复选框「我已阅读并同意，下次启动不再显示」——勾选后写入 `settings.noticeDismissed=true` 永久不再弹；未勾选关闭则下次启动再次弹出
+  - **不可 ESC 关闭、不可背景点击关闭**（合规要求：必须主动确认才能继续使用）
+
+## v2.0.2（2026-08-29）
+
+**优化**
+- **截帧质量提升**： 与  改用 ffmpeg 官方  滤镜（自动分析 N 帧后选最具代表性的一帧）——避免黑场/静帧/淡入淡出等暗帧问题。 按视频时长自适应（100 帧起步，最长 200 帧）。
+- **列表页 / 网格卡片「截帧」紫色徽标**：ffmpeg 截帧生成的封面在 EntryCard 和 ListView（缩略图列表）左上加紫色  chip 标识，一眼分辨是数据源图还是 ffmpeg 截帧（顺带补了 JavLibrary 蓝色 chip）。
+- **说明**：升级前已截的旧暗帧不会自动重新截——详情页「重新截帧」按钮可逐个升级；批量升级可在首页扫描库完成后用 javdb 信息批量补齐流程触发。
+
+## v2.0.1（2026-08-29）（2026-08-29）
+
+**优化**
+- **无封面自动 FFmpeg 截帧兜底**：多个数据源（JavDB/JavBus/JavLibrary）都抓不到数据的视频，不再只显示灰色占位图——以下三条路径都会对无封面视频自动截帧显示真实画面（随机时间点截 1 张封面 + 15 张预览图）：
+  - **扫描富集**：扫描媒体库时，对无海报视频强制截帧兜底（不再受 `imagePriority` 是否含 ffmpeg 限制）；
+  - **对账完成**：自动/手动对账结束后，后台对仍无海报的视频异步截帧（不阻塞对账返回）；
+  - **批量补齐完成**：「补齐信息」批量结束后，后台对仍无海报的视频异步截帧（不阻塞补齐返回）。
+  - 截帧封面独立保存在 `posterPathFfmpeg`，与数据源图并存，仍可通过详情页「数据源图 / FFmpeg 截图」自由切换。
+
+## v2.0.0（2026-08-29）
+
+**新功能 · 大版本**
+- **片单改为 Excel 格式（替代 md）**：新增 `src/main/lib/excel.ts` 解析器，支持直接选择「收藏整理_2026.xlsx」这类片单文件（需含「品番」列，如「片单」工作表）。Excel 的分列结构（编号/品番/分类/推荐评分/简介/主题/角色/服装/体型/行为/玩法/场景/剧情/其他）完整映射到现有对账体系（分类 → 分类分组、品番 → 番号、推荐评分 → 评分、各标签列 → 结构化标签）。媒体库设置中可分别配置「md 简介」与「Excel 片单」，**Excel 优先、md 兜底**。md 完全保留兼容。
+- **搜索只提取非中文番号**：`extractCode` 全面增强——支持无分隔符番号（`KSJK013` → `KSJK-013`，旧版只认 `SONE-560` 这种带分隔符的，导致无分隔符片名搜不到），并先剥离中文/全角/广告前缀（`【中文字幕】KSJK013` 不再污染搜索词）。javdb / javbus / javlibrary 三源共用同一增强逻辑。
+- **扫描支持"只扫大于 X MB"**：设置 → 数据与存储 →「跳过小体积文件」（默认 100MB，0 = 不过滤）。扫描与对账都会跳过小于阈值的文件，广告样片/短视频不再混入主列表。
+- **新增 JavLibrary 数据源**：设置 → 网络 → 数据源 新增 JavLibrary；手动模式可单独指定该源调试；auto 模式降级链变为 JavDB → JavBus → JavLibrary。
+- **封面/预览图双缓存 + 自由切换**：详情页封面下方新增「数据源图 / FFmpeg 截图」切换按钮。数据源（javdb/javbus/javlibrary）抓取的封面与 FFmpeg 随机截帧封面**独立保存**（`posterPathFfmpeg`），可随时来回切换，不再互相覆盖；FFmpeg 截图不存在时点击会自动生成。
 
 **修复**
-- **修复窗口缩放过程中「严重重影」**：v1.8.2 已修过一次（移除 `.entry-card` 的 `content-visibility` 占位），但仍残留：拖动窗口缩放时右侧能看到 Hero 大海报、播放按钮、"为你推荐"chip、换一批按钮、视图切换按钮、随机推荐行卡片等内容被复制了一份（Chromium 渲染管线与 Windows 窗口管理器在 resize 期间不同步，导致 WebContents 短暂两帧叠加）。通过 CSS containment 隔离各层 reflow 缓解：
-  - `App` 根容器 `contain: layout` —— 整页视为独立 layout 单元
-  - `Toolbar` header `contain: layout` —— drag-region 不影响下方 reflow
-  - `HomeView` 根容器 `contain: layout`
-  - Hero 区域 `contain: layout paint` + `will-change: transform` —— 强制独立合成层，paint 不溢出自身 box
-  - `.entry-card` `contain: layout style` —— 每张卡片独立 layout/style（**最重要的修复**：每张 EntryCard 在 flex/grid 容器里都可能引发全局 reflow）
-
-## v1.8.4（2026-08-28）
-
-**修复**
-- **修复设置界面顶部「发现新版本 v{当前版本}」误显示**：`pendingUpdate` 横幅（绿色卡片）原本只检查 `settings.pendingUpdate` 是否存在，没做版本比较——升级到新版后，settings 里残留的旧 `pendingUpdate.version` 会一直显示「发现新版本」，与实际「已是最新」矛盾。已加版本比较：只在 `pendingUpdate.version > 当前应用版本` 时显示横幅，升级后自动隐藏。
-- **修复「已是最新」时下方冗余空白框**：手动检查更新返回「已是最新」且无错时，按钮旁已显示「已是最新版本」文字，但下方又渲染了一个完整的灰色边框容器（带「已是最新」标签和空 description）。已改为「已是最新」时不渲染下方整块容器，仅保留按钮旁的内联文字，UI 更清爽。
-- **侧记**：获取应用版本号（之前从 `api.appInfo()` 只取 `dataDir`，现同时取 `version`），用于顶部 pendingUpdate 横幅的版本比较。
-
-## v1.8.3（2026-08-28）
-
-**修复**
-- **修复「关于」弹窗检查更新一直转圈圈**：`runUpdateCheck` 的 `fetch` 调用没配超时，大陆网络下 GitHub API TCP/TLS 能通但 HTTP 层不响应时，undici 默认 fetch 会无限挂死 → 整个 checkUpdate 永远不 resolve → UI 检查按钮永远 `animate-spin`。已为 fetch 加 `AbortSignal.timeout(20000)`（每个源 20s），两源各自独立超时（fallback 后第二个源也最多 20s），最迟 40s 完成；超时异常的 cause.code（如 `UND_ERR_HEADERS_TIMEOUT`）会通过现有错误诊断自动显示。
-- **修复设置界面「判定置信度：无法判定」误显示**：`confidence='none'` 时也显示该行（即"已是最新"状态下也会显示「无法判定」），让用户误以为是错误状态。改为只在 `hasUpdate=true` 时显示。
-- **稳定 AboutModal checkUpdate**：从 `const async` 改为 `useCallback`（移到 `if (!open) return null` 之前，遵守 Hooks 规则），闭包引用稳定、不再每次 render 重建。
-
-## v1.8.2（2026-08-28）
-
-**修复**
-- **修复首页/浏览页「巨大空隙」与「页面缩放重影」**：`.entry-card` 使用了 `content-visibility: auto` + `contain-intrinsic-size: 320px` 作为视口外卡片的占位高度，但占位 320px 与真实卡片尺寸严重不符（横屏卡片实际高约 126px、竖屏约 216px），导致切换竖屏/横屏、窗口缩放、切换选项卡时浏览器用错误占位撑出空隙、或异步重测高出现"重影"。已移除这两条规则（浏览页本就有 `VirtualizedWall` 做虚拟滚动，不依赖该浏览器优化），并改为给 `.entry-card` 直接设置 `aspect-ratio`（`entry-portrait` 2:3 / `entry-landscape` 16:9），浏览器不依赖子元素渲染即可确定卡片尺寸，杜绝复发。
-- **修复启动黑屏几秒 + 大空隙**：新增首页骨架屏 `HomeSkeleton`，数据加载/对账期间显示 Hero 占位（300px）+ 五行 Row 骨架（与真实布局同尺寸），数据就绪后无缝替换为真实内容，消除「黑屏 → 空状态居中 → 完整布局」的视觉断层。
-
-## v1.8.1（2026-08-28）
-
-**修复**
-- **修复更新检查失败（`fetch failed`）**：更新检查的仓库路径仍硬编码为旧账号 `awei10`，且默认源为 GitHub——GitHub API 在部分大陆网络下无响应，导致「检查更新」报 `fetch failed`。现修复为：
-  - 仓库路径更新为 `mr-awei/yingxia-video-manager`；
-  - 默认检查源改为 Gitee（大陆网络更稳定），可在设置中随时切换；
-  - **源自动回退**：首选源失败时自动改用另一源重试，结果会标注实际使用的源；
-  - **错误诊断增强**：失败时显示具体网络错误码（如 `ECONNRESET`、`UND_ERR_SOCKET`），不再是笼统的 `fetch failed`；
-  - 设置页「检查更新」失败后提供「切换源重试」按钮一键换源重试。
-
-## v1.8.0（2026-08-28）
-
-**发布说明**
-- 仓库迁移：GitHub 账号由 `awei10` 更名为 `mr-awei`，主仓库地址更新为 `github.com/mr-awei/yingxia-video-manager`。
-- 接入 Gitee 镜像：`gitee.com/mr-awei/yingxia-video-manager`，关于页新增 Gitee 入口（原先为占位，现已填真实地址）。
-- 双端同步：已配置一次 `git push` 同时推送 GitHub 与 Gitee，后续更新两站同步发布。
-
-- **UI / 动效审查落地**：
-  - 修复 P0 回归：浏览页快捷 chip 长期缺失「未收录」项，从侧栏进入未收录时顶栏不高亮、面包屑回退为「全部影片」。已在 `BrowseBar` 补 `unlisted` 并复用侧栏琥珀色语义（选中时琥珀高亮）。
-  - 详情页由全屏覆盖改为居中大弹窗（`max-w-5xl` + 半透背景留边 + 面板内滚动），返回时背景可见，更像「弹窗」而非「切界面」。
-  - 统一弹窗进场动画：背景淡入 + 面板缩放位移（`animate-modal-*`），并新增 `prefers-reduced-motion` 守卫，全站尊重系统「减少动态效果」设置。
-  - 建立动效令牌（`--dur-fast/med/slow`、`--ease-out`）；收敛 `fadeIn` 双重定义（删除 `tailwind.config.cjs` 中的重复关键帧，仅保留 `index.css` 单一来源）；修正 `EntryCard` 的无效类 `duration-250` → `duration-[250ms]`。
-  - Hero「为你推荐」常驻脉冲点改为静态点；首页↔浏览、浏览列表切换加淡入过渡。
-  - 首页精选收敛为「随机推荐 / 最近添加 / 我的收藏」三行，移除与浏览页排序重复的「评分最高 / 最近播放」。
-- **侧栏重构 + 首页恢复 + Toast 统一**：
-  - 首页恢复五行精选：随机推荐 / 最近添加 / 评分最高 / 最近播放 / 我的收藏。
-  - 侧栏 9 段筛选（分类/标签/演员片商系列/技术规格/年份）合并为单一可折叠「筛选」Tab 组（默认收起），首屏高度显著降低；Tab 上显示各维度已选数量徽标，点击切换面板。
-  - 新增统一 Toast 系统（`components/Toast.tsx` + `ToastProvider`）：全站唯一通知出口，默认右下角堆叠，支持 ok/warn/err/info 四色、富内容（失败原因/来源分布）、进度变体（常驻进度条）、自定义操作按钮、退场淡出动画、最多 4 条、尊重 reduced-motion。原三套独立 toast（顶部白条进度、详情页底部居中、批量结果右下）全部收敛至该系统——扫描/补齐进度改为右下角常驻进度 toast，批量补齐结果改为带来源分布条的 toast，详情页补齐/分享提示改为统一 toast。
-
-- 隐私锁：设置密码后，下次启动需输入密码才能解锁；连续 5 次密码错误自动退出软件。密码以 SHA-256(salt+password) 加盐哈希存储，不保存明文。
-- 列表三视图：每个媒体库的浏览视图支持「竖屏预览图 / 横屏预览图 / 纯文件名列表」三种模式，顶部一键切换、独立记忆。
-- ffmpeg 截帧兜底：当影片实在获取不到封面或截图时，调用内置 ffmpeg 在随机时间点截取 1 张封面 + 15 张预览图，保证每部视频都有真实画面。
-- 无 md 影片信息回填：没有简介 md 文件的影片，可从数据源（JavDB / JavBus）抓取标签、名称、演员、评分等信息，回填到影片顶层字段。
-- Gitee 入口：关于页接入 Gitee 镜像仓库地址 `gitee.com/mr-awei/yingxia-video-manager`，外部链接区新增 Gitee 按钮。
-- 更新源选择：设置中可选择从 GitHub 或 Gitee 检查更新，拉取 releases 列表并给出下载链接（不自动安装）。
-- **修复**：系列番号提取规则 `extractBaseCode` 会把 SONE-280 / SONE-292 / SSIS-419 等正常多数字序号误拆为 SONE-2 / SSIS-4，导致同系列不同号被归并、批量补齐时错用元数据。现在纯数字分集必须带连字符（如 HUNTA-468-1），SONE-280 这类正常序号不再被拆分。
-- **国产片支持**：纯中文文件夹（文件夹名含中文且文件夹/文件名均无番号）自动识别为国产片，详情页标注「国产片」徽章。国产片不自动抓取 JavDB/JavBus 元数据（批量补齐跳过），仅用 ffmpeg 随机截帧生成封面 + 15 张预览图；详情页「补齐信息」对国产片改为「重新截帧」。
-- **修复**：竖屏 / 横屏 / 文件名三视图切换时，虚拟滚动墙未把 `aspect` 加入重算依赖，导致卡片重叠、分类标题悬浮错乱。已在 `VirtualizedWall` 中加入 `aspect` 依赖，并为视图切换加 `key` 强制 remount，确保布局干净。
-- **未收录文件也进列表/首页**：之前「文件夹有但 md 未收录」的文件只在「对账差异」里出现，列表和首页看不到。现在对账时会为这类文件生成「未收录」分类的展示条目（附 `Video` 记录），和普通影片一样浏览、搜索、查看详情。
-- **文件名列表改为详细列表**：原来的「文件名」视图只显示文件名，现在改为详细行，展示文件名、番号/系列/片商、年份、时长、文件大小、演员、标签、评分、收藏、操作（播放/收藏/编辑），且不显示大图和简介。
-- **对账未收录项可忽略**：对账弹窗中每个「文件夹有但 md 未收录」的文件旁新增「忽略」按钮；忽略后该项目不再出现在对账弹窗，但仍保留在左侧「未收录」分类中方便查找，「一键清理文件名广告」也会跳过它。弹窗底部可展开管理已忽略项并取消忽略。设置保存在 `ignoredUnlistedPaths`。
-- **左侧新增「待处理」分区（功能分区梳理）**：把原本混在「我的清单」里的诊断/差异视图（未收录、未评分、缺封面）独立成「待处理」分组。「未收录」仍在该分组并以琥珀色高亮（存在待处理项时），「未评分 / 缺封面」带数量徽标；「我的清单」只保留用户主动创建的视图（收藏、最近播放）。「未收录」不再出现在「分类」列表中，避免同一概念双入口。
-- **设置页分区重构**：原「数据」拆分为「隐私与安全」（隐私护盾默认开启、隐私锁）与「数据与存储」（扫描并发 / 自动重扫、数据目录 / 清理缓存）；新增「更新」分区（检查更新源），从「通用」移出。设置侧栏现为：通用 / 网络 / 外观 / 隐私与安全 / 数据与存储 / 更新 / 危险操作。
-- **更新页：手动检测 + 自动更新频率**：「设置 → 更新」新增「手动检查更新」按钮（即时联网查询所选源并显示结果/下载链接），以及「自动更新频率」设置（关闭 / 每天 / 每周 / 每月）。开启频率后，影匣会在启动时（及运行中每 30 分钟复查）按频率自动检测更新；检测到新版本会写回 `pendingUpdate`，在更新页显示「发现新版本」横幅，并在左侧「设置」入口显示琥珀色提醒点。检查更新结果（含 lastUpdateCheck）持久化到 `data.json`。
-- **未收录高亮与选中态明确区分**：「待处理 → 未收录」存在待处理项时以琥珀色（文字 + 背景 + 持续显示的琥珀色圆点）突出，与普通白色条目区分；选中态使用品牌色（粉色）填充 + 加粗，二者色相与填充方式均不同。即便在「未收录」被选中时，琥珀色圆点仍保留，确保「有待处理项」状态不被选中态掩盖。折叠侧栏的未收录入口同样以品牌色=选中、琥珀色=待处理 + 圆点区分。
-- **列表视图行内展示标签**：「纯文件名列表」模式下，标签从仅在 `xl` 屏显示改为 `md` 起即显示，最多展示 4 个；标签改为可点击按钮，点击后一键筛选该标签全部影片。缩略图列表模式（`full`）的标签同样支持点击筛选。
-- **首页与浏览列表默认横屏视图**：首页精选行、浏览列表默认改为横屏卡片视图（`grid-landscape`）；首页 Hero 右上角新增「竖屏 / 横屏」切换按钮（不含文件名模式），满足用户快速切换需求。横屏模式下首页行内卡片宽度调整为 `w-56`，与 16:9 比例匹配。
-- **Hero 推荐位跟随横屏视图**：首页顶部 Hero 推荐位的大海报从固定竖屏（`w-36 h-52`）改为跟随当前视图模式，横屏模式下显示为 `w-52 h-36`，与下方精选行及浏览页保持一致的视觉比例。
-- **更新检测多维特征点**：检查更新不再仅比较版本号，而是综合多维度特征判定：
-  - 版本号语义化比较（支持 `-beta`/`-rc` 等 semver pre-release）；
-  - release asset 匹配：自动识别 Windows x64 Setup 安装包（`.exe`），优先匹配含 `win`/`x64`/`setup` 的资源；
-  - 关联校验文件（`.sha256`/`.blockmap`）识别；
-  - 发布时间、pre-release / draft 标记；
-  - release notes 中的 urgency 标记（`强制更新`/`breaking`/`数据迁移`/`recommended` 等）与 `minVersion` 最低版本要求；
-  - 返回「置信度」：`full`（版本+安装包均匹配）、`partial`（仅版本较新但无安装包）、`none`（无法判定）；
-  - 草稿版本不会标记为可用更新，预发布版本会保留标记但明确提示。
-- **更新页展示更丰富的检测结果**：手动检查更新后展示 urgency 标签（强制/重要/推荐/普通）、置信度、发布时间、匹配的安装包文件名与大小、校验文件、最低要求版本、release notes 摘要，以及「直接下载安装包」和「查看发布页」两个入口。
-- **设置入口更新提醒点按 urgency 变色**：左侧设置齿轮的更新提醒点从单一琥珀色改为随紧急程度变色（强制=红、重要=琥珀、推荐=天蓝、普通=翠绿），tooltip 也显示 urgency。
-
-## v1.7.7（2026-08-27）
-
-- 添加媒体库不再直接连弹两个系统对话框：改为打开「添加媒体库」表单，顶部两步引导说明（①选择视频文件夹 → ②选择简介 md 文件），每个字段下方补充用途说明，新建模式下未选文件夹时禁用保存按钮。
-- 系统选择对话框补充标题与说明：第 1 步「选择视频文件夹」、第 2 步「选择简介 md 文件（可跳过）」。
-- 新建模式保存按钮文案为「添加并扫描」，保存成功后自动对账；未选 md 时自动弹出内置规范向导。
-- 编辑媒体库（库设置）行为不变。
-
-## v1.7.6（2026-08-27）
-
-- About 弹窗接入开源仓库地址 https://github.com/awei10/yingxia-video-manager：外部链接区新增 GitHub 按钮。
-- About 弹窗新增「点亮 Star」引导卡片：品牌色渐变卡片 + 一键跳转仓库按钮，引导用户给项目点 Star。
-
-## v1.7.5（2026-08-27）
-
-- 向导打开即自动扫描番号。新增 IPC library:getCodes，只返回数据，不弹保存对话框、不写文件。打开向导时并行加载番号和规范路径，不用先点第 1 步。
-- 第 1 步改为「加载番号（自动）」，直接展示已扫描的番号（中文逗号分隔），提供「一键复制（中文逗号）」和「导出番号列表为 txt」两个按钮。
-- 第 2 步的完整提示词自动包含番号：buildFullPrompt 直接读 codes state，向导打开即就绪。
-- 同步调整顶部说明和第 2、3 步的文案，统一描述为「完整提示词」。
-
-## v1.7.4（2026-08-27）
-
-- 修复复制按钮报错：Electron 31 默认 sandbox 模式下，preload 无法访问 clipboard 模块（clipboard 为 undefined），之前只有新按钮会触发。把复制操作移到主进程，新增 IPC system:copyText，preload 改为 ipcRenderer.invoke。copyText 类型从 void 改为 Promise<void>。
-
-## v1.7.3（2026-08-27）
-
-- 修复底部「复制完整提示词并打开规范位置」按钮：specPath 异步未就绪时直接 return，导致既不复制也不打开位置。改为 async，specPath 缺失时先 await api.specGet() 拿路径再执行。按钮不再被 disabled，未导出番号时也能点击（只复制基础提示词）。
-- 番号改为中文逗号间隔：第 1 步 textarea、复制按钮、完整提示词、txt 文件、剪贴板全部改用「，」。
-- 第 2 步提示词直接显示完整版（含番号），「复制提示词」按钮也复制完整版。
-
-## v1.7.2（2026-08-27）
-
-- 向导底部新增「复制完整提示词并打开规范位置」按钮。点击后把已导出的番号追加到内置提示词末尾，复制到剪贴板，同时用系统文件管理器定位内置规范 md 文件。
-- 未导出番号或规范路径未就绪时按钮自动禁用，并给出 hover 提示。
-
-## v1.7.1（2026-08-27）
-
-- 复制番号时同时打开文件所在位置：第 1 步「复制番号清单」复制剪贴板的同时，用文件管理器定位导出的 txt（高亮文件）；另保留「仅打开文件位置」入口。
-- 第 2 步新增「打开规范文件位置（发给 AI 用）」按钮，定位内置规范 md。
-- 文案统一提示「把番号清单 + 提示词 + 规范文件一并发给 Grok」。
-
-## v1.7.0（2026-08-27）
-
-- 新增「新建简介文件向导」：内置《通用评分与简介规范》（评分标准 / 提示词 / 简介模版 / 完整分类标签系统），打包进软件，运行时从 resources 读取。
-- 添加媒体库未选 md 文件时自动弹出向导，分三步：批量导出番号（扫描库文件夹导出 txt 并复制剪贴板）；按文档说明操作（内置提示词 + 查看完整规范）；推荐 Grok 并附官网链接。
-- 媒体库设置页新增「还没有 md？按内置规范让 AI 帮你生成 →」按钮，随时可重新打开向导。
-- 向导最后一步可跳到「库设置」选择刚生成的 md，影匣自动重新对账。
-
-## v1.6.0（2026-08-27）
-
-- 侧边栏「筛选」区新增 4 个维度：分辨率（4K/2K/1080p/720p/480p/SD/未知）、时长（30分钟内/30-60分/1-2小时/2-3小时/3小时以上/未知）、评分（9-10/8-9/7-8/6-7/6以下/未评分）、年份。维度内多选为 OR，跨维度为 AND，与既有女演员/片商/系列/标签/分类/智能清单筛选叠加。
-- 侧边栏新增「技术规格」「年份」两段 facet，计数随搜索和标签筛选联动。浏览页顶部「筛选：」条新增各维度 chip，可单独移除，「清除全部」一并清空。
-- 统计看板新增「磁盘占用（按分类）」「磁盘占用（按年份）」字节条形图，以及「分辨率分布（按数量）」条形图。仅统计 ffprobe 已探测到 fileSize 的影片。
-
-## v1.5.5（2026-08-27）
-
-- 首页 Hero 与随机推荐刷新合并：refreshAll 同时调用 onHeroNext 与 onRefreshRecommend，点任意一个，两个区域一起换。
-
-## v1.5.4（2026-08-27）
-
-- 随机推荐改为点一次换一次：原来用日期加 nonce 的确定性 hash 洗牌，相邻刷新可能排序相同导致点多次不换。改为整库 Fisher-Yates 真随机洗牌（Math.random），每次点击刷新即重洗整页 14 条。
-- 移除「有海报优先」的二次排序，无海报影片也参与随机推荐。
-- 删除已废弃的 hashStr 工具函数。
-
-## v1.5.3（2026-08-27）
-
-- 顶部 Hero 改为点一次换一次：不再绑定随机推荐首条，改为独立的整库洗牌队列。点刷新取下一项，走完一轮自动重洗，重洗时避免与上轮尾项重复。
-- 队列由媒体库全部影片组成（含无海报影片，用占位图展示）。
-
-## v1.5.2（2026-08-27）
-
-- 主题选择从文字分段按钮改为 3 列卡片网格，每张卡片包含实时缩略图预览、名称、一句话说明、选中勾选。
-- 四种主题重新区分：深邃影院（蓝黑径向渐变，深阴影）、现代明亮（浅灰白背景，粉红强调）、杂志艺术（暖调深黑底，酒红高光，衬线标题）、玻璃拟态（深紫黑底，霓虹紫/青高光，毛玻璃）。
-- 引入 --radius-card、--shadow-card、--accent、--accent-2 变量，各主题在圆角、阴影、强调色上不同。
-- src/renderer/src/index.css 重写四种主题；SettingsModal.tsx 新增 ThemePreview / ThemeCard 组件。
-
-## v1.5.1（2026-08-27）
-
-- 设置页关闭按钮从左侧「设置」标题旁移到右侧内容区右上角。
-- 右侧内容区新增顶部标题栏，显示当前分类名称，与关闭按钮对齐。
-
-## v1.5.0（2026-08-27）
-
-- 设置页从 540px 单列表单改为 900px 双栏面板（左侧分类导航 + 右侧内容区），分类：通用 / 网络 / 外观 / 数据 / 危险操作。
-- 分段控制器替代主题/海报风格/数据源的按钮组；定制下拉面板替代原生 select；开关改圆角滑块。
-- 设置分类新增 globe、cookie、database、palette、shield、zap、save 等 Lucide 风格线性图标，移除 emoji。
-- Icon.tsx 扩展图标库；SettingsModal.tsx 完全重写，拆分为 SidebarItem / SectionHeader / Card / Field / FieldRow / Toggle / SegmentedControl / Select。
-
-## v1.4.8（2026-08-27）
-
-- 进度 toast 从窗口水平居中改为 left-[40%]，避开右侧工具栏按钮。
-
-## v1.4.7（2026-08-27）
-
-- 进度 toast 上移到 top-2，新增向上的投影阴影，避免与标题栏区域重叠。
-
-## v1.4.6（2026-08-27）
-
-- 打包版新增 Ctrl+Shift+I 切换开发者工具。
-
-## v1.4.5（2026-08-27）
-
-- 进度 toast 移到标题栏与主工具栏之间的空白区域。
-
-## v1.4.4（2026-08-27）
-
-- 进度 toast 上移到紧贴标题栏下方。
-
-## v1.4.3（2026-08-27）
-
-- 进度 toast 从窗口正中间移到主内容区顶部中央。
-
-## v1.4.2（2026-08-27）
-
-- 进度 toast 移到窗口正中间，避免与顶部工具栏冲突。
-- 窗口标题由「影匣 · 海报墙」简化为「影匣」。
-
-## v1.4.1（2026-08-27）
-
-- 进度条从「顶部居中浮层」改为「顶部 1px 细进度条 + 右上角百分比小字」，不抢点击（pointer-events-none）。
-
-## v1.4.0（2026-08-27）
-
-- 产品更名为「影匣」（英文名 / 安装包 / 窗口标题 / 关于页同步更新）。
-- 设置中心新增：开机自启、启动时自动对账、最小化到托盘（关窗隐藏到系统托盘，托盘菜单可显示/退出）。
-- 默认排序方式：标题 / 最近添加 / 最近播放 / 评分 / 年份 / 随机。
-- 隐私护盾默认开启：启动时自动进入隐私模式（海报打码）。
-- 扫描并发数：ffprobe 探测 / 截帧的并行任务数（1-8）。
-- 海报密度选项升级：大图沉浸 / 标准 / 高密度。
-- 设置底部「危险操作」区新增「卸载影匣」，二次确认后调用系统卸载程序。
-- 托盘图标随安装包附带（extraResources icon.png）。
-
-## v1.3.1（2026-08-27）
-
-- 修复补齐进度条只显示一半：原来按「javdb/javbus/失败」三段显示在 ok+failed 基数上，worker 只对缺数据的视频抓取导致基数偏小。改为单段连续条 = 成功 / 已处理（成功 + 失败）。
-
-## v1.3.0（2026-08-27）
-
-- 完整适配《片单_细化分类》新结构：8 大细化分类（【多人】超大规模全明星群P / 豪华哈雷姆 / 逆3P / 巴士旅行团 / 熟女人妻多人 + 【单体】同居甜蜜 / 痴女榨取 / 浓密剧情），侧栏分类墙同步更新。
-- 解析 `**标签**：` 块下的 `- **主题**/**角色**/**体型**/**服装**/**行为**/**玩法**/**场景**/**剧情**` 结构化标签，侧栏按类别分组筛选。
-- md 内 `**推荐评分**` 直接作为评分展示，不依赖 javdb。
-- 文档标题 / 装饰行不再显示为分类。
-- 标签兜底字典重写，跟随新类别体系，平铺标签自动归类。
-
-## v1.2.0（2026-08-27）
-
-- ffmpeg 查找顺序：设置指定路径 → 系统 ffmpeg（PATH/常见目录）→ 内置捆绑版。检测到系统 ffmpeg 时自动删除内置捆绑版（释放 62MB），删除失败静默忽略。
-- 设置页新增「ffmpeg 运行环境」卡片：状态徽标（系统/手动/捆绑/缺失）、「重新检测」按钮、三步图文教程。
-- 统计面板新增总文件大小（GB/TB 自适应，标注已探测部数）和 Top10 大文件列表（排名 + 标题 + 大小，点击跳转详情页）。
-- 对账弹窗「未收录」区块新增「复制所有未收录番号」按钮，一键复制（中文逗号间隔、自动去重）。
-- 统计面板概览卡 3 列改为 4 列。
-
-## v1.1.0（2026-08-27）
-
-- 首页新增「随机推荐」行（每日自动换一批 + 手动「换一批」），Hero 大推荐位与随机推荐行同源联动。
-- 系列分集共享元数据：识别常见系列后缀（-CD1/-CD2、-PART1、-DISC1、-1/-2、-A/-B），同一系列分集只抓一次信息、其余自动复用；详情页显示「属于系列 X（共 N 部）」徽章 + 同系列分集切换。
-- 数据源手动切换：设置中可选「自动 / 仅 JavDB / 仅 JavBus」。JavDB 抓取失败自动降级 JavBus；批量补齐时连续失败自动切源，再连续失败自动停止（阈值 3 部）。
-- 卡片左上角 JavBus 琥珀色角标、详情页「数据来源」徽标。
-- 详情页补齐信息：单部强制重抓按钮 + 结果弹窗；批量补齐汇总弹窗（成功数、来源分布、失败原因 Top3）。
-- Hero 海报位整卡点击播放、缺封面占位符（低饱和渐变 + 圆底字母）、进度条（顶部居中浮层 + 旋转指示 + 实时进度）。
-- 隐私护盾：Hero 大背景图同步打码（48px 强模糊）。
-- 移除 ⌘K 命令面板及全部组合键；保留 ESC 单键关闭。
-- ffmpeg 9.0.1（ffmpeg + ffprobe）打包进安装包，UPX 压缩后安装包体积 196MB → 64MB。
-- react / react-dom / esbuild 移入 devDependencies。
-- JavDB 演员解析重写（zip 配对），只保留女优；支持 Big5/GBK 编码页面。
-- 批量补齐按 base code 搜索（HUNTA-468CD2 → HUNTA-468）。
-
-## v1.0.0（2026-08-26）
-
-首个正式版，功能包括：
-
-- 本地影库海报墙：选择视频文件夹 + 简介 md 文件，按 md 分类展示海报墙，自动对账 md 条目与磁盘文件的差异。
-- 视频播放：点击卡片查看详情，详情页「播放」用本地播放器打开；外部播放器路径可配置。
-- 简介 md 为唯一权威来源：分类、简介、标签、评分全部以 md 文件为准，重新扫描自动同步。
-- 海报来源链：手动指定 > 同名图片 > JavDB > 截帧 > 占位图，优先级可配置，本地永久缓存。
-- 外文件夹参与匹配：视频文件名带字幕组/制作组广告时，用干净的外文件夹名匹配与搜图；封面查找扩展 poster.jpg / cover.jpg / folder.jpg / front.jpg / fanart.jpg / thumb.jpg。
-- JavDB 封面 / 详情抓取：单部抓取 + 批量补齐，封面、标题、日期、时长、导演、片商、系列、评分、类别、演员、关键截图，本地永久缓存。
-- 详情页图片本地化（带 Referer + 代理），规避 javdb CDN 反盗链 403。支持 JavDB 代理设置（HTTP/SOCKS，undici ProxyAgent）。
-- 番号匹配：大小写不敏感；版本后缀（-uc / -C / -HD / 1080p）视为同片；数字边界防误匹配（SONE-56 ≠ SONE-560）；同番号多版本文件全部算匹配。
-- 结构化标签：md `**标签**：` 块 + 多行 `- **类别**：标签` 解析；旧格式 `**风格**` 单行兼容。
-- 分类标签侧栏：按文档分类分组展示标签 chips + 数量，多选 AND 过滤，分类可折叠；侧栏顶部按 md 大分类切换。
-- 推荐评分体系：md `**推荐评分**` 提取为独立评分，覆盖 javdb 评分。
-- 排序：按名称 / 年份 / 评分 / 最近添加 / 最近播放 / 随机；分组 / 全库模式切换。
-- 四种皮肤：影院沉浸 / 现代明亮 / 杂志艺术 / 玻璃拟态；海报密度（大图 / 标准 / 高密度）。
-- 隐私护盾：工具栏一键模糊所有真实海报图（blur(26px) 降饱和），状态持久化。
-- 视频详情页：封面 + 完整元数据 + 我的评分 + 简介 + 关键截图网格（hover 大图 lightbox，350ms 延迟防误触）。
-- Netflix 式 hover 预览：hover 卡片停留 350ms 弹出悬浮面板，视口自动避让，点击直达详情。
-- 右键菜单：播放 / 编辑 / 打开文件位置 / 复制番号。
-- 编辑弹窗：大封面预览 + 分组表单（标题 / 年份 / 评分 / 标签 chips 增删 / 简介），JavDB 抓封面一键。
-- 40+ Lucide 风格内联 SVG 图标，全 UI 替换 emoji。
-- 空状态 / 加载态 / 动画：欢迎页、无结果、淡入动画、主题切换过渡。
-- 全库虚拟滚动（VirtualizedWall）：只渲染可见行 ± overscan，大库性能与库大小无关。
-- 增量扫描：对账批量写盘，未变化视频零写盘。搜索防抖 200ms + posterUrl 缓存 + 图片 decoding=async + content-visibility。
-- 批量改名：一键清理文件名广告（489155.com@PRED-828-C.mp4 → PRED-828-C.mp4），预览对比后确认执行。
-- 对账弹窗点击文件名 → 文件管理器打开并选中。
-- 简介 md 保存即触发重新对账（fs.watch + debounce 500ms）。
-- 移除 TMDB。
+- **批量补齐不再误停**：`fetchDetailSmart` 之前把「搜索无结果」（数据源确实没这个番号，正常情况）也计为连续失败，导致 IP 没被封也自动停止/切源。现在只有真正的网络/会话异常（请求失败、超时、年龄验证失败）才累计失败次数；「无结果/无法识别番号」静默不计。javbus 的「搜索无结果」提示同步改为静默。
+- 批量补齐按用户设置的间隔执行（`fetchIntervalMs`，不再有额外固定延时叠加）。

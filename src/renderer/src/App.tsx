@@ -28,16 +28,16 @@ import HomeSkeleton from './components/HomeSkeleton'
 import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
-import OnboardMdModal from './components/OnboardMdModal'
 import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
 import ConfirmDeleteModal, { type DeletePreview } from './components/ConfirmDeleteModal'
+import UserNoticeModal from './components/UserNoticeModal'
 import type { AppInfo } from '../../shared/api-types'
 
 interface FilterState {
   search: string
   sort: SortKey
   desc: boolean
-  /** 分组模式：grouped 按 md 分类分组 / flat 全库单网格（适用于所有排序） */
+  /** 分组模式：grouped 按 Excel 分类分组 / flat 全库单网格（适用于所有排序） */
   groupMode: 'grouped' | 'flat'
   /** 当前选中的分类（点击侧栏分类切换；null = 全部） */
   category: string | null
@@ -118,10 +118,10 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  /** 用户须知弹窗：首次启动（noticeDismissed 未设置/为 false）时强制弹出 */
+  const [noticeOpen, setNoticeOpen] = useState(false)
   /** true = 「添加媒体库」新建表单；false = 库设置编辑模式 */
   const [addingLibrary, setAddingLibrary] = useState(false)
-  /** 新建 md 文件向导（添加媒体库无 md / 库设置「按规范新建」时弹出） */
-  const [onboard, setOnboard] = useState<Library | null>(null)
   const [editing, setEditing] = useState<Video | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [detail, setDetail] = useState<Video | null>(null)
@@ -133,6 +133,10 @@ export default function App() {
   // 隐私护盾：一键模糊所有预览图（防截图泄露成人内容），持久化到 localStorage
   const [privacy, setPrivacy] = useState<boolean>(() => localStorage.getItem('vm-privacy') === '1')
   const [progress, setProgress] = useState<{ total: number; done: number; current?: string } | null>(null)
+  // v2.2.10：实时抓取日志（"javdb 网络失败 → 降级 javbus" 这类过程，右下角浮层滚动展示）
+  const [fetchLogs, setFetchLogs] = useState<
+    Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
+  >([])
 
   // ---- 新增：导航 / 视图状态 ----
   /** 主导航：home 首页概览 / browse 浏览 */
@@ -194,6 +198,8 @@ export default function App() {
       // 启动时自动对账开关：关闭则跳过首次自动对账
       if (s.scanOnStartup === false) skipFirstAutoScanRef.current = true
       if (libs.length > 0) setLibraryId(libs[0].id)
+      // 首次启动：用户须知未确认则强制弹窗（背景点击 / ESC 均不关闭）
+      if (!s.noticeDismissed) setNoticeOpen(true)
       setLoaded(true)
     })()
   }, [])
@@ -235,9 +241,34 @@ export default function App() {
 
   // 扫描进度（主进程推送）
   useEffect(() => {
-    api.onScanProgress((p) =>
+    api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
-    )
+      // v2.2.10：实时抓取事件 → 追加到右下角抓取日志浮层（保留最近 60 条）
+      const fe = (p as { fetchEvent?: { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string } }).fetchEvent
+      if (fe) {
+        setFetchLogs((prev) => [...prev.slice(-59), fe])
+      }
+      // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
+      const err = (p as { introError?: { kind: string; message: string; triedPaths: string[] } }).introError
+      if (err) {
+        const titles: Record<string, string> = {
+          'not-configured': '媒体库根目录无片单 Excel',
+          'parse-failed': '片单 Excel 解析失败',
+          'auto-find-failed': '自动查找片单失败'
+        }
+        const title = titles[err.kind] ?? '片单加载失败'
+        // 用纯文本（多行）展示 message + triedPaths，让用户能直接看到是哪个路径坏了
+        const tried = err.triedPaths?.length
+          ? `\n\n已尝试：\n${err.triedPaths.map((t) => '· ' + t).join('\n')}`
+          : ''
+        toast({
+          title,
+          text: err.message + tried,
+          tone: 'warn',
+          duration: 0 // 不自动消失，用户看完手动关
+        })
+      }
+    })
   }, [])
 
   // 进度条卡死保险：done===total 时 2.5s 后自动清空（处理 runReconcile 收尾时不再推事件的边界情况）
@@ -245,7 +276,11 @@ export default function App() {
   useEffect(() => {
     if (progress && progress.total > 0 && progress.done >= progress.total) {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
-      clearTimer.current = window.setTimeout(() => setProgress(null), 2500)
+      clearTimer.current = window.setTimeout(() => {
+        setProgress(null)
+        // v2.2.10：批量补齐结束 → 抓取过程浮层自动收起
+        setFetchLogs([])
+      }, 2500)
     }
     return () => {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
@@ -275,18 +310,11 @@ export default function App() {
     }
   }, [progress])
 
-  // 简介 md 文件变化 → 自动重新对账（用 ref 拿最新 libraryId，避免重复监听）
+  // 片单变化触发重新对账（预留：Excel 片单 watcher 可在此接入）
   const libraryIdRef = useRef(libraryId)
   useEffect(() => {
     libraryIdRef.current = libraryId
   }, [libraryId])
-  useEffect(() => {
-    api.onMdChanged((changedId) => {
-      if (changedId === libraryIdRef.current) void runReconcile(changedId)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 启动时自动重扫：所有「非当前」媒体库各跑一次对账（当前库由上方 reconcile 副作用覆盖），仅刷新数据、不切换展示
   const autoRescanDone = useRef(false)
   useEffect(() => {
@@ -584,7 +612,7 @@ export default function App() {
     return list
   }, [applySmart, filter.category, filter.sort, filter.desc])
 
-  // 分组：选中分类 → 单一 section；flat → 全库单网格；其他 → 按 md 分类分组
+  // 分组：选中分类 → 单一 section；flat → 全库单网格；其他 → 按 Excel 分类分组
   const sections = useMemo<WallSection[]>(() => {
     if (filter.category) {
       return [{ title: `📁 ${filter.category}`, entries: filtered }]
@@ -783,7 +811,7 @@ export default function App() {
           title: '检测到可能的同系列视频',
           ok: 0,
           failed: 0,
-          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
+          bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
           reasons: warns.slice(0, 8).map((c) => `${c}${warns.length > 8 ? '…' : ''}`),
           stopped: false,
           remaining: 0
@@ -847,6 +875,17 @@ export default function App() {
   const handleEditEntry = useCallback((v: Video) => setEditing(v), [])
 
   /** 从磁盘删除视频文件：预检 → 打开二次确认弹窗（Impeccable 设计 ConfirmDeleteModal） */
+  const handleNoticeConfirm = async (dismissed: boolean) => {
+    setNoticeOpen(false)
+    if (dismissed) {
+      try {
+        await api.settingsSet({ noticeDismissed: true })
+        setSettings((prev) => ({ ...prev, noticeDismissed: true }))
+      } catch {
+        /* 保存失败下次再弹 */
+      }
+    }
+  }
   const openDeleteConfirm = useCallback(
     async (v: Video) => {
       if (!v.path) {
@@ -855,7 +894,7 @@ export default function App() {
       }
       const fileName = v.path.split(/[\\/]/).pop() || v.path
 
-      // 预检：让用户在确认前看到准确的删除范围（不删任何文件）
+  // 预检：让用户在确认前看到准确的删除范围（不删任何文件）
       const inspect = await api.videoInspectForDelete(v.id).catch((e) => ({ ok: false as const, error: String(e) }))
       if (!inspect.ok) {
         window.alert('删除预检失败：' + inspect.error)
@@ -884,6 +923,15 @@ export default function App() {
   /** 弹窗确认后：把文件/目录挪到回收站 → 关详情页 → 全库扫描 */
   const confirmDelete = useCallback(async () => {
     if (!deletePreview || deleting) return
+    if (settings.lockHash) {
+      const pwd = window.prompt('该操作受隐私锁保护，请输入密码以继续：')
+      if (pwd == null) return
+      const ok = await api.lockVerify(pwd)
+      if (!ok) {
+        window.alert('密码错误，已取消删除')
+        return
+      }
+    }
     const fileName = deletePreview.fileName
     setDeleting(true)
     try {
@@ -957,7 +1005,7 @@ export default function App() {
 
   const handleOpenMissing = useCallback(
     (_entry: DisplayEntry) => {
-      if (currentLibrary?.introMdPath) void api.openPath(currentLibrary.introMdPath)
+      if (currentLibrary?.introExcelPath) void api.openPath(currentLibrary.introExcelPath)
     },
     [currentLibrary]
   )
@@ -968,7 +1016,6 @@ export default function App() {
         const lib = await api.libraryAdd({
           name: patch.name?.trim() || patch.folderPath || '未命名媒体库',
           folderPath: patch.folderPath || '',
-          introMdPath: patch.introMdPath ?? '',
           imagePriority: [...DEFAULT_IMAGE_PRIORITY]
         })
         if (!lib) return false
@@ -977,8 +1024,6 @@ export default function App() {
         setLibraryOpen(false)
         setAddingLibrary(false)
         await runReconcile(lib.id)
-        // 未选择 md 文件：自动弹出「新建简介文件向导」，引导用户按内置规范生成 md
-        if (!patch.introMdPath) setOnboard(lib)
         return true
       }
       if (!currentLibrary) return false
@@ -996,6 +1041,15 @@ export default function App() {
 
   const handleRemoveLibrary = useCallback(async () => {
     if (!currentLibrary) return
+    if (settings.lockHash) {
+      const pwd = window.prompt('该操作受隐私锁保护（删除媒体库），请输入密码以继续：')
+      if (pwd == null) return
+      const ok = await api.lockVerify(pwd)
+      if (!ok) {
+        window.alert('密码错误，已取消删除')
+        return
+      }
+    }
     await api.libraryRemove(currentLibrary.id)
     setLibraries((prev) => prev.filter((l) => l.id !== currentLibrary.id))
     setLibraryOpen(false)
@@ -1043,19 +1097,26 @@ export default function App() {
     tone?: 'ok' | 'warn' | 'err'
     ok: number
     failed: number
-    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number }
+    bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number }
     reasons: string[]
     stopped: boolean
     remaining: number
+    /** v2.2.7：按用户的 customSourceOrder 渲染来源分布条，让展示顺序跟实际采集顺序一致 */
+    customSourceOrder?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
   }
   const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
     const tone: 'ok' | 'warn' | 'err' = data.tone ?? (data.stopped || data.failed > 0 ? 'warn' : 'ok')
     const total = data.ok + data.failed
-    const jd = data.bySource.javdb
-    const jb = data.bySource.javbus
-    const ji = data.bySource.javinfo ?? 0
-    const jp = data.bySource.javapi ?? 0
+    // v2.2.7：按 customSourceOrder 排 bySource 展示，跟用户实际的采集顺序一致
+    const SOURCE_LABELS: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', string> = {
+      javapi: 'Javapi', javinfo: 'Javinfo', javdb: 'JavDB', javbus: 'JavBus', javlibrary: 'JavLibrary'
+    }
+    const order = data.customSourceOrder ?? (['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary'] as const)
+    const bySourceLine = order
+      .filter((s) => s !== 'javlibrary') // 进度条不显示 javlibrary（它没参与 bySource 统计）
+      .map((s) => `${SOURCE_LABELS[s]} ${data.bySource[s]}`)
+      .join(' · ')
     const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
     const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
     const detail = (
@@ -1065,7 +1126,7 @@ export default function App() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
               <span className="text-[10px] text-white/65 font-mono tabular-nums">
-                Javapi {jp} · Javinfo {ji} · JavDB {jd} · JavBus {jb} · 失败 {data.failed}
+                {bySourceLine} · 失败 {data.failed}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-white/8 overflow-hidden flex">
@@ -1116,10 +1177,11 @@ export default function App() {
         tone,
         ok: res.ok,
         failed: res.failed,
-        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0 },
+        bySource: { javapi: res.bySource.javapi ?? 0, javinfo: res.bySource.javinfo ?? 0, javdb: res.bySource.javdb ?? 0, javbus: res.bySource.javbus ?? 0, javlibrary: res.bySource.javlibrary ?? 0 },
         reasons,
         stopped: res.stopped ?? false,
-        remaining: res.remaining ?? 0
+        remaining: res.remaining ?? 0,
+        customSourceOrder: settings.customSourceOrder
       })
       await runReconcile(libraryId)
     } catch (e) {
@@ -1128,7 +1190,7 @@ export default function App() {
         tone: 'err',
         ok: 0,
         failed: 0,
-        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0 },
+        bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
         reasons: [`请求异常：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0
@@ -1512,7 +1574,7 @@ export default function App() {
               </div>
               <div className="text-2xl font-semibold mb-2">欢迎使用影匣</div>
               <div className="text-white/50 text-sm mb-6 max-w-md leading-relaxed">
-                选择一个视频文件夹，再选择对应的「简介 md 文件」。
+                选择一个视频文件夹，再选择对应的「Excel 片单文件」。
                 海报墙会按简介文件中的分类展示影片，并自动对账文件夹与简介的差异。
               </div>
               <button className="btn btn-brand px-5 py-2.5" onClick={handleAddLibrary}>
@@ -1690,7 +1752,6 @@ export default function App() {
       <ReconcileDialog
         open={reconcileOpen}
         result={reconcile}
-        mdPath={currentLibrary?.introMdPath}
         ignoredUnlistedPaths={settings.ignoredUnlistedPaths}
         onClose={() => setReconcileOpen(false)}
         onOpenFile={(p) => void api.openPath(p)}
@@ -1722,11 +1783,6 @@ export default function App() {
         }}
         onSave={handleSaveLibrary}
         onRemove={handleRemoveLibrary}
-        onOnboard={() => {
-          setLibraryOpen(false)
-          setAddingLibrary(false)
-          setOnboard(currentLibrary)
-        }}
       />
 
       <SettingsModal
@@ -1793,19 +1849,6 @@ export default function App() {
         />
       ) : null}
 
-      <OnboardMdModal
-        open={!!onboard}
-        library={onboard}
-        onClose={() => setOnboard(null)}
-        onOpenExternal={(u) => void api.openExternal(u)}
-        onOpenSpec={(p) => void api.openPath(p)}
-        onOpenLibrarySettings={() => {
-          setOnboard(null)
-          setAddingLibrary(false)
-          setLibraryOpen(true)
-        }}
-      />
-
       {/* 删除文件二次确认（Impeccable 设计：琥珀=仅删文件 / 红=整目录删） */}
       <ConfirmDeleteModal
         open={!!deletePreview}
@@ -1815,8 +1858,75 @@ export default function App() {
         onCancel={() => setDeletePreview(null)}
       />
 
+      {/* 用户须知弹窗：首次启动（noticeDismissed 未确认）强制弹出；勾选+确认后不再弹 */}
+      <UserNoticeModal
+        open={noticeOpen}
+        onClose={handleNoticeConfirm}
+      />
+
+      {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
+      <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
+
     </div>
     </ToastProvider>
+  )
+}
+
+/** v2.2.10：实时抓取过程浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"这类过程提示 */
+interface FetchLogItem {
+  code: string
+  src: string
+  status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
+  detail?: string
+}
+function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss: () => void }) {
+  if (logs.length === 0) return null
+  const SOURCE_LABEL: Record<string, string> = {
+    javapi: 'Javapi', javinfo: 'Javinfo', javdb: 'JavDB', javbus: 'JavBus', javlibrary: 'JavLibrary'
+  }
+  const line = (l: FetchLogItem) => {
+    const label = SOURCE_LABEL[l.src] ?? l.src
+    switch (l.status) {
+      case 'trying':
+        return { text: `→ 尝试 ${label}…`, cls: 'text-white/55' }
+      case 'hit':
+        return { text: `✓ ${label} 命中`, cls: 'text-emerald-400' }
+      case 'skipped':
+        return { text: `· ${label} 跳过${l.detail ? `（${l.detail}）` : ''}`, cls: 'text-white/35' }
+      case 'no-result':
+        return { text: `· ${label} 无结果`, cls: 'text-amber-400/80' }
+      case 'network-failed':
+        return { text: `✗ ${label} 网络失败${l.detail ? `（${l.detail.slice(0, 40)}）` : ''}`, cls: 'text-red-400/85' }
+    }
+  }
+  return (
+    <div className="fixed bottom-4 right-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
+        <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+          抓取过程（按数据源顺序降级）
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="w-5 h-5 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center text-xs"
+          title="关闭"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-[10.5px] leading-relaxed">
+        {logs.map((l, i) => {
+          const { text, cls } = line(l)
+          return (
+            <div key={i} className={`truncate ${cls}`} title={l.detail}>
+              <span className="text-white/30 mr-1.5">[{l.code}]</span>
+              {text}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

@@ -74,7 +74,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
   }
 
   function handleSave() {
-    // 简介与标签以「简介 md 文件」为权威来源，这里不写回，避免被下次对账覆盖
+    // 简介与标签以「Excel 片单」为权威来源，这里不写回，避免被下次对账覆盖
     const patch: Partial<Video> = {
       title: title.trim() || video!.title,
       year: year ? Number(year) : undefined,
@@ -256,14 +256,14 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
 
               <FieldGroup
                 label="简介"
-                hint={`${description.length} 字 · 简介 md 优先，本地编辑可叠加`}
+                hint={`${description.length} 字 · Excel 片单优先，本地编辑可叠加`}
               >
                 <textarea
                   className="w-full bg-ink-800/60 text-white/95 text-[13px] rounded-lg px-3.5 py-3 outline-none focus:ring-2 ring-brand/50 focus:bg-ink-800 transition-all border border-white/5 focus:border-brand/40 resize-none leading-relaxed"
                   rows={7}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="暂无简介（可在简介 md 中补充）"
+                  placeholder="暂无简介（可在 Excel 片单中补充）"
                 />
               </FieldGroup>
             </div>
@@ -275,7 +275,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
           <div className="flex items-center gap-1.5 text-xs text-white/40">
             <Icon name="info" size={12} className="shrink-0" />
             <span>
-              简介 md <span className="text-white/60">优先于</span> 本地编辑
+              Excel 片单 <span className="text-white/60">优先于</span> 本地编辑
             </span>
           </div>
           <div className="flex items-center gap-2">

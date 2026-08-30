@@ -4,7 +4,6 @@ import type { UpdateCheckResult } from '../../../shared/api-types'
 import { api } from '../lib/api'
 import Icon from './Icon'
 import type { IconName } from './Icon'
-
 interface Props {
   open: boolean
   settings: Settings
@@ -13,7 +12,6 @@ interface Props {
   /** 隐私锁等操作直接走主进程后，用于刷新外部 settings 状态 */
   onSaved?: () => void
 }
-
 type Category =
   | 'general'
   | 'network'
@@ -22,7 +20,6 @@ type Category =
   | 'storage'
   | 'update'
   | 'danger'
-
 const CATEGORIES: { id: Category; label: string; icon: IconName }[] = [
   { id: 'general', label: '通用', icon: 'sliders' },
   { id: 'network', label: '网络', icon: 'globe' },
@@ -32,7 +29,6 @@ const CATEGORIES: { id: Category; label: string; icon: IconName }[] = [
   { id: 'update', label: '更新', icon: 'refresh' },
   { id: 'danger', label: '危险操作', icon: 'alert' }
 ]
-
 const PROXY_MODES: { value: ProxyMode; label: string }[] = [
   { value: 'none', label: '关闭（直连）' },
   { value: 'http', label: 'HTTP' },
@@ -41,7 +37,6 @@ const PROXY_MODES: { value: ProxyMode; label: string }[] = [
   { value: 'socks4', label: 'SOCKS4' },
   { value: 'system', label: '系统代理（自动）' }
 ]
-
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'title', label: '标题（A→Z）' },
   { value: 'added', label: '最近添加' },
@@ -50,7 +45,6 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'year', label: '年份' },
   { value: 'random', label: '随机' }
 ]
-
 /** 把旧版单一 javdbProxy 字符串迁移到新的多协议代理结构，并对数值兜底 */
 function normalizeProxy(s: Settings): Settings {
   const anyS = s as Settings & { javdbProxy?: string }
@@ -85,12 +79,44 @@ function normalizeProxy(s: Settings): Settings {
     fetchIntervalMs: Number(next.fetchIntervalMs) || 600,
     autoRescan: !!next.autoRescan,
     dataSource: next.dataSource ?? 'auto',
+    customSourceOrder: normalizeSourceOrder(next.customSourceOrder),
     javinfoKey: next.javinfoKey ?? '',
     javapiUrl: next.javapiUrl ?? 'http://127.0.0.1:8080',
     javapiKey: next.javapiKey ?? ''
   }
 }
 
+/**
+ * 把任意顺序归一化到完整的 5 个源（缺哪个补默认 javapi→javinfo→javdb→javbus→javlibrary），
+ * 用于 UI 拖拽排序时的初始 / 兜底。
+ */
+function normalizeSourceOrder(order?: string[]): Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> {
+  const ALL: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']
+  if (!Array.isArray(order) || order.length !== 5) return ALL
+  const set = new Set(order)
+  // 必须正好 5 个合法源
+  if (ALL.some((s) => !set.has(s))) return ALL
+  return order as Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
+}
+
+/** 数据源展示信息（标签 + 三维度评估） */
+const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string }> = {
+  javapi: { label: 'Javapi', tier: '★★★★★ 信息最全', risk: '无风控（本地自托管）', cost: '免费' },
+  javinfo: { label: 'Javinfo', tier: '★★★★ 全面', risk: '★☆☆ 低（聚合 API）', cost: '免费额度 + 按量' },
+  javdb: { label: 'JavDB', tier: '★★★★ 全面', risk: '★★★ 中（Cloudflare 偶发 403）', cost: '免费' },
+  javbus: { label: 'JavBus', tier: '★★★ 中', risk: '★★☆ 中（Cloudflare）', cost: '免费' },
+  javlibrary: { label: 'JavLibrary', tier: '★★☆ 偏简', risk: '★☆☆ 低（但偶发 503）', cost: '免费' }
+}
+
+/**
+ * 把当前顺序拼成 "Javapi → Javinfo → JavDB → ..." 文案给顶部说明文字用，
+ * 跟着用户的拖拽走，**不是**写死默认顺序。
+ * 函数形式让 React 每次 render 都重新算（draft.customSourceOrder 改了 → 文案立即变）。
+ */
+function formatSourceOrder(order?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>): string {
+  const arr = normalizeSourceOrder(order)
+  return arr.map((s) => SOURCE_META[s].label).join(' → ')
+}
 function formatBytes(n?: number): string {
   if (n == null || n <= 0) return ''
   const units = ['B', 'KB', 'MB', 'GB']
@@ -102,7 +128,6 @@ function formatBytes(n?: number): string {
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
-
 function urgencyMeta(u?: UpdateCheckResult['urgency']) {
   switch (u) {
     case 'mandatory':
@@ -115,9 +140,7 @@ function urgencyMeta(u?: UpdateCheckResult['urgency']) {
       return { label: '普通更新', color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', icon: 'check' as IconName }
   }
 }
-
 /* ---------------- UI primitives ---------------- */
-
 function SidebarItem({
   active,
   icon,
@@ -144,7 +167,6 @@ function SidebarItem({
     </button>
   )
 }
-
 function SectionHeader({
   icon,
   title,
@@ -164,7 +186,6 @@ function SectionHeader({
     </div>
   )
 }
-
 function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div className={`bg-ink-850/30 border border-white/5 rounded-xl p-4 mb-5 ${className}`}>
@@ -172,7 +193,6 @@ function Card({ children, className = '' }: { children: ReactNode; className?: s
     </div>
   )
 }
-
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="mb-4 last:mb-0">
@@ -182,7 +202,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     </div>
   )
 }
-
 function FieldRow({
   label,
   hint,
@@ -202,7 +221,6 @@ function FieldRow({
     </div>
   )
 }
-
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -221,7 +239,6 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
     </button>
   )
 }
-
 function SegmentedControl<T extends string>({
   value,
   options,
@@ -250,7 +267,6 @@ function SegmentedControl<T extends string>({
     </div>
   )
 }
-
 function Select<T extends string>({
   value,
   options,
@@ -279,11 +295,8 @@ function Select<T extends string>({
     </div>
   )
 }
-
 /* ---------------- theme preview card ---------------- */
-
 type ThemeOption = { value: Settings['theme']; label: string; tagline: string }
-
 const THEME_OPTIONS: ThemeOption[] = [
   { value: 'cinema', label: '深邃影院', tagline: '沉静的蓝黑电影感' },
   { value: 'light', label: '现代明亮', tagline: '清爽的浅色界面' },
@@ -291,7 +304,6 @@ const THEME_OPTIONS: ThemeOption[] = [
   { value: 'glass', label: '玻璃拟态', tagline: '半透明毛玻璃霓虹' },
   { value: 'system', label: '跟随系统', tagline: '自动适配系统明暗' }
 ]
-
 function ThemePreview({ theme }: { theme: Settings['theme'] }) {
   const previews: Record<Settings['theme'], ReactNode> = {
     cinema: (
@@ -367,7 +379,6 @@ function ThemePreview({ theme }: { theme: Settings['theme'] }) {
   }
   return previews[theme]
 }
-
 function ThemeCard({
   option,
   selected,
@@ -406,12 +417,12 @@ function ThemeCard({
     </button>
   )
 }
-
 /* ---------------- main component ---------------- */
-
 export default function SettingsModal({ open, settings, onClose, onSave, onSaved }: Props) {
   const [draft, setDraft] = useState<Settings>(settings)
   const [activeCategory, setActiveCategory] = useState<Category>('general')
+  // v2.2.6：顶部 auto 降级文案动态跟着 draft.customSourceOrder 走
+  const autoOrderSummary = formatSourceOrder(draft.customSourceOrder)
   const [dataDir, setDataDir] = useState('')
   const [appVersion, setAppVersion] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; status?: number; error?: string } | null>(null)
@@ -430,11 +441,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
   const [lockMsg, setLockMsg] = useState('')
   const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
-
   useEffect(() => {
     if (open) setUpdateRes(null)
   }, [open])
-
   useEffect(() => {
     if (open) {
       const t = settings.theme as string
@@ -456,9 +465,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
         .finally(() => setFfmpegChecking(false))
     }
   }, [open, settings])
-
   if (!open) return null
-
   const inputCls =
     'w-full bg-ink-900/50 text-white text-sm rounded-lg px-3 py-2 outline-none border border-white/10 focus:border-brand/60 focus:ring-1 focus:ring-brand/40 transition-colors placeholder:text-white/25'
   const needHost =
@@ -467,7 +474,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
     draft.proxyMode === 'socks4' ||
     draft.proxyMode === 'socks5'
   const needAuth = needHost
-
   const runTest = async () => {
     setTesting(true)
     setTestResult(null)
@@ -480,13 +486,11 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
       setTesting(false)
     }
   }
-
   const clearCache = async () => {
     if (!window.confirm('确认清空海报缓存？已下载的封面会删除，下次打开重新抓取。')) return
     const r = await api.cacheClear()
     setClearMsg(r.ok ? `已清理 ${r.removed} 个缓存文件` : '清理失败')
   }
-
   const checkFfmpeg = () => {
     setFfmpegChecking(true)
     api
@@ -495,7 +499,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
       .catch(() => setFfmpegStatus({ source: 'missing' }))
       .finally(() => setFfmpegChecking(false))
   }
-
   const checkUpdate = async () => {
     setChecking(true)
     try {
@@ -514,7 +517,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
       setChecking(false)
     }
   }
-
   /** 切换检查更新源并立即重试（源切换立即保存，主进程按已保存的源检查） */
   const switchSourceAndRetry = async () => {
     const next: 'github' | 'gitee' = (draft.updateSource ?? 'gitee') === 'gitee' ? 'github' : 'gitee'
@@ -526,7 +528,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
     }
     await checkUpdate()
   }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -550,7 +551,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             ))}
           </nav>
         </aside>
-
         {/* ---------------- content ---------------- */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
@@ -573,7 +573,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {activeCategory === 'general' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="sliders" title="通用" description="播放器、ffmpeg 与启动行为" />
-
                 <Card>
                   <Field
                     label="外部播放器路径"
@@ -587,7 +586,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     />
                   </Field>
                 </Card>
-
                 <Card>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -603,7 +601,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       {ffmpegChecking ? '检测中…' : '重新检测'}
                     </button>
                   </div>
-
                   {ffmpegStatus ? (
                     <div className="mb-4 flex items-start gap-2 text-xs leading-relaxed">
                       <span
@@ -633,7 +630,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       </span>
                     </div>
                   ) : null}
-
                   <button
                     type="button"
                     className="text-brand/90 hover:text-brand text-xs mb-3 flex items-center gap-1 cursor-pointer"
@@ -642,7 +638,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <Icon name={showFfmpegTutorial ? 'chevronDown' : 'chevronRight'} size={12} />
                     如何安装 / 配置 ffmpeg（新电脑推荐）
                   </button>
-
                   {showFfmpegTutorial ? (
                     <div className="mb-4 rounded-lg bg-black/25 border border-white/5 p-3 text-[12px] text-white/60 leading-relaxed space-y-2">
                       <div className="flex items-start gap-2">
@@ -669,7 +664,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       </div>
                     </div>
                   ) : null}
-
                   <Field
                     label="ffmpeg 路径（可选）"
                     hint="留空则按：系统 ffmpeg → 内置捆绑版 顺序自动查找。"
@@ -682,7 +676,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     />
                   </Field>
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="zap" size={16} className="text-white/70" />
@@ -701,19 +694,16 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 网络 ===== */}
             {activeCategory === 'network' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="globe" title="网络" description="代理、数据源与 JavDB 抓取参数" />
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="globe" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">代理设置</div>
                   </div>
                   <div className="text-white/40 text-xs mb-4">配置访问 JavDB / JavBus 时使用的网络代理</div>
-
                   <Field label="代理模式">
                     <Select
                       value={draft.proxyMode ?? 'none'}
@@ -721,7 +711,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       onChange={(v) => setDraft({ ...draft, proxyMode: v as ProxyMode })}
                     />
                   </Field>
-
                   {needHost ? (
                     <div className="flex gap-3 mb-4">
                       <div className="flex-[2]">
@@ -744,7 +733,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       </div>
                     </div>
                   ) : null}
-
                   {needAuth ? (
                     <div className="flex gap-3 mb-4">
                       <div className="flex-1">
@@ -768,7 +756,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       </div>
                     </div>
                   ) : null}
-
                   {draft.proxyMode !== 'none' ? (
                     <div className="flex items-center gap-3">
                       <button
@@ -793,7 +780,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </div>
                   ) : null}
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="cookie" size={16} className="text-white/70" />
@@ -811,13 +797,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     />
                   </Field>
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="database" size={16} className="text-white/70" />
                     <div className="text-white/90 text-sm font-medium">数据源</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">auto 自动降级（Javapi → Javinfo → JavDB → JavBus，连续失败自动切换）；手动指定可单独调试某个源。</div>
+                  <div className="text-white/40 text-xs mb-3">
+                    auto 自动降级（{autoOrderSummary}，连续失败自动切换）；手动指定可单独调试某个源。
+                  </div>
                   <SegmentedControl
                     value={draft.dataSource ?? 'auto'}
                     options={[
@@ -825,10 +812,93 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       { value: 'javapi', label: 'Javapi' },
                       { value: 'javinfo', label: 'Javinfo' },
                       { value: 'javdb', label: 'JavDB' },
-                      { value: 'javbus', label: 'JavBus' }
+                      { value: 'javbus', label: 'JavBus' },
+                      { value: 'javlibrary', label: 'JavLibrary' }
                     ]}
-                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' })}
+                    onChange={(v) => setDraft({ ...draft, dataSource: v as 'auto' | 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary' })}
                   />
+                  {/* v2.2.6：自定义数据源采集顺序。auto 模式下生效，按这个顺序降级。
+                      推荐顺序：Javapi（本地免费）→ Javinfo（免风控）→ JavDB → JavBus → JavLibrary
+                      （任一源连续网络失败 3 部自动跳过；JavBus 连续失败 3 部直接停止整批）
+                      鼠标拖拽 ⠿ 调整顺序；点 ↑↓ 按钮也行。 */}
+                  {draft.dataSource === 'auto' ? (
+                    <div className="mt-3 rounded-lg border border-white/10 bg-white/3 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-white/85 text-xs font-medium">数据源采集顺序（拖拽调整）</div>
+                        <button
+                          type="button"
+                          className="text-[11px] text-brand hover:text-brand/80 transition-colors no-drag"
+                          onClick={() => setDraft({ ...draft, customSourceOrder: ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary'] })}
+                          title="恢复推荐顺序"
+                        >
+                          恢复推荐
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).map((src, idx, arr) => {
+                          const meta = SOURCE_META[src]
+                          return (
+                            <div
+                              key={src}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move'
+                                e.dataTransfer.setData('text/plain', String(idx))
+                              }}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                const from = Number(e.dataTransfer.getData('text/plain'))
+                                if (Number.isNaN(from) || from === idx) return
+                                const next = arr.slice()
+                                const [moved] = next.splice(from, 1)
+                                next.splice(idx, 0, moved)
+                                setDraft({ ...draft, customSourceOrder: next })
+                              }}
+                              className="flex items-center gap-2 rounded-md bg-ink-800/60 ring-1 ring-white/8 px-2.5 py-1.5 cursor-move hover:ring-white/15 transition-shadow"
+                              title="拖拽调整顺序"
+                            >
+                              <span className="text-white/30 cursor-grab text-sm leading-none select-none">⠿</span>
+                              <span className="text-[10px] text-white/40 w-3 tabular-nums">{idx + 1}</span>
+                              <span className="text-white/90 text-xs font-medium shrink-0">{meta.label}</span>
+                              <span className="text-white/50 text-[10px] truncate">{meta.tier} · {meta.risk} · {meta.cost}</span>
+                              <div className="ml-auto flex items-center gap-0.5 no-drag">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => {
+                                    const next = arr.slice()
+                                    ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                                    setDraft({ ...draft, customSourceOrder: next })
+                                  }}
+                                  className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
+                                  title="上移"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === arr.length - 1}
+                                  onClick={() => {
+                                    const next = arr.slice()
+                                    ;[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]
+                                    setDraft({ ...draft, customSourceOrder: next })
+                                  }}
+                                  className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
+                                  title="下移"
+                                >
+                                  ↓
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="mt-2 text-white/35 text-[10.5px] leading-relaxed">
+                        抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。
+                      </div>
+                    </div>
+                  ) : null}
                   <Field
                     label="本地 Javapi 地址（自托管，免费）"
                     hint="自托管 javapi（github.com/a1850976305/javapi）本地服务地址。JavDB API 元数据 + 8 个视频站，免费、无 Cloudflare/IP 风控。启动：AUTH_API_KEYS=你的key go run ./cmd/api"
@@ -846,7 +916,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   >
                     <input
                       className={inputCls}
-                      placeholder="留空则跳过 Javapi，直接走 Javinfo → JavDB → JavBus"
+                      placeholder={`留空则跳过 Javapi，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi'))}`}
                       value={draft.javapiKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javapiKey: e.target.value.trim() })}
                     />
@@ -857,13 +927,12 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   >
                     <input
                       className={inputCls}
-                      placeholder="留空则跳过 Javinfo，直接走 JavDB → JavBus"
+                      placeholder={`留空则跳过 Javinfo，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi' && s !== 'javinfo'))}`}
                       value={draft.javinfoKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javinfoKey: e.target.value.trim() })}
                     />
                   </Field>
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="download" size={16} className="text-white/70" />
@@ -904,12 +973,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 外观 ===== */}
             {activeCategory === 'appearance' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="palette" title="外观" description="主题、海报墙密度与默认排序" />
-
                 <Card>
                   <div className="text-white/90 text-sm font-medium mb-1">皮肤</div>
                   <div className="text-white/40 text-xs mb-3">选择影匣的整体视觉风格，应用后会立即生效</div>
@@ -924,7 +991,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     ))}
                   </div>
                 </Card>
-
                 <Card>
                   <div className="text-white/90 text-sm font-medium mb-1">海报风格</div>
                   <div className="text-white/40 text-xs mb-3">海报墙单屏显示的视频数量与卡片大小</div>
@@ -938,7 +1004,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     onChange={(v) => setDraft({ ...draft, posterDensity: v as Settings['posterDensity'] })}
                   />
                 </Card>
-
                 <Card>
                   <div className="text-white/90 text-sm font-medium mb-1">默认排序方式</div>
                   <div className="text-white/40 text-xs mb-3">打开库时列表/卡片墙的初始排序</div>
@@ -950,12 +1015,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 隐私与安全 ===== */}
             {activeCategory === 'privacy' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="shield" title="隐私与安全" description="访问控制与隐私护盾" />
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="shield" size={16} className="text-white/70" />
@@ -972,7 +1035,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </div>
                   </FieldRow>
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="lock" size={16} className="text-white/70" />
@@ -1048,12 +1110,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 数据与存储 ===== */}
             {activeCategory === 'storage' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="database" title="数据与存储" description="扫描性能、数据目录与缓存" />
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="refresh" size={16} className="text-white/70" />
@@ -1069,23 +1129,18 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       onChange={(v) => setDraft({ ...draft, scanConcurrency: Number(v) })}
                     />
                   </FieldRow>
-                  <FieldRow
-                    label="最小文件大小（MB）"
-                    hint="只扫描大于该大小的视频；0 = 不限。用于过滤短视频 / 广告等小文件，只对本次扫描新增的文件生效。"
-                  >
+                  <FieldRow label="跳过小体积文件" hint="扫描时过滤小于该体积（MB）的视频，避免广告样片/短视频混入主列表；0 = 不过滤。">
                     <input
-                      className={inputCls}
+                      className={`${inputCls} w-24`}
                       type="number"
                       min={0}
-                      step={10}
-                      value={draft.scanMinSizeMb ?? 0}
+                      value={draft.scanMinSizeMB ?? 100}
                       onChange={(e) =>
-                        setDraft({ ...draft, scanMinSizeMb: Math.max(0, Math.floor(Number(e.target.value) || 0)) })
+                        setDraft({ ...draft, scanMinSizeMB: Math.max(0, Number(e.target.value) || 0) })
                       }
                     />
                   </FieldRow>
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="folder" size={16} className="text-white/70" />
@@ -1111,12 +1166,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 更新 ===== */}
             {activeCategory === 'update' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="refresh" title="更新" description="软件更新、检查源与自动更新频率" />
-
                 {/* 待处理更新横幅：只在 pendingUpdate.version 严格大于当前应用版本时显示，避免升级后残留显示 */}
                 {settings.pendingUpdate && appVersion && (() => {
                   const parse = (v: string) => v.replace(/^v/i, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0)
@@ -1163,7 +1216,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     )
                   })()
                 ) : null}
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="refresh" size={16} className="text-white/70" />
@@ -1277,7 +1329,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     })()
                   ) : null}
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="clock" size={16} className="text-white/70" />
@@ -1300,7 +1351,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </div>
                   ) : null}
                 </Card>
-
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="globe" size={16} className="text-white/70" />
@@ -1318,12 +1368,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
               </section>
             )}
-
             {/* ===== 危险操作 ===== */}
             {activeCategory === 'danger' && (
               <section className="animate-fadeIn">
                 <SectionHeader icon="alert" title="危险操作" description="这些操作不可逆，请谨慎处理" />
-
                 <Card className="border-red-500/20 bg-red-500/[0.04]">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -1353,7 +1401,6 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
               </section>
             )}
           </div>
-
           {/* ---------------- footer ---------------- */}
           <div className="flex justify-end gap-2 px-6 py-4 border-t border-white/5 bg-ink-850/20">
             <button

@@ -24,6 +24,7 @@ const api: AppApi = {
   videoShareTorrents: (id) => ipcRenderer.invoke(IPC.videoShareTorrents, id),
   videoDeleteFile: (id) => ipcRenderer.invoke(IPC.videoDeleteFile, id),
   videoInspectForDelete: (id) => ipcRenderer.invoke(IPC.videoInspectForDelete, id),
+  videoSwitchPoster: (id, source) => ipcRenderer.invoke(IPC.videoSwitchPoster, id, source),
   libraryPreviewRenames: (libraryId) => ipcRenderer.invoke(IPC.libraryPreviewRenames, libraryId),
   libraryApplyRenames: (libraryId, items) =>
     ipcRenderer.invoke(IPC.libraryApplyRenames, libraryId, items),
@@ -52,11 +53,6 @@ const api: AppApi = {
   onScanProgress: (cb) => {
     ipcRenderer.on(IPC.scanProgress, (_e, p) => cb(p))
   },
-  onMdChanged: (cb) => {
-    ipcRenderer.on(IPC.mdChanged, (_e, libraryId) => cb(libraryId))
-  },
-  specGet: () => ipcRenderer.invoke(IPC.specGet),
-  libraryExportCodes: (libraryId, format) => ipcRenderer.invoke(IPC.libraryExportCodes, libraryId, format),
   libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId)
 }
 

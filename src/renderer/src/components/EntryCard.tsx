@@ -227,18 +227,26 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               截帧
             </span>
           ) : null}
-          {/* 数据来源角标：仅 Javapi / JavBus / Javinfo 显示（无角标 = JavDB） */}
-          {entry.video?.javdbDetail?.source === 'javapi' ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-sky-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
-              Javapi
-            </span>
-          ) : entry.video?.javdbDetail?.source === 'javbus' ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
-              JavBus
-            </span>
-          ) : entry.video?.javdbDetail?.source === 'javinfo' ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-sm text-[10px] text-black font-bold">
-              Javinfo
+          {/* 数据来源角标：Javapi / JavBus / Javinfo / JavLibrary 显示（无角标 = JavDB）—— v2.2.3 改为单源映射，避免合并冲突引入的重复 chip */}
+          {(() => {
+            const src = entry.video?.javdbDetail?.source
+            if (src === 'javapi') return (
+              <span className="px-1.5 py-0.5 rounded-md bg-sky-500/90 backdrop-blur-sm text-[10px] text-black font-bold">Javapi</span>
+            )
+            if (src === 'javbus') return (
+              <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 backdrop-blur-sm text-[10px] text-black font-bold">JavBus</span>
+            )
+            if (src === 'javinfo') return (
+              <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-sm text-[10px] text-black font-bold">Javinfo</span>
+            )
+            if (src === 'javlibrary') return (
+              <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/90 backdrop-blur-sm text-[10px] text-white font-bold">JavLibrary</span>
+            )
+            return null
+          })()}
+          {entry.video?.posterSource === 'manual' ? (
+            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-sm text-[10px] text-white font-bold">
+              设为封面
             </span>
           ) : null}
         </div>

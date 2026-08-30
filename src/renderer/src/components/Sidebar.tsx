@@ -534,25 +534,44 @@ function SidebarInner(props: Props) {
                 <div className="text-white/35 text-[11px] py-1">暂无分类</div>
               ) : (
                 <div className="flex flex-col gap-0.5 max-h-[180px] overflow-auto thin-scroll -mr-1 pr-1">
-                  {visibleSections.map((s) => {
-                    const sel = selectedCategory === s.name
-                    const empty = s.count === 0
+                  {(() => {
+                    // 需求 B：自动归类（order 9000-9998，如【JavBus】高清·字幕）与用户分类分组显示
+                    const autoSections = visibleSections.filter((s) => s.order >= 9000 && s.order < 9999)
+                    const normalSections = visibleSections.filter((s) => s.order < 9000 || s.order >= 9999)
+                    const renderSection = (s: SectionInfo) => {
+                      const sel = selectedCategory === s.name
+                      const empty = s.count === 0
+                      return (
+                        <button
+                          key={s.name}
+                          onClick={() => onToggleCategory(s.name)}
+                          disabled={empty && !sel}
+                          className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
+                            sel ? 'bg-brand text-white font-medium' : empty ? 'text-white/30 cursor-not-allowed' : 'hover:bg-ink-700 text-white/80 hover:text-white'
+                          }`}
+                          title={s.name}
+                        >
+                          {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="folder" size={10} className="shrink-0 opacity-50" />}
+                          <span className="flex-1 min-w-0 truncate">{s.name}</span>
+                          <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{s.count}</span>
+                        </button>
+                      )
+                    }
                     return (
-                      <button
-                        key={s.name}
-                        onClick={() => onToggleCategory(s.name)}
-                        disabled={empty && !sel}
-                        className={`flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[12px] transition-colors text-left ${
-                          sel ? 'bg-brand text-white font-medium' : empty ? 'text-white/30 cursor-not-allowed' : 'hover:bg-ink-700 text-white/80 hover:text-white'
-                        }`}
-                        title={s.name}
-                      >
-                        {sel ? <Icon name="check" size={10} className="shrink-0" /> : <Icon name="folder" size={10} className="shrink-0 opacity-50" />}
-                        <span className="flex-1 min-w-0 truncate">{s.name}</span>
-                        <span className={sel ? 'text-[10px] opacity-80 tabular-nums' : 'text-[10px] text-white/40 tabular-nums'}>{s.count}</span>
-                      </button>
+                      <>
+                        {normalSections.map(renderSection)}
+                        {autoSections.length > 0 ? (
+                          <>
+                            <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-white/5 text-white/35 text-[10px] font-medium">
+                              <Icon name="zap" size={10} className="text-violet-400/70" />
+                              自动归类
+                            </div>
+                            {autoSections.map(renderSection)}
+                          </>
+                        ) : null}
+                      </>
                     )
-                  })}
+                  })()}
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { JavdbDetail, Settings, Video } from '../../shared/types'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, extractCode } from '../../shared/code'
 import { postersCacheDir } from './images'
 import { getDispatcher } from './proxy'
 
@@ -18,20 +18,9 @@ const UA =
 
 // 代理出口统一由 src/main/lib/proxy.ts 提供（getDispatcher），支持 http/https/socks4/socks5/system。
 
-/** 番号提取：优先「2+ 大写字母 + 分隔符(-/_) + 字母数字」（SONE-560 / IPZZ-586 / FSDSS-322），
- *  兼容无分隔符连写（KSJK013 / MIDE123，「≥2 字母 + 含 ≥2 位数字」）。
- *  找不到返回 ''（只提非中文番号）——中文标题不再被整段当作搜索词发出。 */
-const CODE_RE = /\b[A-Z]{2,}(?:[-_][A-Z0-9]+|[A-Z0-9]*\d{2,})\b/
-
-/**
- * 从任意输入字符串（title / 文件名 / 整段描述）中提取第一个番号；
- * 找不到返回空串。保证 javdb 搜索只带番号、不带描述。
- */
-export function extractCode(input: string): string {
-  const t = (input ?? '').trim()
-  const m = t.toUpperCase().match(CODE_RE)
-  return m ? m[0].replace('_', '-') : ''
-}
+// 注意：extractCode 2026-08-30 统一从 src/shared/code.ts re-export（修域名前缀 bug），
+// 原 javdb.ts 内部独立实现的 `m[0]` 形式的 CODE_RE 已删除，避免 main/renderer 两侧语义漂移。
+export { extractCode }
 
 /** 单个搜索结果条目：<a href="/v/UID" class="box" title="..."> ... <img ... src="POSTER"> ... <strong>CODE</strong> ... </a> */
 const ITEM_RE =
@@ -342,7 +331,7 @@ export async function fetchJavdbDetail(
 ): Promise<JavdbDetail | null> {
   const codeNorm = extractCode(code)
   if (!codeNorm) {
-    onError?.('无法从文件名/标题识别番号')
+    // 「无法识别番号」属正常结果（静默，不算网络失败，避免批量误停）
     return null
   }
   const hit = await searchJavdb(codeNorm, settings, onError)

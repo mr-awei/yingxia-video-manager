@@ -35,6 +35,7 @@ electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 
 win:
+  # 代码签名：本地用 signtool 脚本签；CI 由 release.yml 显式传 -c.win.certificateFile + CSC_KEY_PASSWORD
   target:
     - target: nsis
       arch:

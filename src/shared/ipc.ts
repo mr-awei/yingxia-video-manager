@@ -35,6 +35,8 @@ export const IPC = {
   videoDeleteFile: 'video:deleteFile',
   // 预检：列出 video 所在目录的"其他视频数"和"是否含 .torrent"，供删除前确认
   videoInspectForDelete: 'video:inspectForDelete',
+  // 封面来源切换：数据源图（javdb/javbus/javlibrary）↔ FFmpeg 截帧图
+  videoSwitchPoster: 'video:switchPoster',
   // 文件批量改名（清理文件名广告）
   libraryPreviewRenames: 'library:previewRenames',
   libraryApplyRenames: 'library:applyRenames',
@@ -72,12 +74,7 @@ export const IPC = {
   shellRevealInFolder: 'system:revealInFolder',
   // 事件（主进程 -> 渲染进程）
   scanProgress: 'scan:progress',
-  // 简介 md 文件变化（自动重新对账）
-  mdChanged: 'md:changed',
-  // 内置规范文档（新建 md 文件向导）：读取打包资源中的规范全文
-  specGet: 'spec:get',
-  // 批量导出媒体库番号清单（新建 md 文件向导第一步，写入 txt 文件）
-  libraryExportCodes: 'library:exportCodes',
+  // 片单变化事件（预留）
   // 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载）
   libraryGetCodes: 'library:getCodes'
 } as const

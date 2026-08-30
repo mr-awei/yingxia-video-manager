@@ -70,15 +70,37 @@ async function generateFrame(video: Video, settings: Settings): Promise<string |
   if (!exe) return null
   const out = frameCachePath(video)
   await fs.mkdir(postersCacheDir(), { recursive: true })
-  const ss = video.durationSec ? Math.max(5, Math.floor(video.durationSec * 0.3)) : 30
+  // ffmpeg `thumbnail` 滤镜：分析 N 帧后自动选最具代表性的一帧（避免黑场/静帧/淡入淡出）。
+  // 官方推荐做法：https://ffmpeg.org/ffmpeg-filters.html#thumbnail-1
+  // n=100 覆盖常见短片；超长片（>2h）按比例放大 n 但封顶 200 避免太慢
+  const dur = video.durationSec ?? 0
+  const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
   return new Promise<string | null>((resolve) => {
     const p = spawn(
       exe,
-      ['-y', '-ss', String(ss), '-i', video.path, '-frames:v', '1', '-q:v', '3', out],
+      [
+        '-y',
+        '-i', video.path,
+        '-vf', `thumbnail=n=${n},scale=480:-1`,
+        '-frames:v', '1',
+        '-q:v', '2',
+        out
+      ],
       { windowsHide: true }
     )
-    p.on('error', () => resolve(null))
+    // 超时兜底：thumbnail 全片分析较慢，30s 未结束强制 kill
+    const timer = setTimeout(() => {
+      try {
+        p.kill('SIGKILL')
+      } catch {}
+      resolve(null)
+    }, FRAME_TIMEOUT_MS)
+    p.on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
     p.on('close', async (code) => {
+      clearTimeout(timer)
       if (code === 0) {
         try {
           await fs.access(out)
@@ -124,11 +146,16 @@ export async function resolvePoster(
         break
       }
       case 'javdb':
-        // 只复用已抓取的 javdb 缓存；抓取动作由「从 JavDB 获取封面 / 批量补全」显式触发
-        if (video.posterSource === 'javdb' && video.posterPath) {
+      case 'javbus':
+      case 'javlibrary':
+        // 只复用已抓取的数据源缓存；抓取动作由「从数据源获取封面 / 批量补全」显式触发
+        if (
+          (video.posterSource === 'javdb' || video.posterSource === 'javbus' || video.posterSource === 'javlibrary') &&
+          video.posterPath
+        ) {
           try {
             await fs.access(video.posterPath)
-            return { source: 'javdb', posterPath: video.posterPath }
+            return { source: video.posterSource, posterPath: video.posterPath }
           } catch {
             /* 缓存丢失，继续 */
           }
@@ -165,6 +192,8 @@ function previewPathFor(video: Video, i: number): string {
 }
 
 /** 单次截帧：在指定秒数处截取一帧 */
+const FRAME_TIMEOUT_MS = 30_000 // 单次截帧超时：ffmpeg 子进程 30s 未结束则 kill（防长视频/异常文件卡死）
+
 function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
   const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
   void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
@@ -172,12 +201,23 @@ function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string):
     const p = spawn(exe, args, { windowsHide: true })
     let done = false
     let stderr = ''
+    // 超时兜底：30s 未结束强制 kill
+    const timer = setTimeout(() => {
+      if (done) return
+      done = true
+      void frameLog(`[spawnFrameAt] timeout kill exe=${exe} sec=${sec}`)
+      try {
+        p.kill('SIGKILL')
+      } catch {}
+      resolve(false)
+    }, FRAME_TIMEOUT_MS)
     p.stderr?.on('data', (chunk) => {
       stderr += String(chunk)
     })
     p.on('error', (err) => {
       if (!done) {
         done = true
+        clearTimeout(timer)
         void frameLog(`[spawnFrameAt] error exe=${exe} err=${err.message}`)
         resolve(false)
       }
@@ -185,6 +225,7 @@ function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string):
     p.on('close', async (code) => {
       if (done) return
       done = true
+      clearTimeout(timer)
       const errTail = stderr.slice(-400).replace(/\s+/g, ' ')
       if (code === 0) {
         try {
@@ -234,16 +275,33 @@ export async function generatePreviewSet(
   }
   await fs.mkdir(postersCacheDir(), { recursive: true })
   const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
-  const coverSec = Math.max(5, Math.floor(dur * (0.2 + Math.random() * 0.2)))
   const coverPath = frameCachePath(video)
+  // 封面：用 thumbnail 滤镜（官方推荐，自动选最具代表性帧）避免黑场/静帧
+  const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
   const previewItems = Array.from({ length: PREVIEW_COUNT }, (_, i) => {
     const frac = 0.06 + ((i + 0.5) / PREVIEW_COUNT) * 0.88
     return { i, sec: Math.max(5, Math.floor(dur * frac)) }
   })
-  const coverOk = await spawnFrameAt(exe, video.path, coverSec, coverPath)
-  const previewsOk = await mapLimit(previewItems, 4, (it) =>
-    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
-  )
+  // 并行：封面用 thumbnail 滤镜；预览图按时间点散布
+  const [coverOk, previewsOk] = await Promise.all([
+    new Promise<boolean>((resolve) => {
+      const p = spawn(
+        exe,
+        [
+          '-y',
+          '-i', video.path,
+          '-vf', `thumbnail=n=${n},scale=480:-1`,
+          '-frames:v', '1',
+          '-q:v', '2',
+          coverPath
+        ],
+        { windowsHide: true }
+      )
+      p.on('error', () => resolve(false))
+      p.on('close', (code) => resolve(code === 0))
+    }),
+    mapLimit(previewItems, 4, (it) => spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i)))
+  ])
   const previewPaths = previewsOk
     .map((ok, i) => (ok ? previewPathFor(video, i) : null))
     .filter((p): p is string => p !== null)
