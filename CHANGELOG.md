@@ -1,5 +1,11 @@
 # 更新日志（Changelog）
 
+## v2.3.4（2026-08-30）
+
+**相关推荐封面全无修复**
+
+- **resolveEntryPoster 封面优先级修正**：v2.3.3 里 `javdbDetail.cover` 优先于 `posterPath`，但 cover 常指向失效文件（`javapi-cover-*.jpg` 下载失败/被清理），导致相关推荐/封面返回 404 路径全部占位。改为 **posterPath（100% 有效）始终优先，cover 仅在 posterPath 缺失时补充**——相关推荐封面恢复（实测 179/179 全部有效）。
+
 ## v2.3.3（2026-08-30）
 
 **相关推荐封面不一致修复**
