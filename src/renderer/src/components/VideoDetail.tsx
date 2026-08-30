@@ -416,13 +416,9 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               </div>
             )}
           </div>{/* 封面容器结束 */}
-            {/* 简介（来自 MD）—— 放在封面下方，左栏 flex-col 第二个子元素 */}
+            {/* 简介 —— 纯文本段落接封面下方, 用细分隔线和封面区分, 无卡片感 */}
             {video.description ? (
-              <div className="rounded-lg bg-ink-800/70 ring-1 ring-white/10 p-4 text-[13px] text-white/80 leading-relaxed whitespace-pre-wrap max-h-[280px] overflow-y-auto">
-                <div className="text-[11px] text-white/40 mb-2 flex items-center gap-1.5 font-medium">
-                  <Icon name="info" size={11} className="text-white/35" />
-                  简介
-                </div>
+              <div className="text-[13px] text-white/70 leading-[1.8] whitespace-pre-wrap max-h-[280px] overflow-y-auto pt-4 border-t border-white/10">
                 {video.description}
               </div>
             ) : null}
