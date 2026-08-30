@@ -406,37 +406,21 @@ export async function reconcileLibrary(
       }
       const d = video.javdbDetail
       const hasGenres = !!d && !!d.genres && d.genres.length > 0
-      // v2.3.1 方案A：无片单自动归类改为「每个 genre 独立成分类」。
-      // 原 v2.2.0 把整串 genres join('·') 成「【JavDB】巨乳·中出·…」一个超长分类，
-      // 导致每个视频一个独特长分类、侧栏爆炸。现在每个 genre 单独一条 entry，
-      // 点分类「巨乳」即可筛选所有巨乳片。无 genres 的仍归「未分类」。
-      if (hasGenres) {
-        for (const g of d!.genres) {
-          entries.push({
-            kind: 'matched',
-            category: g,
-            order: 9000,
-            code: titleNoExt,
-            title: titleNoExt,
-            description: '',
-            tags: [],
-            video
-          })
-        }
-        matched++
-      } else {
-        entries.push({
-          kind: 'matched',
-          category: '未分类',
-          order: 0,
-          code: titleNoExt,
-          title: titleNoExt,
-          description: '',
-          tags: [],
-          video
-        })
-        matched++
-      }
+      // v2.3.2：分类恢复原 v2.2.0 逻辑（一个视频一条 entry，category 用 genres 拼接长串），
+      // 避免方案 A 把一个视频拆多条 entry 导致计数/推荐重复；genres 单标签改由独立的「类别」筛选提供。
+      const srcName = d?.source === 'javbus' ? 'JavBus' : d?.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'
+      const catName = hasGenres ? `【${srcName}】${d!.genres.join('·')}` : '未分类'
+      entries.push({
+        kind: 'matched',
+        category: catName,
+        order: hasGenres ? 9000 : 0,
+        code: titleNoExt,
+        title: titleNoExt,
+        description: '',
+        tags: [],
+        video
+      })
+      matched++
     }
 
     // 后台异步抓元数据（fire-and-forget，不阻塞 reconcile 返回）
