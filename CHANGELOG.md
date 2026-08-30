@@ -1,5 +1,21 @@
 # 更新日志（Changelog）
 
+## v2.2.14（2026-08-30）
+
+**持久化修复 + DMM 图床兼容 + 批量失败循环重试弹窗 + 抓取日志去重**
+
+### Bug 修复
+- **设置项不持久化**：`store.ts` 防抖写盘逻辑存在致命缺陷 —— 300ms 窗口内第二次调用 `scheduleSave` 会 `clearTimeout` 掉唯一的落盘定时器，但 `pendingWrite` 不重置、它的 `resolve` 又写在这个已被清掉的定时器回调里 → Promise 永不 resolve，本进程从此再也不落盘。重写防抖逻辑为「调用方 resolve 收集 + 定时器每次重排」，写盘串行化。
+- **DMM 图床 Referer 被拒**：Electron Chromium 网络栈对跨站 Referer 校验严格，`*.dmm.co.jp` 图床带 JavBus 域名 Referer 会被 Chromium 直接取消请求（`ERR_BLOCKED_BY_CLIENT` / `invalid referrer`）。改为对所有 `*.dmm.co.jp` 域名的图片请求不传 Referer。
+- **补齐信息覆盖预览帧**：详情页点「补齐信息」时，无论截图有没有拿到都无条件用截图（可能为空数组）覆盖 `previewPaths` 并删除 ffmpeg 预览帧文件。修复为仅当截图实际下载到时才覆盖，否则保留原有预览帧。
+- **抓取日志重复打印**：`preload/index.ts` 的 `onScanProgress` 只 `ipcRenderer.on` 没有 `removeListener`，React StrictMode 让 useEffect 执行两次导致注册两个监听器 → 每条进度显示两次。修复为返回 cleanup 函数，useEffect 返回它。
+- **tagCategories 标签值重复**：分类名标准化去重了但分类内部的标签值没去重，`["/"]` 出现两次导致 React key 重复警告。加 `Array.from(new Set(...))` 去重。
+- **批量补齐重复触发**：详情页 useEffect 自动补抓 + 用户手动点按钮同时触发同一番号请求。加 `fetchingRef` 共享锁互斥。
+
+### 功能新增
+- **批量抓取失败明细弹窗**：批量补齐结束后，若存在失败影片，居中弹出明细窗口显示标题 + 原因。浮层自动收起。
+- **失败循环重试**：弹窗底部「全部重试」按钮，逐个重试失败项目；若仍有失败则再次弹出明细窗口，循环直到全部成功或用户手动关闭。
+
 ## v2.3.2（2026-08-30）
 
 **侧栏新增「类别」筛选；分类恢复原逻辑**

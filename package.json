@@ -1,7 +1,7 @@
 {
   "name": "local-video-manager",
   "productName": "影匣",
-  "version": "2.2.13",
+  "version": "2.2.14",
   "description": "本地视频管理工具 - 海报墙式影库，悬停看简介，点击看详情，本地播放器打开",
   "type": "module",
   "main": "out/main/index.js",
