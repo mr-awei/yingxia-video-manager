@@ -1,4 +1,4 @@
-# CI 流水线（三合一）：
+# CI 流水线（四合一）：
 #
 # 【模式 A — PR 校验】朋友/协作者开 PR 到 main 时触发：
 #   Checkout → Setup Node → npm ci → Typecheck → Build renderer & main
@@ -8,6 +8,10 @@
 #   跑完 Typecheck + Build 之后，再加三步：签名打包 → GitHub Release → 同步 Gitee Release
 #
 # 【模式 C — 手动触发】Actions 页点 Run workflow（workflow_dispatch），跑完整发版构建（tag=手动）
+#
+# 【模式 D — push 到 main 自动校验】信任朋友后，朋友本地合完冲突 → 直接 git push origin main：
+#   自动触发 Typecheck + Build（绿色=过、红色=错），立刻能看出朋友推的代码有没有坏；
+#   签名/打包/发版仍只在 v* tag 时做（不重复产安装包、不花 CI 额度）
 #
 # 使用方式（本地只推代码，不再手动打包/上传）：
 #   1. bump package.json 版本 + 更新 CHANGELOG
@@ -26,7 +30,10 @@ on:
   push:
     tags:
       - 'v*'
-  pull_request:           # 模式 A：PR 校验（分支合并前）
+    branches: [main]         # 模式 D：push 到 main 自动校验（朋友合完冲突直接推 main，无需作者审核也能跑 CI）
+                              #         仅 Typecheck + Build；签名/打包/发版仍只在 v* tag 时做（env.DO_RELEASE=false）
+    branches-ignore: []      # 预留；如要 feature/* 分支也单独跑校验，在下方 auto-merge-feature.yml 中已覆盖
+  pull_request:             # 模式 A：PR 校验（分支合并前）
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:      # 模式 C：手动点触发（跑完整发版流程，tag=手动）
