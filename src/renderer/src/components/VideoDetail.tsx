@@ -777,34 +777,43 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         </div>
 
         {/* 关键截图（来自 javdb）—— 过滤掉陈旧远程 URL（已重抓但还没写回的） */}
-        {d?.samples && d.samples.filter(isLocal).length > 0 ? (
-          <div>
-            <div className="text-white/80 font-medium mb-2">
-              关键截图（{d.samples.filter(isLocal).length}）
+        {(() => {
+          const all = d?.samples ?? []
+          const localOnly = all.filter(isLocal)
+          const remoteOnly = all.filter(u => !isLocal(u))
+          console.log('[VideoDetail 关键截图 debug]', { videoId: video.id, total: all.length, local: localOnly.length, remote: remoteOnly.length, source: d?.source })
+          return all.length > 0 ? (
+            <div>
+              <div className="text-white/80 font-medium mb-2">
+                关键截图（{all.length}）{remoteOnly.length > 0 ? <span className="text-white/40 text-xs">· {remoteOnly.length} 张为远程 URL（反盗链无法预览）</span> : null}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {all.map((url, i) => (
+                  <div
+                    key={`${url}_${i}`}
+                    className={`aspect-video rounded-lg overflow-hidden bg-ink-800 ${isLocal(url) ? 'cursor-zoom-in' : 'opacity-30'}`}
+                    onMouseEnter={isLocal(url) ? () => { cancelClose(); scheduleOpen(url) } : undefined}
+                    onMouseLeave={isLocal(url) ? clearOpenTimer : undefined}
+                  >
+                    {isLocal(url) ? (
+                      <img
+                        src={posterUrl(url) ?? ''}
+                        alt={`sample-${i}`}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover poster-img transition-transform duration-300 hover:scale-105"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-white/30 text-[11px]">
+                        远程 URL（反盗链无法预览）
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {d.samples.filter(isLocal).map((url) => (
-                <div
-                  key={url}
-                  className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative"
-                  onMouseEnter={() => {
-                    cancelClose()
-                    scheduleOpen(url)
-                  }}
-                  onMouseLeave={clearOpenTimer}
-                >
-                  <img
-                    src={posterUrl(url) ?? ''}
-                    alt="sample"
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover poster-img transition-transform duration-300 hover:scale-105"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+          ) : null
+        })()}
 
         {/* ffmpeg 截帧预览帧（封面外的多张预览，本地 previewPaths）；国产片也走这里 */}
         {localVideo.previewPaths && localVideo.previewPaths.length > 0 ? (
