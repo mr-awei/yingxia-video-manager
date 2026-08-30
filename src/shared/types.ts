@@ -72,6 +72,8 @@ export interface Video {
   /** v2.2.4：reconcile else 分支自动抓 javdb 元数据时的最后尝试时间戳；
    *  7 天内抓过且失败的跳过，避免反复浪费 JavDB 配额。缺失字段 = 从未抓过 */
   lastMetaFetchAt?: number
+
+  frameFailedAt?: number
 }
 
 /** javdb 视频详情页抓取的元数据 */
@@ -205,6 +207,12 @@ export interface Settings {
   ignoredUnlistedPaths: string[]
   /** 用户须知弹窗已确认（勾选了下次不再显示）；未勾选/未确认则首次启动仍弹 */
   noticeDismissed?: boolean
+  /**
+   * v2.3.11：不再提示「媒体库根目录无片单 Excel」。
+   * 无片单用户（绝大多数）每次对账都会被这条 toast 打断，且它不会自动消失。
+   * 只屏蔽「未配置片单」这一类提示，片单解析失败等真实错误仍照常提示。
+   */
+  suppressIntroExcelNotice?: boolean
 }
 
 export interface VideoFilter {
@@ -264,7 +272,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoUpdateFrequency: 'off',
   pendingUpdate: null,
   ignoredUnlistedPaths: [],
-  noticeDismissed: false
+  noticeDismissed: false,
+  suppressIntroExcelNotice: false
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javapi（本地免费）> javinfo > javdb > javbus > 截帧 > 占位 */

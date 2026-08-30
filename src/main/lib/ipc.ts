@@ -533,6 +533,16 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
   return { ...baseResult, fallback: true, error: errors.join('；') }
 }
 
+/** 无封面兜底截帧的单轮上限：每部视频最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴 */
+const FRAME_FALLBACK_LIMIT = 200
+
+/** v2.3.11：截帧失败冷却期（7 天）。损坏文件若每次都重试，批量补齐会被反复拖住 */
+const FRAME_FAIL_COOLDOWN = 7 * 24 * 60 * 60 * 1000
+/** 该视频是否刚截帧失败过（冷却期内跳过，避免损坏文件反复拖慢批量任务） */
+function frameFailedRecently(v: Video): boolean {
+  return !!v.frameFailedAt && Date.now() - v.frameFailedAt < FRAME_FAIL_COOLDOWN
+}
+
 export function registerIpc(): void {
 
   // ---------- 媒体库 ----------
@@ -725,7 +735,10 @@ export function registerIpc(): void {
 
         // 0) 国产片（纯中文文件夹）：不抓 JavDB/JavBus 元数据，仅用 ffmpeg 截帧（封面 + 15 预览）
         if (v.domestic) {
-          const needFrame = !v.posterPath || v.posterSource === 'placeholder' || !v.previewPaths?.length
+          // v2.3.11：刚截帧失败过（损坏文件）→ 本轮跳过，不再白等几分钟超时
+          const needFrame =
+            !frameFailedRecently(v) &&
+            (!v.posterPath || v.posterSource === 'placeholder' || !v.previewPaths?.length)
           if (needFrame) {
             const set = await generatePreviewSet(v, settings).catch(() => null)
             if (set && (set.coverPath || set.previewPaths.length)) {
@@ -866,13 +879,22 @@ export function registerIpc(): void {
     void (async () => {
       try {
         const all = await repo.listVideos({})
-        const noPoster = all
-          .filter(
-            (v) => v.libraryId === libraryId && (!v.posterPath || v.posterSource === 'placeholder')
-          )
-          // 批次上限：单轮补齐最多后台截 200 部，其余留待下次
-          .slice(0, 200)
+        const noPosterAll = all.filter(
+          (v) =>
+            v.libraryId === libraryId &&
+            (!v.posterPath || v.posterSource === 'placeholder') &&
+            // v2.3.11：跳过刚截帧失败过的损坏文件（否则每轮都在同一个坏文件上卡超时）
+            !frameFailedRecently(v)
+        )
+        // 批次上限：单轮补齐最多后台截 200 部（每部最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴）
+        const noPoster = noPosterAll.slice(0, FRAME_FALLBACK_LIMIT)
         if (noPoster.length === 0) return
+        console.log(
+          `[ipc] 无封面兜底截帧：待处理 ${noPosterAll.length} 部，本轮截 ${noPoster.length} 部` +
+            (noPosterAll.length > noPoster.length
+              ? `（剩余 ${noPosterAll.length - noPoster.length} 部需再跑一轮「补齐信息」）`
+              : '')
+        )
         const conc2 = Math.max(1, Math.min(4, Math.floor(settings.scanConcurrency) || 2))
         let i2 = 0
         // fix4：截帧兜底也批量落盘（最多 200 次全量写 → 1 次）
@@ -880,14 +902,17 @@ export function registerIpc(): void {
         const w2 = async () => {
           while (i2 < noPoster.length) {
             const v = noPoster[i2++]
+            let frameFailed = true
             try {
               const set = await generatePreviewSet(v, settings)
               if (set?.coverPath) {
-                const patch = {
+                frameFailed = false
+                const patch: Partial<Video> = {
                   posterSource: 'ffmpeg' as const,
                   posterPath: set.coverPath,
                   posterPathFfmpeg: set.coverPath,
-                  previewPaths: set.previewPaths
+                  previewPaths: set.previewPaths,
+                  frameFailedAt: undefined // 截帧成功：清掉此前的失败标记
                 }
                 const existing = frameChanges.find((c) => c.type === 'update' && c.video.id === v.id)
                 if (existing && existing.type === 'update') {
@@ -902,7 +927,12 @@ export function registerIpc(): void {
                 }
               }
             } catch {
-              /* 截帧失败静默 */
+              frameFailed = true
+            }
+            // v2.3.11：截帧没出图（损坏文件 / 超时）→ 打时间戳，批量任务冷却期内不再碰它
+            if (frameFailed) {
+              frameChanges.push({ type: 'update', video: { ...v, frameFailedAt: Date.now() } })
+              void frameLog(`[ipc] 截帧失败打标，7 天内跳过 id=${v.id} path=${v.path}`)
             }
           }
         }
@@ -910,6 +940,7 @@ export function registerIpc(): void {
         if (frameChanges.length > 0) {
           await repo.applyVideoChanges(frameChanges)
         }
+        console.log(`[ipc] 无封面兜底截帧完成：产出 ${frameChanges.length}/\${noPoster.length} 部`)
       } catch {
         /* 静默 */
       }

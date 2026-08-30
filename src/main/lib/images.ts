@@ -191,57 +191,72 @@ function previewPathFor(video: Video, i: number): string {
   return path.join(postersCacheDir(), `${video.id}_preview_${i}.jpg`)
 }
 
-/** 单次截帧：在指定秒数处截取一帧 */
-const FRAME_TIMEOUT_MS = 30_000 // 单次截帧超时：ffmpeg 子进程 30s 未结束则 kill（防长视频/异常文件卡死）
+// v2.3.11：统一子进程超时封装。
+// 关键点 1：**必须消费 stdout/stderr**——损坏文件会让 ffmpeg 疯狂刷错误输出，管道缓冲区写满后
+//   子进程阻塞在 write 上永远退不出来（原封面截帧没消费 stderr，这是"补齐卡死不动"的直接原因之一）。
+// 关键点 2：**必须有超时**——原封面截帧（thumbnail 滤镜要解码全片）既没超时也没消费 stderr，
+//   遇到损坏的 wmv 能挂几小时，整个 generatePreviewSet 不返回 → 批量补齐 worker 永久卡住。
+const COVER_TIMEOUT_MS = 60_000 // 封面：thumbnail 滤镜需解码全片，给足 60s
+const FRAME_TIMEOUT_MS = 30_000 // 单帧截帧
 
-function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
-  const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
-  void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
-  return new Promise<boolean>((resolve) => {
-    const p = spawn(exe, args, { windowsHide: true })
+function spawnWithTimeout(
+  exe: string,
+  args: string[],
+  timeoutMs: number,
+  label: string
+): Promise<{ ok: boolean; code: number | null; err: string }> {
+  return new Promise((resolve) => {
     let done = false
     let stderr = ''
-    // 超时兜底：30s 未结束强制 kill
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = (ok: boolean, code: number | null, err = ''): void => {
       if (done) return
       done = true
-      void frameLog(`[spawnFrameAt] timeout kill exe=${exe} sec=${sec}`)
+      if (timer) clearTimeout(timer)
+      resolve({ ok, code, err })
+    }
+    let p: import('node:child_process').ChildProcessWithoutNullStreams
+    try {
+      p = spawn(exe, args, { windowsHide: true })
+    } catch (e) {
+      finish(false, null, (e as Error)?.message || 'spawn failed')
+      return
+    }
+    timer = setTimeout(() => {
+      void frameLog(`[${label}] timeout kill（${timeoutMs}ms）exe=${exe}`)
       try {
         p.kill('SIGKILL')
       } catch {}
-      resolve(false)
-    }, FRAME_TIMEOUT_MS)
-    p.stderr?.on('data', (chunk) => {
-      stderr += String(chunk)
+      finish(false, null, `timeout ${timeoutMs}ms`)
+    }, timeoutMs)
+    // 消费输出：防止管道缓冲区写满把子进程卡死
+    p.stdout?.on('data', () => {})
+    p.stderr?.on('data', (c) => {
+      if (stderr.length < 4000) stderr += String(c)
     })
-    p.on('error', (err) => {
-      if (!done) {
-        done = true
-        clearTimeout(timer)
-        void frameLog(`[spawnFrameAt] error exe=${exe} err=${err.message}`)
-        resolve(false)
-      }
-    })
-    p.on('close', async (code) => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      const errTail = stderr.slice(-400).replace(/\s+/g, ' ')
-      if (code === 0) {
-        try {
-          await fs.access(out)
-          void frameLog(`[spawnFrameAt] ok out=${out}`)
-          resolve(true)
-        } catch {
-          void frameLog(`[spawnFrameAt] missing output file out=${out}`)
-          resolve(false)
-        }
-      } else {
-        void frameLog(`[spawnFrameAt] failed code=${code} err=${errTail}`)
-        resolve(false)
-      }
-    })
+    p.on('error', (e) => finish(false, null, e.message))
+    p.on('close', (code) => finish(code === 0, code, stderr.slice(-400).replace(/\s+/g, ' ')))
   })
+}
+
+/** 单次截帧：在指定秒数处截取一帧（带超时 + 消费 stderr） */
+
+async function spawnFrameAt(exe: string, videoPath: string, sec: number, out: string): Promise<boolean> {
+  const args = ['-y', '-ss', String(sec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', out]
+  void frameLog(`[spawnFrameAt] exe=${exe} sec=${sec} out=${out} args=${JSON.stringify(args)}`)
+  const r = await spawnWithTimeout(exe, args, FRAME_TIMEOUT_MS, 'spawnFrameAt')
+  if (!r.ok) {
+    void frameLog(`[spawnFrameAt] failed code=${r.code} err=${r.err}`)
+    return false
+  }
+  try {
+    await fs.access(out)
+    void frameLog(`[spawnFrameAt] ok out=${out}`)
+    return true
+  } catch {
+    void frameLog(`[spawnFrameAt] missing output file out=${out}`)
+    return false
+  }
 }
 
 /** 限制并发的 map */
@@ -266,7 +281,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
 export async function generatePreviewSet(
   video: Video,
   settings: Settings
-): Promise<{ coverPath?: string; previewPaths: string[] } | null> {
+): Promise<{ coverPath?: string; previewPaths: string[]; timedOut?: boolean } | null> {
   const exe = await ffmpegAvailable(settings)
   void frameLog(`[generatePreviewSet] id=${video.id} exe=${exe ?? 'null'} path=${video.path} durationSec=${video.durationSec ?? video.techInfo?.durationSec ?? 'unset'}`)
   if (!exe) {
@@ -282,32 +297,32 @@ export async function generatePreviewSet(
     const frac = 0.06 + ((i + 0.5) / PREVIEW_COUNT) * 0.88
     return { i, sec: Math.max(5, Math.floor(dur * frac)) }
   })
-  // 并行：封面用 thumbnail 滤镜；预览图按时间点散布
-  const [coverOk, previewsOk] = await Promise.all([
-    new Promise<boolean>((resolve) => {
-      const p = spawn(
-        exe,
-        [
-          '-y',
-          '-i', video.path,
-          '-vf', `thumbnail=n=${n},scale=480:-1`,
-          '-frames:v', '1',
-          '-q:v', '2',
-          coverPath
-        ],
-        { windowsHide: true }
-      )
-      p.on('error', () => resolve(false))
-      p.on('close', (code) => resolve(code === 0))
-    }),
-    mapLimit(previewItems, 4, (it) => spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i)))
-  ])
+  // v2.3.11：封面先跑（thumbnail 滤镜解码全片，最能暴露损坏文件），带超时 + 消费 stderr
+  const coverRes = await spawnWithTimeout(
+    exe,
+    ['-y', '-i', video.path, '-vf', `thumbnail=n=${n},scale=480:-1`, '-frames:v', '1', '-q:v', '2', coverPath],
+    COVER_TIMEOUT_MS,
+    'coverThumbnail'
+  )
+  void frameLog(
+    `[coverThumbnail] ${coverRes.ok ? 'ok' : 'failed'} id=${video.id} code=${coverRes.code} err=${coverRes.err}`
+  )
+  // 封面截帧**超时**（不是普通失败）= 文件损坏/结构异常的强信号，
+  // 不再对其发起十余个预览帧 ffmpeg（原逻辑会继续跑，损坏文件下每个都吃满 30s 超时）
+  if (!coverRes.ok && coverRes.err.startsWith('timeout')) {
+    void frameLog(`[generatePreviewSet] 封面截帧超时，判定文件异常，跳过预览帧 id=${video.id}`)
+    return { coverPath: undefined, previewPaths: [], timedOut: true }
+  }
+  const coverOk = coverRes.ok
+  const previewsOk = await mapLimit(previewItems, 4, (it) =>
+    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
+  )
   const previewPaths = previewsOk
     .map((ok, i) => (ok ? previewPathFor(video, i) : null))
     .filter((p): p is string => p !== null)
   const finalCover = coverOk ? coverPath : previewPaths.length > 0 ? previewPaths[0] : undefined
   void frameLog(`[generatePreviewSet] result id=${video.id} coverOk=${coverOk} previewCount=${previewPaths.length} finalCover=${finalCover ?? 'none'}`)
-  return { coverPath: finalCover, previewPaths }
+  return { coverPath: finalCover, previewPaths, timedOut: false }
 }
 
 export { postersCacheDir, frameCachePath, generateFrame, frameLog }
