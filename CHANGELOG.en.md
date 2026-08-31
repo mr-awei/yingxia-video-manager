@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.3 (2026-09-01)
+
+**Installer language picker + uninstaller checkbox for data removal + English user notice without PRC laws**
+
+- **Language selection at installer start**: The installer now shows an nsDialogs language picker with only two radio buttons — 简体中文 and English. Simplified Chinese is selected by default. The choice is persisted to `HKCU\Software\YingXia\InstallerLanguage` and used as the app's initial language on first launch.
+- **English user notice without PRC legal clauses**: `UserNoticeModal` renders branch content by current locale; the English branch shows a general disclaimer, while the Chinese branch retains the PRC legal excerpts.
+- **Uninstaller follows installer language**: The uninstaller reads `$LANGUAGE` set during installation and shows Simplified Chinese or English prompts accordingly.
+- **Uninstaller checkbox for user data removal (unchecked by default)**: `customUnInstall` uses an nsDialogs checkbox to ask whether to delete `%APPDATA%\local-video-manager`. The checkbox is unchecked by default; deletion only happens if the user explicitly checks it.
+
 ## v2.6.2 (2026-09-01)
 
 **Data-source metadata i18n fix + uninstaller optional data removal + pack output back to project release**
