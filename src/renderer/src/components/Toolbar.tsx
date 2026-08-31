@@ -1,5 +1,6 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import Icon from './Icon'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   search: string
@@ -31,12 +32,12 @@ export default function Toolbar(props: Props) {
       <button
         className="no-drag flex items-center gap-2 mr-1 select-none group"
         onClick={onHome}
-        title="返回首页"
+        title={t('toolbar.backHome')}
       >
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand to-[#ff9db6] flex items-center justify-center shadow-glow-sm group-hover:brightness-110 transition">
           <Icon name="film" size={15} className="text-white" />
         </div>
-        <span className="text-white font-bold text-[15px] tracking-wide">影匣</span>
+        <span className="text-white font-bold text-[15px] tracking-wide">{t('app.name')}</span>
       </button>
 
       {/* 全局搜索 */}
@@ -48,7 +49,7 @@ export default function Toolbar(props: Props) {
         />
         <input
           className="bg-ink-700 text-white text-sm rounded-lg pl-8 pr-16 py-1.5 w-64 outline-none ring-1 ring-transparent transition-all focus:ring-brand/60 focus:bg-ink-600 placeholder:text-white/30"
-          placeholder={libraryName ? `在「${libraryName}」中搜索…` : '搜索片名 / 简介…'}
+          placeholder={libraryName ? t('toolbar.searchPlaceholderInLibrary', { libraryName }) : t('toolbar.searchPlaceholder')}
           value={search}
           onChange={(e) => onSearch(e.target.value)}
         />
@@ -56,7 +57,7 @@ export default function Toolbar(props: Props) {
           <button
             className="absolute right-1.5 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/80"
             onClick={() => onSearch('')}
-            title="清空搜索"
+            title={t('toolbar.clearSearch')}
           >
             <Icon name="x" size={13} />
           </button>
@@ -70,20 +71,20 @@ export default function Toolbar(props: Props) {
         <button
           className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium bg-ink-700 hover:bg-ink-600 text-white/85 transition-colors"
           onClick={onScan}
-          title="扫描当前影视库（重新对账文件）"
+          title={t('toolbar.scanLibraryTitle')}
         >
           <Icon name="refresh" size={13} />
-          扫描库
+          {t('toolbar.scanLibrary')}
         </button>
 
         <div className="relative">
           <button
             className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium bg-ink-700 hover:bg-ink-600 text-white/85 transition-colors"
             onClick={() => setBatchMenuOpen((o) => !o)}
-            title="批量补齐 JavDB 信息（封面 / 演员 / 时长等）"
+            title={t('toolbar.fetchInfoTitle')}
           >
             <Icon name="wand" size={13} />
-            补齐信息
+            {t('toolbar.fetchInfo')}
             <Icon name="chevronDown" size={11} className="opacity-60" />
           </button>
           {batchMenuOpen ? (
@@ -96,8 +97,8 @@ export default function Toolbar(props: Props) {
                 >
                   <Icon name="wand" size={14} className="text-brand mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-medium">补齐缺失信息</div>
-                    <div className="text-[11px] text-white/45 leading-tight">只抓取缺封面 / 缺详情的影片</div>
+                    <div className="font-medium">{t('toolbar.fetchMissingInfo')}</div>
+                    <div className="text-[11px] text-white/45 leading-tight">{t('toolbar.fetchMissingInfoHint')}</div>
                   </div>
                 </button>
                 <button
@@ -106,8 +107,8 @@ export default function Toolbar(props: Props) {
                 >
                   <Icon name="refresh" size={14} className="text-amber-400 mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-medium">强制重新获取全部信息</div>
-                    <div className="text-[11px] text-white/45 leading-tight">忽略缓存，逐部重新抓取所有影片信息</div>
+                    <div className="font-medium">{t('toolbar.fetchAllForce')}</div>
+                    <div className="text-[11px] text-white/45 leading-tight">{t('toolbar.fetchAllForceHint')}</div>
                   </div>
                 </button>
                 <button
@@ -116,8 +117,8 @@ export default function Toolbar(props: Props) {
                 >
                   <Icon name="clock" size={14} className="text-sky-400 mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-medium">补齐视频时长</div>
-                    <div className="text-[11px] text-white/45 leading-tight">ffprobe 读取当前库所有视频时长（写 techInfo）</div>
+                    <div className="font-medium">{t('toolbar.fetchDuration')}</div>
+                    <div className="text-[11px] text-white/45 leading-tight">{t('toolbar.fetchDurationHint')}</div>
                   </div>
                 </button>
               </div>
@@ -132,10 +133,10 @@ export default function Toolbar(props: Props) {
               : 'bg-ink-700 hover:bg-ink-600 text-white/80'
           }`}
           onClick={onTogglePrivacy}
-          title={privacy ? '隐私护盾已开启：所有预览图已模糊，点击恢复' : '一键隐藏：模糊所有预览图（防截图泄露成人内容）'}
+          title={privacy ? t('toolbar.hideHint') : t('toolbar.hideTitle')}
         >
           <Icon name={privacy ? 'eyeOff' : 'eye'} size={13} />
-          {privacy ? '已隐藏' : '隐藏'}
+          {privacy ? t('toolbar.hidden') : t('toolbar.hide')}
         </button>
 
         <button
@@ -143,7 +144,7 @@ export default function Toolbar(props: Props) {
           onClick={onAddLibrary}
         >
           <Icon name="plus" size={13} />
-          添加库
+          {t('toolbar.addLibrary')}
         </button>
       </div>
     </header>

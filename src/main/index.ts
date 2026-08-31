@@ -3,6 +3,7 @@ import path from 'node:path'
 import { promises as fs, appendFileSync, mkdirSync } from 'node:fs'
 import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
+import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from '../shared/i18n'
 
 // 数据目录固定为 %APPDATA%\local-video-manager（换回旧版目录，避免 productName「影匣」
 // 造成的中文目录名；必须在任何 app.getPath('userData') 调用之前设置）
@@ -188,15 +189,22 @@ function trayIcon(): NativeImage {
 function ensureTray(): void {
   if (tray) return
   tray = new Tray(trayIcon())
-  tray.setToolTip('影匣')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: '显示影匣', click: () => showMainWindow() },
-      { type: 'separator' },
-      { label: '退出', click: () => { forceQuit = true; app.quit() } }
-    ])
-  )
+  tray.setToolTip(tMain('tray.tooltip'))
+  const rebuildMenu = () => {
+    if (!tray) return
+    tray.setToolTip(tMain('tray.tooltip'))
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: tMain('tray.show'), click: () => showMainWindow() },
+        { type: 'separator' },
+        { label: tMain('tray.quit'), click: () => { forceQuit = true; app.quit() } }
+      ])
+    )
+  }
+  rebuildMenu()
   tray.on('double-click', () => showMainWindow())
+  // 订阅语言变化，实时更新托盘文案
+  subscribeLocale(() => rebuildMenu())
 }
 
 function showMainWindow(): void {
@@ -225,6 +233,18 @@ app.whenReady().then(() => {
 
   registerLocalMedia()
   registerIpc()
+
+  // 启动时应用用户设置的界面语言
+  void (async () => {
+    try {
+      const { getSettings } = await import('./lib/repo')
+      const s = await getSettings()
+      setMainLocale((s.language ?? 'zh-CN') as Locale)
+    } catch {
+      /* 静默：保持默认中文 */
+    }
+  })()
+
   createWindow()
 
   // 自动检查更新：按设置里的「频率」在启动时检测一次，之后每 30 分钟复查（仅当距上次检测超过设定间隔才真正联网）

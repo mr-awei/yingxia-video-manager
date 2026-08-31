@@ -13,6 +13,7 @@ import { DEFAULT_IMAGE_PRIORITY, DEFAULT_SETTINGS, entryPrimaryTags, flattenAllT
 import { categorizeTag } from '../../shared/tagCategories'
 import { extractBaseCode } from '../../shared/code'
 import { api } from './lib/api'
+import { t, setLocale } from '../../shared/i18n'
 import Toolbar from './components/Toolbar'
 import Sidebar, { type TagInfo, type SectionInfo, type MetaFacet, type ViewName, type SmartFilter } from './components/Sidebar'
 import VirtualizedWall, { type WallSection } from './components/VirtualizedWall'
@@ -31,6 +32,7 @@ import Icon from './components/Icon'
 import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
 import ConfirmDeleteModal, { type DeletePreview } from './components/ConfirmDeleteModal'
 import UserNoticeModal from './components/UserNoticeModal'
+import OnboardSheetModal from './components/OnboardSheetModal'
 import type { AppInfo } from '../../shared/api-types'
 
 interface FilterState {
@@ -64,24 +66,24 @@ function resolutionBucket(v?: Video): string {
   if (px >= 1280) return '720p'
   if (px >= 640) return '480p'
   if (px > 0) return 'SD'
-  return '未知'
+  return t('app.unknown')
 }
 function durationBucket(sec?: number): string {
-  if (!sec || sec <= 0) return '未知'
-  if (sec < 1800) return '30分钟内'
-  if (sec < 3600) return '30-60分'
-  if (sec < 7200) return '1-2小时'
-  if (sec < 10800) return '2-3小时'
-  return '3小时以上'
+  if (!sec || sec <= 0) return t('app.unknown')
+  if (sec < 1800) return t('app.within30min')
+  if (sec < 3600) return t('app.duration30to60')
+  if (sec < 7200) return t('app.duration1to2h')
+  if (sec < 10800) return t('app.duration2to3h')
+  return t('app.over3h')
 }
 function scoreBucketOf(e: DisplayEntry): string {
   const s = e.score ?? e.video?.rating
-  if (s == null) return '未评分'
+  if (s == null) return t('app.unrated')
   if (s >= 9) return '9-10'
   if (s >= 8) return '8-9'
   if (s >= 7) return '7-8'
   if (s >= 6) return '6-7'
-  return '6以下'
+  return t('app.below6')
 }
 const RES_ORDER = ['4K', '2K', '1080p', '720p', '480p', 'SD', '未知']
 const DUR_ORDER = ['30分钟内', '30-60分', '1-2小时', '2-3小时', '3小时以上', '未知']
@@ -122,7 +124,7 @@ export default function App() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   /** 用户须知弹窗：首次启动（noticeDismissed 未设置/为 false）时强制弹出 */
   const [noticeOpen, setNoticeOpen] = useState(false)
-  /** true = 「添加媒体库」新建表单；false = 库设置编辑模式 */
+  /** true = 「{t('app.addLibrary')}」新建表单；false = 库设置编辑模式 */
   const [addingLibrary, setAddingLibrary] = useState(false)
   const [editing, setEditing] = useState<Video | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
@@ -141,7 +143,19 @@ export default function App() {
   >([])
   // v2.2.14：批量抓取失败明细弹窗（居中显示失败影片标题 + 原因）
   const [batchFailures, setBatchFailures] = useState<Array<{ id: string; title: string; reason: string }> | null>(null)
+  const [batchFailuresVisible, setBatchFailuresVisible] = useState(true)
   const [retryingFailures, setRetryingFailures] = useState(false)
+
+  // === 批量抓取失败明细：打开详情时藏弹窗，关详情时自动恢复 ===
+  const prevDetailRef = useRef<Video | null>(null)
+  useEffect(() => {
+    const prev = prevDetailRef.current
+    prevDetailRef.current = detail
+    // detail 从有值 → null，且 batchFailures 数据还在 → 恢复弹窗
+    if (prev && !detail && batchFailures && !batchFailuresVisible) {
+      setBatchFailuresVisible(true)
+    }
+  }, [detail, batchFailures, batchFailuresVisible])
 
   // ---- 新增：导航 / 视图状态 ----
   /** 主导航：home 首页概览 / browse 浏览 */
@@ -157,7 +171,7 @@ export default function App() {
   })
   /** 是否已加载完基础设置（未加载前显示启动遮罩，避免锁界面闪烁泄露内容） */
   const [loaded, setLoaded] = useState(false)
-  /** 隐私锁是否已解锁（未上锁时恒为 true） */
+  /** 隐私锁是否已{t('app.unlock')}（未上锁时恒为 true） */
   const [unlocked, setUnlocked] = useState(false)
   /** 命令面板 ⌘K */
   /** 随机推荐：手动刷新 nonce（每日刷新由种子里的日期自动驱动） */
@@ -166,6 +180,16 @@ export default function App() {
   const [allRandomNonce, setAllRandomNonce] = useState(0)
   /** 所有媒体库的 reconcile 缓存（全库随机数据源；key = libraryId） */
   const [allReconciles, setAllReconciles] = useState<Record<string, ReconcileResult>>({})
+
+  // ---- Onboard Sheet Wizard 状态 ----
+  /** 新建片单 Excel 向导弹窗（introError.kind==='not-configured' 时自动弹） */
+  const [onboardOpen, setOnboardOpen] = useState(false)
+  const [onboardLib, setOnboardLib] = useState<Library | null>(null)
+  /** 让 scanProgress 回调能拿到最新 settings.suppressIntroExcelNotice 和 libraries（空依赖 useEffect 闭包问题） */
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const librariesRef = useRef(libraries)
+  librariesRef.current = libraries
 
   // ---- Hero 独立洗牌队列：整库全部影片入队，点一次取下一个，走完一轮自动重新洗牌 ----
   // 队列只存 video.id 列表（ref）；渲染时按最新 reconcile 实时映射 → 收藏/详情等 reconcile 更新不重建队列、顺序稳定
@@ -200,14 +224,21 @@ export default function App() {
       if (s.defaultSort && s.defaultSort !== 'title') {
         setFilter((f) => (f.sort === 'title' ? { ...f, sort: s.defaultSort } : f))
       }
-      // 启动时自动对账开关：关闭则跳过首次自动对账
+      // 启动时自动对账开关：{t('common.close')}则跳过首次自动对账
       if (s.scanOnStartup === false) skipFirstAutoScanRef.current = true
       if (libs.length > 0) setLibraryId(libs[0].id)
-      // 首次启动：用户须知未确认则强制弹窗（背景点击 / ESC 均不关闭）
+      // 首次启动：用户须知未确认则强制弹窗（背景点击 / ESC 均不{t('common.close')}）
       if (!s.noticeDismissed) setNoticeOpen(true)
+      // 应用保存的界面语言
+      if (s.language) setLocale(s.language as 'zh-CN' | 'en-US')
       setLoaded(true)
     })()
   }, [])
+
+  // 设置中的界面语言变化 → 立即切换（设置页保存后自动生效）
+  useEffect(() => {
+    if (settings.language) setLocale(settings.language as 'zh-CN' | 'en-US')
+  }, [settings.language])
 
   // 后台轻量刷新设置：让「自动检查更新」写入的 pendingUpdate / lastUpdateCheck 自动回流到 UI（徽标、设置页横幅）
   useEffect(() => {
@@ -220,7 +251,7 @@ export default function App() {
   // 对账：选中库变化时重新对账
   useEffect(() => {
     if (!libraryId) return
-    // 启动时自动对账关闭：跳过首次自动对账（后续手动/库变化仍正常）
+    // 启动时自动对账{t('common.close')}：跳过首次自动对账（后续手动/库变化仍正常）
     if (skipFirstAutoScanRef.current) {
       skipFirstAutoScanRef.current = false
       return
@@ -264,24 +295,34 @@ export default function App() {
         setFetchLogs((prev) => [...prev.slice(-59), fe])
       }
       // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
+      // v2.3.13：kind==='not-configured' → 优先弹向导（suppressIntroExcelNotice 时静默）；
+      //         其他 kind（parse-failed / auto-find-failed）仍弹 toast
       const err = (p as { introError?: { kind: string; message: string; triedPaths: string[] } }).introError
       if (err) {
-        const titles: Record<string, string> = {
-          'not-configured': '媒体库根目录无片单 Excel',
-          'parse-failed': '片单 Excel 解析失败',
-          'auto-find-failed': '自动查找片单失败'
+        if (err.kind === 'not-configured') {
+          if (!settingsRef.current.suppressIntroExcelNotice) {
+            const lib = librariesRef.current.find((l) => l.id === p.libraryId)
+            if (lib) {
+              setOnboardLib(lib)
+              setOnboardOpen(true)
+            }
+          }
+        } else {
+          const titles: Record<string, string> = {
+            'parse-failed': t('app.excelParseFailed'),
+            'auto-find-failed': t('app.excelAutoFindFailed')
+          }
+          const title = titles[err.kind] ?? t('app.excelLoadFailed')
+          const tried = err.triedPaths?.length
+            ? t('app.triedPathsList', { paths: err.triedPaths.map((p) => '· ' + p).join('\n') })
+            : ''
+          toast({
+            title,
+            text: err.message + tried,
+            tone: 'warn',
+            duration: 0
+          })
         }
-        const title = titles[err.kind] ?? '片单加载失败'
-        // 用纯文本（多行）展示 message + triedPaths，让用户能直接看到是哪个路径坏了
-        const tried = err.triedPaths?.length
-          ? `\n\n已尝试：\n${err.triedPaths.map((t) => '· ' + t).join('\n')}`
-          : ''
-        toast({
-          title,
-          text: err.message + tried,
-          tone: 'warn',
-          duration: 0 // 不自动消失，用户看完手动关
-        })
       }
     })
   }, [])
@@ -308,7 +349,7 @@ export default function App() {
     if (progress && progress.total > 0) {
       if (!progressToastId.current) {
         progressToastId.current = toast({
-          text: '扫描 / 补齐中…',
+          text: t('app.scanningOrFetching'),
           tone: 'info',
           progress: { done: progress.done, total: progress.total, current: progress.current },
           duration: 0
@@ -346,7 +387,7 @@ export default function App() {
     }
   }, [settings, libraries, libraryId])
 
-  // 首页全库随机：确保所有媒体库都有 reconcile 缓存（autoRescan 可能关闭，这里进入首页时补齐缺失库）
+  // 首页全库随机：确保所有媒体库都有 reconcile 缓存（autoRescan 可能{t('common.close')}，这里进入首页时补齐缺失库）
   useEffect(() => {
     if (view !== 'home') return
     if (libraries.length === 0) return
@@ -693,7 +734,7 @@ export default function App() {
       return [{ title: `📁 ${filter.category}`, entries: filtered }]
     }
     if (filter.groupMode === 'flat') {
-      return [{ title: '全库（按当前排序）', entries: filtered }]
+      return [{ title: t('app.allLibraryBySort'), entries: filtered }]
     }
     const map = new Map<string, { order: number; entries: DisplayEntry[] }>()
     for (const e of filtered) {
@@ -819,29 +860,37 @@ export default function App() {
 
   // 详情页相关推荐（同片商 / 系列 / 女演员）
   /**
-   * 系列分组：按 folderName 分桶 → 桶内 groupBy base code → 仅保留 ≥2 部的组。
-   * 关键：必须限制在同 folderName 内，否则 SSIS-419 单独一个会被其他文件夹的 SSIS-4 误并入系列。
+   * 系列分组：
+   * 数据源是每条 entry 的 video + siblingVideos（同 code 多文件在 reconcile 里只生成一条 entry，但 siblingVideos 存了所有兄弟）。
+   * 限制在同 folderName 内，避免跨文件夹误并入。
+   * 最终产出：base code → DisplayEntry[]，其中主 video 和 sibling 都包装成 mini-entry。
    */
   const seriesGroups = useMemo(() => {
     const m = new Map<string, DisplayEntry[]>()
-    const byFolder = new Map<string, DisplayEntry[]>()
     for (const e of reconcile?.entries ?? []) {
-      if (!e.video?.folderName) continue
-      const list = byFolder.get(e.video.folderName) ?? []
-      list.push(e)
-      byFolder.set(e.video.folderName, list)
-    }
-    for (const list of byFolder.values()) {
-      const inner = new Map<string, DisplayEntry[]>()
-      for (const e of list) {
-        const base = extractBaseCode(e.code)
-        const g = inner.get(base) ?? []
-        g.push(e)
-        inner.set(base, g)
-      }
-      for (const [base, g] of inner) {
-        if (g.length >= 2) m.set(base, g)
-      }
+      const folder = e.video?.folderName
+      if (!folder) continue
+      const base = extractBaseCode(e.code)
+      if (!base) continue
+      // 只处理有兄弟的 entry（主 video 本身算 1 个）
+      const siblings = e.siblingVideos ?? []
+      if (!e.video || siblings.length === 0) continue
+      const full = [e.video, ...siblings]
+      const miniEntries: DisplayEntry[] = full.map((v) => ({
+        kind: 'matched',
+        category: e.category,
+        order: e.order,
+        code: base,
+        title: v.title || v.fileName,
+        description: e.description,
+        tags: e.tags,
+        tagCategories: e.tagCategories,
+        score: e.score,
+        video: v
+      }))
+      // 合并：同 base code 可能被多条 entry 复用（理论上一条 entry 一组，但兜底安全）
+      const existing = m.get(base) ?? []
+      m.set(base, [...existing, ...miniEntries])
     }
     return m
   }, [reconcile])
@@ -883,7 +932,7 @@ export default function App() {
       if (sig !== seriesWarnRef.current) {
         seriesWarnRef.current = sig
         showBatchToast({
-          title: '检测到可能的同系列视频',
+          title: t('app.seriesDetected'),
           ok: 0,
           failed: 0,
           bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
@@ -933,7 +982,7 @@ export default function App() {
     setScanning(false)
   }, [])
 
-  /** 添加媒体库：打开「添加媒体库」表单（不再直接连弹两个系统对话框），表单内提供两步引导说明 */
+  /** {t('app.addLibrary')}：打开「{t('app.addLibrary')}」表单（不再直接连弹两个系统对话框），表单内提供两步引导说明 */
   const handleAddLibrary = useCallback(() => {
     setAddingLibrary(true)
     setLibraryOpen(true)
@@ -977,7 +1026,7 @@ export default function App() {
   const openDeleteConfirm = useCallback(
     async (v: Video) => {
       if (!v.path) {
-        window.alert('该视频没有文件路径，无法删除')
+        window.alert(t('app.noFilePathCannotDelete'))
         return
       }
       const fileName = v.path.split(/[\\/]/).pop() || v.path
@@ -985,7 +1034,7 @@ export default function App() {
   // 预检：让用户在确认前看到准确的删除范围（不删任何文件）
       const inspect = await api.videoInspectForDelete(v.id).catch((e) => ({ ok: false as const, error: String(e) }))
       if (!inspect.ok) {
-        window.alert('删除预检失败：' + inspect.error)
+        window.alert(t('app.deletePrecheckFailed') + inspect.error)
         return
       }
       const otherVideoCount = inspect.otherVideoCount ?? 0
@@ -1012,11 +1061,11 @@ export default function App() {
   const confirmDelete = useCallback(async () => {
     if (!deletePreview || deleting) return
     if (settings.lockHash) {
-      const pwd = window.prompt('该操作受隐私锁保护，请输入密码以继续：')
+      const pwd = window.prompt(t('app.privacyLockPrompt'))
       if (pwd == null) return
       const ok = await api.lockVerify(pwd)
       if (!ok) {
-        window.alert('密码错误，已取消删除')
+        window.alert(t('app.wrongPasswordDelete'))
         return
       }
     }
@@ -1025,17 +1074,17 @@ export default function App() {
     try {
       const r = await api.videoDeleteFile(deletePreview.id)
       if (!r.ok) {
-        window.alert('删除失败：' + (r.error ?? '未知错误'))
+        window.alert(t('app.deleteFailed') + (r.error ?? t('app.unknownError')))
         setDeletePreview(null)
         return
       }
       const desc = r.deletedDir
-        ? `已把整个目录挪到回收站（含视频和种子）：${r.dirPath}`
-        : `已把文件挪到回收站：${fileName}`
-      const cacheDesc = r.removedCache ? `\n已清理 ${r.removedCache} 个关联缓存（封面/截图/javdb 信息）` : ''
-      const recordDesc = r.removedRecord ? `\n已清除该视频的 javdb 元数据（演员/时长/导演/片商等）` : ''
-      toast({ title: '已挪到回收站', text: desc + cacheDesc + recordDesc + '\n（可从回收站恢复）', tone: 'ok', duration: 5000 })
-      // 删除/挪到回收站后关闭详情页（用户已无该视频的打开需求）
+        ? t('app.movedDirToRecycle', { path: r.dirPath ?? '' })
+        : t('app.movedFileToRecycle', { file: fileName })
+      const cacheDesc = r.removedCache ? `\n${t('app.cleanedCacheCount', { n: r.removedCache })}` : ''
+      const recordDesc = r.removedRecord ? `\n${t('app.clearedJavdbMeta')}` : ''
+      toast({ title: t('app.movedToRecycle'), text: desc + cacheDesc + recordDesc + '\n' + t('app.recycleRecoverHint'), tone: 'ok', duration: 5000 })
+      // 删除/挪到回收站后{t('common.close')}详情页（用户已无该视频的打开需求）
       setDetail(null)
       setDeletePreview(null)
       // 触发全库扫描，让 data.json 重新同步
@@ -1043,7 +1092,7 @@ export default function App() {
         await runReconcile(libraryId)
       }
     } catch (e) {
-      window.alert('删除失败：' + ((e as Error)?.message ?? String(e)))
+      window.alert(t('app.deleteFailed') + ((e as Error)?.message ?? String(e)))
     } finally {
       setDeleting(false)
     }
@@ -1102,7 +1151,7 @@ export default function App() {
     async (patch: Partial<Library>): Promise<boolean> => {
       if (addingLibrary) {
         const lib = await api.libraryAdd({
-          name: patch.name?.trim() || patch.folderPath || '未命名媒体库',
+          name: patch.name?.trim() || patch.folderPath || t('app.unnamedLibrary'),
           folderPath: patch.folderPath || '',
           imagePriority: [...DEFAULT_IMAGE_PRIORITY]
         })
@@ -1130,11 +1179,11 @@ export default function App() {
   const handleRemoveLibrary = useCallback(async () => {
     if (!currentLibrary) return
     if (settings.lockHash) {
-      const pwd = window.prompt('该操作受隐私锁保护（删除媒体库），请输入密码以继续：')
+      const pwd = window.prompt(t('app.privacyLockDeleteLib'))
       if (pwd == null) return
       const ok = await api.lockVerify(pwd)
       if (!ok) {
-        window.alert('密码错误，已取消删除')
+        window.alert(t('app.wrongPasswordDelete'))
         return
       }
     }
@@ -1207,14 +1256,14 @@ export default function App() {
       .filter((s) => s !== 'javlibrary') // 进度条不显示 javlibrary（它没参与 bySource 统计）
       .map((s) => `${SOURCE_LABELS[s]} ${data.bySource[s]}`)
       .join(' · ')
-    const title = data.title ?? (tone === 'ok' ? '补齐完成' : tone === 'warn' ? '补齐部分失败' : '补齐失败')
-    const subtitle = data.failed > 0 ? `成功 ${data.ok} 部 · 失败 ${data.failed} 部` : data.ok > 0 ? `成功 ${data.ok} 部` : ''
+    const title = data.title ?? (tone === 'ok' ? t('app.refetchComplete') : tone === 'warn' ? t('app.refetchPartialFail') : t('app.refetchFail'))
+    const subtitle = data.failed > 0 ? t('app.batchResultOkFail', { ok: data.ok, fail: data.failed }) : data.ok > 0 ? t('app.batchResultOk', { ok: data.ok }) : ''
     const detail = (
       <div className="space-y-2">
         {total > 0 ? (
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">来源分布</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/45 font-medium">{t('app.sourceDistribution')}</span>
               <span className="text-[10px] text-white/65 font-mono tabular-nums">
                 {bySourceLine} · 失败 {data.failed}
               </span>
@@ -1238,7 +1287,7 @@ export default function App() {
           </div>
         ) : null}
         {data.stopped ? (
-          <div className="text-[11px] text-amber-400/90">⚠ 已自动停止，剩余 {data.remaining} 部未处理</div>
+          <div className="text-[11px] text-amber-400/90">⚠ {t('app.autoStoppedRemaining', { n: data.remaining })}</div>
         ) : null}
         {data.hint ? <div className="text-[11px] text-white/50">{data.hint}</div> : null}
       </div>
@@ -1264,9 +1313,9 @@ export default function App() {
         .map(([r, n]) => `${r}（×${n}）`)
       const tone: 'ok' | 'warn' | 'err' = res.stopped || res.failed > 0 ? 'warn' : 'ok'
       showBatchToast({
-        title: tone === 'ok' ? '补齐完成' : '补齐部分失败',
+        title: tone === 'ok' ? t('app.refetchComplete') : t('app.refetchPartialFail'),
         hint: res.remainingNoPoster
-          ? `仍有 ${res.remainingNoPoster} 部无封面（每轮最多补 200 部，可再跑一轮「补齐信息」）`
+          ? t('app.stillNoPoster', { n: res.remainingNoPoster })
           : undefined,
         tone,
         ok: res.ok,
@@ -1280,16 +1329,17 @@ export default function App() {
       // 有失败任务时弹出居中明细窗口
       if (res.failures && res.failures.length > 0) {
         setBatchFailures(res.failures)
+        setBatchFailuresVisible(true)
       }
       await runReconcile(libraryId)
     } catch (e) {
       showBatchToast({
-        title: '补齐失败',
+        title: t('app.refetchFail'),
         tone: 'err',
         ok: 0,
         failed: 0,
         bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
-        reasons: [`请求异常：${(e as Error)?.message ?? e}`],
+        reasons: [`${t('app.requestError')}：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0
       })
@@ -1324,26 +1374,27 @@ export default function App() {
             stillFailed.push({ id: f.id, title: f.title, reason: (!res || res.ok) ? '未知原因' : res.error })
           }
         } catch (e) {
-          stillFailed.push({ id: f.id, title: f.title, reason: (e as Error)?.message ?? '请求异常' })
+          stillFailed.push({ id: f.id, title: f.title, reason: (e as Error)?.message ?? t('app.requestError') })
         }
       }
       setProgress({ total: failures.length, done: failures.length })
       if (stillFailed.length > 0) {
         // 仍有失败 → 再次弹出明细窗口，循环重试直到成功或用户取消
         setBatchFailures(stillFailed)
+        setBatchFailuresVisible(true)
         showBatchToast({
-          title: '仍有失败项目',
+          title: t('app.stillFailed'),
           tone: 'warn',
           ok,
           failed: stillFailed.length,
           bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
-          reasons: [`${stillFailed.length} 部影片仍未抓取成功，可继续点击“全部重试”`],
+          reasons: [t('app.stillFailedCountHint', { n: stillFailed.length })],
           stopped: false,
           remaining: 0
         })
       } else {
         showBatchToast({
-          title: '全部重试成功',
+          title: t('app.retryAllSuccess'),
           tone: 'ok',
           ok,
           failed: 0,
@@ -1356,12 +1407,12 @@ export default function App() {
       if (libraryId) await runReconcile(libraryId)
     } catch (e) {
       showBatchToast({
-        title: '重试失败',
+        title: t('app.retryFail'),
         tone: 'err',
         ok,
         failed: stillFailed.length,
         bySource: { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 },
-        reasons: [`请求异常：${(e as Error)?.message ?? e}`],
+        reasons: [`${t('app.requestError')}：${(e as Error)?.message ?? e}`],
         stopped: false,
         remaining: 0
       })
@@ -1381,13 +1432,13 @@ export default function App() {
     try {
       const res = await api.libraryBatchProbe(libraryId)
       toast({
-        text: `补时长完成：成功 ${res.ok} 部 / 失败 ${res.failed} 部 / 跳过 ${res.skipped} 部`,
+        text: t('app.durationFixResult', { ok: res.ok, fail: res.failed, skip: res.skipped }),
         tone: res.failed > 0 ? 'warn' : 'ok',
         duration: 6000
       })
       await runReconcile(libraryId)
     } catch (e) {
-      toast({ text: `补时长失败：${(e as Error)?.message ?? e}`, tone: 'err' })
+      toast({ text: t('app.durationFixFail', { msg: (e as Error)?.message ?? e }), tone: 'err' })
     } finally {
       setTimeout(() => setProgress(null), 1000)
       setScanning(false)
@@ -1667,7 +1718,11 @@ export default function App() {
 
 
   const currentEntry = detail
-    ? (reconcile?.entries ?? []).find((e) => e.video && e.video.id === detail.id)
+    ? (reconcile?.entries ?? []).find(
+        (e) =>
+          (e.video && e.video.id === detail.id) ||
+          (e.siblingVideos?.some((s) => s.id === detail.id) ?? false)
+      )
     : undefined
   const currentBase = currentEntry ? extractBaseCode(currentEntry.code) : undefined
   const seriesMembers =
@@ -1677,7 +1732,7 @@ export default function App() {
   if (!loaded) {
     return <SplashScreen />
   }
-  // 隐私锁：已上锁且未解锁 → 拦截整个界面
+  // 隐私锁：已上锁且未{t('app.unlock')} → 拦截整个界面
   const locked = !!settings.lockHash && !unlocked
   if (locked) {
     return <LockScreen onUnlock={() => setUnlocked(true)} />
@@ -1783,20 +1838,20 @@ export default function App() {
               <div className="w-16 h-16 rounded-2xl bg-brand/10 ring-1 ring-brand/30 flex items-center justify-center mb-5">
                 <Icon name="film" size={30} className="text-brand" />
               </div>
-              <div className="text-2xl font-semibold mb-2">欢迎使用影匣</div>
+              <div className="text-2xl font-semibold mb-2">{t('app.welcomeTitle')}</div>
               <div className="text-white/50 text-sm mb-6 max-w-md leading-relaxed">
-                选择一个视频文件夹，再选择对应的「Excel 片单文件」。
-                海报墙会按简介文件中的分类展示影片，并自动对账文件夹与简介的差异。
+                {t('app.welcomeStep1')}
+                {t('app.welcomeStep2')}
               </div>
               <button className="btn btn-brand px-5 py-2.5" onClick={handleAddLibrary}>
                 <Icon name="plus" size={16} />
-                添加媒体库
+                {t('app.addLibrary')}
               </button>
             </div>
           ) : !reconcile ? (
             <HomeSkeleton
               aspect={viewMode === 'grid-portrait' ? 'portrait' : 'landscape'}
-              label={scanning ? '正在对账…' : '正在加载媒体库…'}
+              label={scanning ? t('app.reconciling') : t('app.loadingLibrary')}
             />
           ) : view === 'home' ? (
             <HomeView
@@ -1823,7 +1878,7 @@ export default function App() {
               <div className="w-14 h-14 rounded-2xl bg-ink-800 ring-1 ring-white/5 flex items-center justify-center mb-4">
                 <Icon name="search" size={26} />
               </div>
-              当前筛选条件下没有匹配的影片，试试调整搜索或标签。
+              {t('app.noMatches')}
             </div>
           ) : (
             <div key="browse" className="h-full flex flex-col p-4 min-h-0 animate-fadeIn">
@@ -1850,14 +1905,14 @@ export default function App() {
               {/* 活跃筛选条：多维筛选可视化，可单独移除 */}
               {(metaSelectedCount + techSelectedCount) > 0 ? (
                 <div className="mb-3 flex flex-wrap items-center gap-2 animate-fadeIn-fast">
-                  <span className="text-white/40 text-xs">筛选：</span>
+                  <span className="text-white/40 text-xs">{t('app.filterLabel')}</span>
                   {[...selectedActors].map((a) => (
                     <button
                       key={`a-${a}`}
                       onClick={() => toggleActor(a)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-brand/15 text-brand ring-1 ring-brand/30 hover:bg-brand/25 transition-colors"
                     >
-                      女演员：{a}
+                      {t('app.actresses')}{a}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1867,7 +1922,7 @@ export default function App() {
                       onClick={() => toggleStudio(s)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-brand/15 text-brand ring-1 ring-brand/30 hover:bg-brand/25 transition-colors"
                     >
-                      片商：{s}
+                      {t('app.studioLabel')}{s}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1877,7 +1932,7 @@ export default function App() {
                       onClick={() => toggleSeries(s)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-brand/15 text-brand ring-1 ring-brand/30 hover:bg-brand/25 transition-colors"
                     >
-                      系列：{s}
+                      {t('app.seriesLabel')}{s}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1887,7 +1942,7 @@ export default function App() {
                       onClick={() => toggleResolution(r)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                     >
-                      分辨率：{r}
+                      {t('app.resolutionLabel')}{r}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1897,7 +1952,7 @@ export default function App() {
                       onClick={() => toggleDuration(d)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                     >
-                      时长：{d}
+                      {t('app.durationLabel')}{d}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1907,7 +1962,7 @@ export default function App() {
                       onClick={() => toggleScore(s)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                     >
-                      评分：{s}
+                      {t('app.scoreLabel')}{s}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1917,7 +1972,7 @@ export default function App() {
                       onClick={() => toggleYear(y)}
                       className="h-6 px-2 rounded-md text-[11px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                     >
-                      年份：{y}
+                      {t('app.yearLabel')}{y}
                       <Icon name="x" size={11} className="opacity-70" />
                     </button>
                   ))}
@@ -1925,7 +1980,7 @@ export default function App() {
                     onClick={clearAllFilters}
                     className="h-6 px-2 rounded-md text-[11px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors"
                   >
-                    清除全部
+                    {t('app.clearAll')}
                   </button>
                 </div>
               ) : null}
@@ -1994,6 +2049,15 @@ export default function App() {
         }}
         onSave={handleSaveLibrary}
         onRemove={handleRemoveLibrary}
+        onGenerateSheet={() => {
+          const lib = addingLibrary ? null : currentLibrary
+          if (lib) {
+            setLibraryOpen(false)
+            setAddingLibrary(false)
+            setOnboardLib(lib)
+            setOnboardOpen(true)
+          }
+        }}
       />
 
       <SettingsModal
@@ -2011,6 +2075,7 @@ export default function App() {
         info={appInfo}
         onClose={() => setAboutOpen(false)}
         onOpenExternal={(u) => void api.openExternal(u)}
+        language={settings.language}
       />
 
       <EditMetaModal
@@ -2075,11 +2140,52 @@ export default function App() {
         onClose={handleNoticeConfirm}
       />
 
+      {/* v2.3.13：新建片单 Excel 向导弹窗 —— reconcile 检测到库无片单 Excel 时自动弹 */}
+      <OnboardSheetModal
+        open={onboardOpen}
+        library={onboardLib}
+        onClose={(dontShowAgain) => {
+          setOnboardOpen(false)
+          setOnboardLib(null)
+          if (dontShowAgain) {
+            const newSettings = { ...settingsRef.current, suppressIntroExcelNotice: true }
+            setSettings(newSettings)
+            window.api.settingsSet({ suppressIntroExcelNotice: true })
+          }
+        }}
+        onOpenExternal={(url) => window.api.openExternal(url)}
+        onOpenSpec={async () => {
+          try {
+            const r = await window.api.specGet()
+            if (r.path) window.api.openPath(r.path)
+          } catch { /* ignore */ }
+        }}
+        onRevealSpec={async () => {
+          try {
+            const r = await window.api.specGet()
+            if (r.path) window.api.shellRevealInFolder(r.path)
+          } catch { /* ignore */ }
+        }}
+        onOpenLibrarySettings={() => {
+          setOnboardOpen(false)
+          setOnboardLib(null)
+          if (onboardLib) {
+            setLibraryId(onboardLib.id)
+            setLibraryOpen(true)
+            setAddingLibrary(false)
+          }
+        }}
+        onCopyText={async (text) => {
+          try { await navigator.clipboard.writeText(text) } catch { /* fallback */ window.api.copyText?.(text) }
+        }}
+        onExportCodes={(libId, fmt) => window.api.libraryExportCodes(libId, fmt)}
+      />
+
       {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
       <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
 
       {/* v2.2.14：批量抓取失败明细弹窗（居中） */}
-      {batchFailures && batchFailures.length > 0 && (
+      {batchFailures && batchFailuresVisible && batchFailures.length > 0 && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-modal-backdrop"
           onClick={() => setBatchFailures(null)}
@@ -2091,8 +2197,8 @@ export default function App() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-400" />
-                <h3 className="text-base font-medium text-white">批量抓取失败明细</h3>
-                <span className="text-xs text-white/40 ml-2">共 {batchFailures.length} 部</span>
+                <h3 className="text-base font-medium text-white">{t('app.batchFailures')}</h3>
+                <span className="text-xs text-white/40 ml-2">{t('app.batchFailuresCount', { count: batchFailures.length })}</span>
               </div>
               <button
                 type="button"
@@ -2103,15 +2209,32 @@ export default function App() {
               </button>
             </div>
             <div className="p-5 overflow-y-auto max-h-[60vh] space-y-2">
-              {batchFailures.map((f, i) => (
-                <div key={i} className="flex items-start gap-3 rounded-lg bg-white/5 px-3 py-2.5">
+              {batchFailures.map((f, i) => {
+                const video = reconcile?.entries.find((e) => e.video?.id === f.id)?.video
+                return (
+                <button
+                  key={f.id + i}
+                  type="button"
+                  title={video ? t('app.batchFailuresClickHint') : ''}
+                  onClick={() => {
+                    if (video) {
+                      setBatchFailuresVisible(false)
+                      setDetail(video)
+                    }
+                  }}
+                  className="w-full flex items-start gap-3 rounded-lg bg-white/5 hover:bg-white/10 hover:ring-1 hover:ring-brand/40 px-3 py-2.5 text-left transition-colors group"
+                >
                   <span className="text-xs text-white/30 font-mono mt-0.5">{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white truncate" title={f.title}>{f.title}</div>
-                    <div className="text-xs text-red-300/80 mt-0.5 break-all">{f.reason || '未知原因'}</div>
+                    <div className="text-sm font-medium text-white truncate group-hover:text-brand transition-colors" title={f.title}>{f.title}</div>
+                    <div className="text-xs text-red-300/80 mt-0.5 break-all">{f.reason || t('app.unknownReason')}</div>
                   </div>
-                </div>
-              ))}
+                  <span className="text-[10px] text-white/30 group-hover:text-brand/70 self-center whitespace-nowrap">
+                    → {t('app.batchFailuresDetail')}
+                  </span>
+                </button>
+                )
+              })}
             </div>
             <div className="flex justify-end items-center gap-3 px-5 py-4 border-t border-white/5">
               <button
@@ -2121,14 +2244,14 @@ export default function App() {
                 className="px-4 h-9 rounded-lg bg-brand hover:bg-brand/90 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
               >
                 {retryingFailures && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-                全部重试
+                {t('app.retryAll')}
               </button>
               <button
                 type="button"
                 onClick={() => setBatchFailures(null)}
                 className="px-4 h-9 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
               >
-                关闭
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -2148,6 +2271,20 @@ interface FetchLogItem {
   detail?: string
 }
 function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss: () => void }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      const dx = e.clientX - dragRef.current.startX
+      const dy = e.clientY - dragRef.current.startY
+      setPos({ x: Math.max(0, Math.min(window.innerWidth - 100, dragRef.current.origX + dx)), y: Math.max(0, Math.min(window.innerHeight - 40, dragRef.current.origY + dy)) })
+    }
+    const onUp = () => { dragRef.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
   if (logs.length === 0) return null
   const SOURCE_LABEL: Record<string, string> = {
     javapi: 'Javapi', javinfo: 'Javinfo', javdb: 'JavDB', javbus: 'JavBus', javlibrary: 'JavLibrary'
@@ -2156,32 +2293,52 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
     const label = SOURCE_LABEL[l.src] ?? l.src
     switch (l.status) {
       case 'trying':
-        return { text: `→ 尝试 ${label}…`, cls: 'text-white/55' }
+        return { text: `→ ${t('app.fetchTrying')} ${label}…`, cls: 'text-white/55' }
       case 'hit':
-        return { text: `✓ ${label} 命中`, cls: 'text-emerald-400' }
+        return { text: `✓ ${label} ${t('app.fetchHit')}`, cls: 'text-emerald-400' }
       case 'skipped':
-        return { text: `· ${label} 跳过${l.detail ? `（${l.detail}）` : ''}`, cls: 'text-white/35' }
+        return { text: `· ${label} ${t('app.fetchSkipped')}${l.detail ? `（${l.detail}）` : ''}`, cls: 'text-white/35' }
       case 'no-result':
-        return { text: `· ${label} 无结果`, cls: 'text-amber-400/80' }
+        return { text: `· ${label} ${t('app.fetchNoResult')}`, cls: 'text-amber-400/80' }
       case 'network-failed':
-        return { text: `✗ ${label} 网络失败${l.detail ? `（${l.detail.slice(0, 40)}）` : ''}`, cls: 'text-red-400/85' }
+        return { text: `✗ ${label} ${t('app.fetchNetworkFail')}${l.detail ? `（${l.detail.slice(0, 40)}）` : ''}`, cls: 'text-red-400/85' }
     }
   }
+
+  // 默认左下角：浏览器右下角扣掉浮层尺寸
+  const defaultStyle: React.CSSProperties = {
+    position: 'fixed',
+    bottom: 16,
+    left: 16
+  }
+  const customStyle: React.CSSProperties = pos
+    ? { position: 'fixed', left: pos.x, top: pos.y, bottom: 'auto' }
+    : defaultStyle
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos?.x ?? 16, origY: pos?.y ?? window.innerHeight - 300 - 16 }
+    if (!pos) setPos({ x: 16, y: window.innerHeight - 300 - 16 })
+    e.preventDefault()
+  }
+
   return (
-    // 抓取过程浮层：移到左下角（left-4 bottom-4），与右下角 Toast 系统通知区左右分流。
-    // 详情/批量补齐时两边同时出现互不遮挡、视觉更平衡；左边刚好是侧栏导航，
-    // 浮层高度 max-h-300 ≈ 侧栏导航下方的空白区，不挡任何主内容。
-    <div className="fixed bottom-4 left-4 z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
+    <div
+      style={customStyle}
+      className="z-[60] w-[360px] max-h-[300px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast"
+    >
+      <div
+        className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0 cursor-move select-none"
+        onMouseDown={handleDragStart}
+      >
         <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-          抓取过程（按数据源顺序降级）
+          {t('app.fetchProgressDesc')}
         </div>
         <button
           type="button"
           onClick={onDismiss}
           className="w-5 h-5 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center text-xs"
-          title="关闭"
+          title={t('common.close')}
         >
           ✕
         </button>
@@ -2208,7 +2365,7 @@ function SplashScreen() {
       <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand to-[#ff9db6] flex items-center justify-center shadow-glow-sm mb-4">
         <Icon name="film" size={24} className="text-white" />
       </div>
-      <div className="text-sm">影匣启动中…</div>
+      <div className="text-sm">{t('app.starting')}</div>
     </div>
   )
 }
@@ -2240,10 +2397,10 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         await api.appQuit()
         return
       }
-      setError(`密码错误（已尝试 ${attempts.current}/5 次，错误 5 次将自动退出）`)
+      setError(t('app.wrongPasswordAttempts', { n: attempts.current }))
       setPwd('')
     } catch {
-      setError('校验失败，请重试')
+      setError(t('app.verifyFailedRetry'))
     } finally {
       setBusy(false)
     }
@@ -2257,15 +2414,15 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             <Icon name="lock" size={20} className="text-white" />
           </div>
           <div>
-            <div className="text-white font-semibold text-lg">影匣已上锁</div>
-            <div className="text-white/45 text-xs">输入密码后继续使用</div>
+            <div className="text-white font-semibold text-lg">{t('app.lockedTitle')}</div>
+            <div className="text-white/45 text-xs">{t('app.lockedHint')}</div>
           </div>
         </div>
         <input
           ref={inputRef}
           type="password"
           className="w-full bg-ink-900/60 text-white text-sm rounded-lg px-3 py-2.5 outline-none border border-white/10 focus:border-brand/60 focus:ring-1 focus:ring-brand/40 transition-colors"
-          placeholder="密码"
+          placeholder={t('app.passwordPlaceholder')}
           value={pwd}
           onChange={(e) => setPwd(e.target.value)}
           onKeyDown={(e) => {
@@ -2279,7 +2436,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
           disabled={busy}
         >
           <Icon name="unlock" size={15} />
-          解锁
+          {t('app.unlock')}
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@ import type { Settings, ProxyMode, SortKey } from '../../../shared/types'
 import type { UpdateCheckResult } from '../../../shared/api-types'
 import { api } from '../lib/api'
 import Icon from './Icon'
+import { t, setLocale, SUPPORTED_LOCALES, type Locale } from '../../../shared/i18n'
 import type { IconName } from './Icon'
 interface Props {
   open: boolean
@@ -21,29 +22,29 @@ type Category =
   | 'update'
   | 'danger'
 const CATEGORIES: { id: Category; label: string; icon: IconName }[] = [
-  { id: 'general', label: '通用', icon: 'sliders' },
-  { id: 'network', label: '网络', icon: 'globe' },
-  { id: 'appearance', label: '外观', icon: 'palette' },
-  { id: 'privacy', label: '隐私与安全', icon: 'shield' },
-  { id: 'storage', label: '数据与存储', icon: 'database' },
-  { id: 'update', label: '更新', icon: 'refresh' },
-  { id: 'danger', label: '危险操作', icon: 'alert' }
+  { id: 'general', get label() { return t('settings.cat.general') }, icon: 'sliders' },
+  { id: 'network', get label() { return t('settings.cat.network') }, icon: 'globe' },
+  { id: 'appearance', get label() { return t('settings.cat.appearance') }, icon: 'palette' },
+  { id: 'privacy', get label() { return t('settings.cat.privacy') }, icon: 'shield' },
+  { id: 'storage', get label() { return t('settings.cat.storage') }, icon: 'database' },
+  { id: 'update', get label() { return t('settings.cat.update') }, icon: 'refresh' },
+  { id: 'danger', get label() { return t('settings.cat.danger') }, icon: 'alert' }
 ]
 const PROXY_MODES: { value: ProxyMode; label: string }[] = [
-  { value: 'none', label: '关闭（直连）' },
+  { value: 'none', get label() { return t('settings.proxy.off') } },
   { value: 'http', label: 'HTTP' },
   { value: 'https', label: 'HTTPS' },
   { value: 'socks5', label: 'SOCKS5' },
   { value: 'socks4', label: 'SOCKS4' },
-  { value: 'system', label: '系统代理（自动）' }
+  { value: 'system', get label() { return t('settings.proxy.system') } }
 ]
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'title', label: '标题（A→Z）' },
-  { value: 'added', label: '最近添加' },
-  { value: 'lastPlayed', label: '最近播放' },
-  { value: 'score', label: '评分' },
-  { value: 'year', label: '年份' },
-  { value: 'random', label: '随机' }
+  { value: 'title', get label() { return t('settings.sort.title') } },
+  { value: 'added', get label() { return t('settings.sort.recentlyAdded') } },
+  { value: 'lastPlayed', get label() { return t('settings.sort.recentlyPlayed') } },
+  { value: 'score', get label() { return t('settings.sort.score') } },
+  { value: 'year', get label() { return t('settings.sort.year') } },
+  { value: 'random', get label() { return t('settings.sort.random') } }
 ]
 /** 把旧版单一 javdbProxy 字符串迁移到新的多协议代理结构，并对数值兜底 */
 function normalizeProxy(s: Settings): Settings {
@@ -103,38 +104,38 @@ function normalizeSourceOrder(order?: string[]): Array<'javapi' | 'javinfo' | 'j
 const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string; desc: string }> = {
   javapi: {
     label: 'Javapi',
-    tier: '★★★★★ 信息最全',
-    risk: '无风控（本地自托管）',
-    cost: '免费',
-    desc: '开源自托管的 JavDB API 聚合服务，在本地跑一个 Go 服务即可使用。数据来自 JavDB + JavBus + JavLibrary + JavInfo 等多个上游，合并后返回最完整的番号详情。纯本地请求、无 Cloudflare/IP 封禁，推荐作为首选数据源。'
+    tier: t('settings.source.javapi.tier'),
+    risk: t('settings.source.javapi.risk'),
+    cost: t('settings.source.free'),
+    get desc() { return t('settings.source.javapi.desc') }
   },
   javinfo: {
     label: 'Javinfo',
-    tier: '★★★★ 全面',
-    risk: '★☆☆ 低（聚合 API）',
-    cost: '免费额度 + 按量',
-    desc: 'javinfo.dev 提供的聚合 API，后端对接多个 Jav 站点统一返回结构化数据。优势是免爬虫、不走 Cloudflare 反爬，稳定性极佳。注册后赠送 1000+ 次免费查询额度，之后按量计费。'
+    tier: t('settings.source.javinfo.tier'),
+    risk: t('settings.source.javinfo.risk'),
+    cost: t('settings.source.javinfo.cost'),
+    get desc() { return t('settings.source.javinfo.desc') }
   },
   javdb: {
     label: 'JavDB',
-    tier: '★★★★ 全面',
-    risk: '★★★ 中（Cloudflare 偶发 403）',
-    cost: '免费',
-    desc: 'javdb.com 是最主流的番号数据库，内容全、更新快。缺点是 Cloudflare 防护较强，高并发或短时间频繁访问会触发 HTTP 403。建议配合合理的抓取间隔使用，或通过代理访问。'
+    tier: t('settings.source.javinfo.tier'),
+    risk: t('settings.source.javdb.risk'),
+    cost: t('settings.source.free'),
+    get desc() { return t('settings.source.javdb.desc') }
   },
   javbus: {
     label: 'JavBus',
-    tier: '★★★ 中',
-    risk: '★★☆ 中（Cloudflare）',
-    cost: '免费',
-    desc: 'javbus.com 覆盖面仅次于 JavDB，番号搜索和详情页结构稳定。同样有 Cloudflare 防护，但触发频率略低于 JavDB。在智能降级链路中排在 JavDB 之后、JavLibrary 之前。'
+    tier: t('settings.source.javbus.tier'),
+    risk: t('settings.source.javbus.risk'),
+    cost: t('settings.source.free'),
+    get desc() { return t('settings.source.javbus.desc') }
   },
   javlibrary: {
     label: 'JavLibrary',
-    tier: '★★☆ 偏简',
-    risk: '★☆☆ 低（但偶发 503）',
-    cost: '免费',
-    desc: 'javlibrary.com 老牌番号库，页面简洁、反爬宽松。但数据量偏少（部分冷门番号缺失），且偶尔出现 503 维护。适合作为兜底降级源，在其他源都失败时补充抓取。'
+    tier: t('settings.source.javlibrary.tier'),
+    risk: t('settings.source.javlibrary.risk'),
+    cost: t('settings.source.free'),
+    get desc() { return t('settings.source.javlibrary.desc') }
   }
 }
 
@@ -161,13 +162,13 @@ function formatBytes(n?: number): string {
 function urgencyMeta(u?: UpdateCheckResult['urgency']) {
   switch (u) {
     case 'mandatory':
-      return { label: '强制更新', color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30', icon: 'alert' as IconName }
+      return { label: t('settings.update.urgencyMandatory'), color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30', icon: 'alert' as IconName }
     case 'critical':
-      return { label: '重要更新', color: 'text-amber-400', bg: 'bg-amber-500/15', border: 'border-amber-500/30', icon: 'alert' as IconName }
+      return { label: t('settings.update.urgencyCritical'), color: 'text-amber-400', bg: 'bg-amber-500/15', border: 'border-amber-500/30', icon: 'alert' as IconName }
     case 'recommended':
-      return { label: '推荐更新', color: 'text-sky-400', bg: 'bg-sky-500/15', border: 'border-sky-500/30', icon: 'info' as IconName }
+      return { label: t('settings.update.urgencyRecommended'), color: 'text-sky-400', bg: 'bg-sky-500/15', border: 'border-sky-500/30', icon: 'info' as IconName }
     default:
-      return { label: '普通更新', color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', icon: 'check' as IconName }
+      return { label: t('settings.update.urgencyNormal'), color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', icon: 'check' as IconName }
   }
 }
 /* ---------------- UI primitives ---------------- */
@@ -259,7 +260,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${
         on ? 'bg-brand' : 'bg-ink-600'
       }`}
-      title={on ? '已开启' : '已关闭'}
+      title={on ? t('settings.on') : t('settings.off')}
     >
       <span
         className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
@@ -328,11 +329,11 @@ function Select<T extends string>({
 /* ---------------- theme preview card ---------------- */
 type ThemeOption = { value: Settings['theme']; label: string; tagline: string }
 const THEME_OPTIONS: ThemeOption[] = [
-  { value: 'cinema', label: '深邃影院', tagline: '沉静的蓝黑电影感' },
-  { value: 'light', label: '现代明亮', tagline: '清爽的浅色界面' },
-  { value: 'magazine', label: '杂志艺术', tagline: '衬线排版与暖调强调' },
-  { value: 'glass', label: '玻璃拟态', tagline: '半透明毛玻璃霓虹' },
-  { value: 'system', label: '跟随系统', tagline: '自动适配系统明暗' }
+  { value: 'cinema', get label() { return t('settings.theme.cinema') }, get tagline() { return t('settings.theme.cinemaTagline') } },
+  { value: 'light', get label() { return t('settings.theme.light') }, get tagline() { return t('settings.theme.lightTagline') } },
+  { value: 'magazine', get label() { return t('settings.theme.magazine') }, get tagline() { return t('settings.theme.magazineTagline') } },
+  { value: 'glass', get label() { return t('settings.theme.glass') }, get tagline() { return t('settings.theme.glassTagline') } },
+  { value: 'system', get label() { return t('settings.theme.system') }, get tagline() { return t('settings.theme.systemTagline') } }
 ]
 function ThemePreview({ theme }: { theme: Settings['theme'] }) {
   const previews: Record<Settings['theme'], ReactNode> = {
@@ -518,9 +519,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
     }
   }
   const clearCache = async () => {
-    if (!window.confirm('确认清空海报缓存？已下载的封面会删除，下次打开重新抓取。')) return
+    if (!window.confirm(t('settings.confirmClearPosterCache'))) return
     const r = await api.cacheClear()
-    setClearMsg(r.ok ? `已清理 ${r.removed} 个缓存文件` : '清理失败')
+    setClearMsg(r.ok ? t('settings.clearedPosterCache', { count: r.removed }) : t('settings.clearFailed'))
   }
   const checkFfmpeg = () => {
     setFfmpegChecking(true)
@@ -542,20 +543,20 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
         latestVersion: '',
         hasUpdate: false,
         releaseUrl: '',
-        error: '检查更新失败'
+        error: t('settings.checkUpdateFailed')
       })
     } finally {
       setChecking(false)
     }
   }
-  /** 切换检查更新源并立即重试（源切换立即保存，主进程按已保存的源检查） */
+  /** 切换{t('settings.updateSourceLabel')}并立即重试（源切换立即{t('common.save')}，主进程按已{t('common.save')}的源检查） */
   const switchSourceAndRetry = async () => {
     const next: 'github' | 'gitee' = (draft.updateSource ?? 'gitee') === 'gitee' ? 'github' : 'gitee'
     setDraft({ ...draft, updateSource: next })
     try {
       await api.settingsSet({ updateSource: next })
     } catch {
-      /* 保存失败也照常重试 */
+      /* {t('common.save')}失败也照常重试 */
     }
     await checkUpdate()
   }
@@ -568,7 +569,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
         {/* ---------------- sidebar ---------------- */}
         <aside className="w-[210px] flex-shrink-0 border-r border-white/5 bg-ink-850/30 flex flex-col">
           <div className="flex items-center px-4 py-4 border-b border-white/5">
-            <span className="text-white font-semibold text-base">设置</span>
+            <span className="text-white font-semibold text-base">{t('settings.title')}</span>
           </div>
           <nav className="flex-1 overflow-y-auto p-3 space-y-1">
             {CATEGORIES.map((c) => (
@@ -594,7 +595,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
               type="button"
               onClick={onClose}
               className="p-1.5 rounded-md text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              aria-label="关闭"
+              aria-label={t('common.close')}
             >
               <Icon name="x" size={18} />
             </button>
@@ -603,15 +604,15 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 通用 ===== */}
             {activeCategory === 'general' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="sliders" title="通用" description="播放器、ffmpeg 与启动行为" />
+                <SectionHeader icon="sliders" title={t('settings.section.general')} description={t('settings.section.generalDesc')} />
                 <Card>
                   <Field
-                    label="外部播放器路径"
-                    hint="留空则使用系统默认程序打开。可填写 VLC / PotPlayer / mpv 等 exe 路径。"
+                    label={t('settings.externalPlayerPath')}
+                    hint={t('settings.externalPlayerHint')}
                   >
                     <input
                       className={inputCls}
-                      placeholder="例如 C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
+                      placeholder={t('settings.externalPlayerPlaceholder')}
                       value={draft.playerPath ?? ''}
                       onChange={(e) => setDraft({ ...draft, playerPath: e.target.value })}
                     />
@@ -621,7 +622,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Icon name="film" size={16} className="text-white/70" />
-                      <span className="text-white/90 text-sm font-medium">ffmpeg 运行环境</span>
+                      <span className="text-white/90 text-sm font-medium">{t('settings.ffmpegEnv')}</span>
                     </div>
                     <button
                       type="button"
@@ -629,7 +630,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       onClick={checkFfmpeg}
                       disabled={ffmpegChecking}
                     >
-                      {ffmpegChecking ? '检测中…' : '重新检测'}
+                      {ffmpegChecking ? t('settings.checking') : t('settings.redetect')}
                     </button>
                   </div>
                   {ffmpegStatus ? (
@@ -644,19 +645,20 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         }`}
                       >
                         {ffmpegStatus.source === 'custom'
-                          ? '手动指定'
+                          ? t('settings.manualSpecify')
                           : ffmpegStatus.source === 'system'
-                            ? '系统 ffmpeg'
+                            ? t('settings.systemFfmpeg')
                             : ffmpegStatus.source === 'bundled'
-                              ? '内置捆绑版'
-                              : '未检测到'}
+                              ? t('settings.bundledFfmpeg')
+                              : t('settings.notDetected')}
                       </span>
                       <span className="text-white/60">
                         {ffmpegStatus.source === 'missing'
-                          ? ffmpegStatus.note ?? '未检测到 ffmpeg'
-                          : `当前使用：${ffmpegStatus.path}`}
+                          ? ffmpegStatus.note ?? t('settings.noFfmpegDetected')
+                          : t("settings.currentUsing", { path: ffmpegStatus.path ?? '' })
+                        }
                         {ffmpegStatus.bundledRemoved ? (
-                          <span className="text-emerald-400/80">（已删除捆绑版，释放 62MB）</span>
+                          <span className="text-emerald-400/80">{t("settings.deletedBundledHint")}</span>
                         ) : null}
                       </span>
                     </div>
@@ -667,41 +669,41 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     onClick={() => setShowFfmpegTutorial((v) => !v)}
                   >
                     <Icon name={showFfmpegTutorial ? 'chevronDown' : 'chevronRight'} size={12} />
-                    如何安装 / 配置 ffmpeg（新电脑推荐）
+                    {t('settings.ffmpegHowToTitle')}
                   </button>
                   {showFfmpegTutorial ? (
                     <div className="mb-4 rounded-lg bg-black/25 border border-white/5 p-3 text-[12px] text-white/60 leading-relaxed space-y-2">
                       <div className="flex items-start gap-2">
                         <span className="text-brand font-semibold shrink-0">①</span>
                         <span>
-                          本应用已<b className="text-white/80">捆绑内置 ffmpeg</b>（约 62MB），新电脑装完即可用视频封面截帧，无需任何操作。
+                          {t("settings.ffmpegBundledInfo")}
                         </span>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-brand font-semibold shrink-0">②</span>
                         <span>
-                          若你的电脑<b className="text-white/80">已装 ffmpeg</b>（PATH 或常见目录可检测到），应用会自动<b className="text-white/80">完全复用系统版</b>，并删除捆绑版释放磁盘。
+                          {t("settings.ffmpegSystemDetectedInfo")}
                         </span>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-brand font-semibold shrink-0">③</span>
                         <span>
-                          如需<b className="text-white/80">手动指定</b>：下载 gyan.dev 的
+                          {t("settings.ffmpegManualSpecifyInfo")}
                           <span className="text-white/80"> ffmpeg-release-essentials.zip </span>
-                          → 解压到任意目录 → 在下方填入
+                          {t("settings.ffmpegManualStep2")}
                           <span className="text-white/80"> bin\ffmpeg.exe </span>
-                          的完整路径。手动指定优先于系统与捆绑版。
+                          {t("settings.ffmpegManualStep3")}
                         </span>
                       </div>
                     </div>
                   ) : null}
                   <Field
-                    label="ffmpeg 路径（可选）"
-                    hint="留空则按：系统 ffmpeg → 内置捆绑版 顺序自动查找。"
+                    label={t("settings.ffmpegPathLabel")}
+                    hint={t("settings.ffmpegPathHint")}
                   >
                     <input
                       className={inputCls}
-                      placeholder="例如 D:\\tools\\ffmpeg\\bin\\ffmpeg.exe"
+                      placeholder={t("settings.ffmpegPathPlaceholder")}
                       value={draft.ffmpegPath ?? ''}
                       onChange={(e) => setDraft({ ...draft, ffmpegPath: e.target.value })}
                     />
@@ -709,26 +711,38 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 </Card>
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
-                    <Icon name="zap" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">启动行为</div>
+                    <Icon name="globe" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">{t("settings.language.title")}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-2">配置影匣如何随系统启动与关闭</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.language.desc")}</div>
+                  <Select
+                    value={(draft.language ?? 'zh-CN') as Locale}
+                    options={SUPPORTED_LOCALES}
+                    onChange={(v) => setDraft({ ...draft, language: v as Locale })}
+                  />
+                </Card>
+                <Card>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="zap" size={16} className="text-white/70" />
+                    <div className="text-white/90 text-sm font-medium">{t("settings.startupSection")}</div>
+                  </div>
+                  <div className="text-white/40 text-xs mb-2">{t("settings.startupSectionDesc")}</div>
                   <FieldRow
-                    label="不提示「无片单 Excel」"
-                    hint="媒体库根目录没有片单 Excel 时，每次对账都会弹提示。不使用片单可勾选关闭（片单解析失败等真实错误仍会提示）"
+                    label={t("settings.noExcelSilent")}
+                    hint={t("settings.noExcelSilentHint")}
                   >
                     <Toggle
                       on={!!draft.suppressIntroExcelNotice}
                       onChange={(v) => setDraft({ ...draft, suppressIntroExcelNotice: v })}
                     />
                   </FieldRow>
-                  <FieldRow label="开机自启" hint="随系统启动自动运行影匣">
+                  <FieldRow label={t("settings.autoStart")} hint={t("settings.autoStartHint")}>
                     <Toggle on={!!draft.launchAtLogin} onChange={(v) => setDraft({ ...draft, launchAtLogin: v })} />
                   </FieldRow>
-                  <FieldRow label="启动时自动对账" hint="打开应用后自动扫描当前库（Excel 驱动）">
+                  <FieldRow label={t("settings.autoReconcile")} hint={t("settings.autoReconcileHint")}>
                     <Toggle on={!!draft.scanOnStartup} onChange={(v) => setDraft({ ...draft, scanOnStartup: v })} />
                   </FieldRow>
-                  <FieldRow label="最小化到托盘" hint="关闭窗口时最小化到系统托盘，不退出">
+                  <FieldRow label={t("settings.minimizeToTray")} hint={t("settings.minimizeToTrayHint")}>
                     <Toggle on={!!draft.minimizeToTray} onChange={(v) => setDraft({ ...draft, minimizeToTray: v })} />
                   </FieldRow>
                 </Card>
@@ -737,14 +751,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 网络 ===== */}
             {activeCategory === 'network' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="globe" title="网络" description="代理、数据源与云端 API 抓取参数" />
+                <SectionHeader icon="globe" title={t("settings.networkSection")} description={t("settings.networkSectionDesc")} />
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="globe" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">代理设置</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.proxySettingsTitle")}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-4">对所有云端 API（JavDB / JavBus / JavLibrary / Javinfo）和封面下载统一生效；本地 Javapi 不走代理。</div>
-                  <Field label="代理模式">
+                  <div className="text-white/40 text-xs mb-4">{t("settings.proxyScopeDesc")}</div>
+                  <Field label={t("settings.proxyMode")}>
                     <Select
                       value={draft.proxyMode ?? 'none'}
                       options={PROXY_MODES}
@@ -754,7 +768,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   {needHost ? (
                     <div className="flex gap-3 mb-4">
                       <div className="flex-[2]">
-                        <label className="block text-white/60 text-xs mb-1.5">主机</label>
+                        <label className="block text-white/60 text-xs mb-1.5">{t("settings.proxyHost")}</label>
                         <input
                           className={inputCls}
                           placeholder="127.0.0.1"
@@ -763,7 +777,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         />
                       </div>
                       <div className="w-28">
-                        <label className="block text-white/60 text-xs mb-1.5">端口</label>
+                        <label className="block text-white/60 text-xs mb-1.5">{t("settings.proxyPort")}</label>
                         <input
                           className={inputCls}
                           placeholder="7890"
@@ -776,20 +790,20 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   {needAuth ? (
                     <div className="flex gap-3 mb-4">
                       <div className="flex-1">
-                        <label className="block text-white/60 text-xs mb-1.5">用户名（可选）</label>
+                        <label className="block text-white/60 text-xs mb-1.5">{t("settings.proxyUsername")}</label>
                         <input
                           className={inputCls}
-                          placeholder="留空则无认证"
+                          placeholder={t("settings.proxyNoAuth")}
                           value={draft.proxyUser}
                           onChange={(e) => setDraft({ ...draft, proxyUser: e.target.value })}
                         />
                       </div>
                       <div className="flex-1">
-                        <label className="block text-white/60 text-xs mb-1.5">密码（可选）</label>
+                        <label className="block text-white/60 text-xs mb-1.5">{t("settings.proxyPassword")}</label>
                         <input
                           className={inputCls}
                           type="password"
-                          placeholder="留空则无认证"
+                          placeholder={t("settings.proxyNoAuth")}
                           value={draft.proxyPass}
                           onChange={(e) => setDraft({ ...draft, proxyPass: e.target.value })}
                         />
@@ -803,20 +817,20 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         onClick={runTest}
                         disabled={testing}
                       >
-                        {testing ? '测试中…' : '测试连接'}
+                        {testing ? t('settings.testing') : t('settings.testConnection')}
                       </button>
                       {testResult ? (
                         <span className={`text-xs ${testResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>
                           {testResult.ok
-                            ? `连通成功（HTTP ${testResult.status}）`
-                            : `连接失败：${testResult.error ?? '未知错误'}`}
+                            ? t("settings.testConnected", { code: testResult.status ?? '?' })
+                            : t("settings.testFailed", { err: testResult.error ?? t("app.unknownError") })}
                         </span>
                       ) : null}
                     </div>
                   ) : null}
                   {draft.proxyMode === 'system' ? (
                     <div className="text-white/40 text-xs mt-3">
-                      自动读取系统代理（HTTP_PROXY / HTTPS_PROXY 环境变量）。
+                      {t('settings.systemProxyAutoRead')}
                     </div>
                   ) : null}
                 </Card>
@@ -826,12 +840,12 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     <div className="text-white/90 text-sm font-medium">JavDB Cookie</div>
                   </div>
                   <Field
-                    label="Cookie（可选）"
-                    hint="抓取 javdb.com 封面时附带。一般网络留空即可；若搜索被要求登录，可在浏览器登录 javdb.com 后复制 Cookie 填入。"
+                    label={t("settings.cookieLabel")}
+                    hint={t("settings.cookieHint")}
                   >
                     <input
                       className={inputCls}
-                      placeholder="留空即可；格式如 token=xxx; ..."
+                      placeholder={t("settings.tokenFormatHint")}
                       value={draft.javdbCookie ?? ''}
                       onChange={(e) => setDraft({ ...draft, javdbCookie: e.target.value })}
                     />
@@ -840,15 +854,15 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="database" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">数据源</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.dataSources")}</div>
                   </div>
                   <div className="text-white/40 text-xs mb-3">
-                    auto 自动降级（{autoOrderSummary}，连续失败自动切换）；手动指定可单独调试某个源。
+                    {t('settings.autoDegradeHint', { order: autoOrderSummary })}
                   </div>
                   <SegmentedControl
                     value={draft.dataSource ?? 'auto'}
                     options={[
-                      { value: 'auto', label: '自动' },
+                      { value: 'auto', label: t('settings.autoDegrade') },
                       { value: 'javapi', label: 'Javapi' },
                       { value: 'javinfo', label: 'Javinfo' },
                       { value: 'javdb', label: 'JavDB' },
@@ -880,14 +894,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   {draft.dataSource === 'auto' ? (
                     <div className="mt-3 rounded-lg border border-white/10 bg-white/3 p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="text-white/85 text-xs font-medium">数据源采集顺序（拖拽调整）</div>
+                        <div className="text-white/85 text-xs font-medium">{t("settings.sourceOrderDragHint")}</div>
                         <button
                           type="button"
                           className="text-[11px] text-brand hover:text-brand/80 transition-colors no-drag"
                           onClick={() => setDraft({ ...draft, customSourceOrder: ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary'] })}
-                          title="恢复推荐顺序"
+                          title={t('settings.restoreRecommendedOrder')}
                         >
-                          恢复推荐
+                          {t('settings.restoreRecommended')}
                         </button>
                       </div>
                       <div className="space-y-1.5">
@@ -912,7 +926,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                                 setDraft({ ...draft, customSourceOrder: next })
                               }}
                               className="flex items-center gap-2 rounded-md bg-ink-800/60 ring-1 ring-white/8 px-2.5 py-1.5 cursor-move hover:ring-white/15 transition-shadow"
-                              title="拖拽调整顺序"
+                              title={t('settings.dragReorder')}
                             >
                               <span className="text-white/30 cursor-grab text-sm leading-none select-none">⠿</span>
                               <span className="text-[10px] text-white/40 w-3 tabular-nums">{idx + 1}</span>
@@ -928,7 +942,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                                     setDraft({ ...draft, customSourceOrder: next })
                                   }}
                                   className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
-                                  title="上移"
+                                  title={t('settings.moveUp')}
                                 >
                                   ↑
                                 </button>
@@ -941,7 +955,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                                     setDraft({ ...draft, customSourceOrder: next })
                                   }}
                                   className="w-5 h-5 rounded text-white/50 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center text-[10px]"
-                                  title="下移"
+                                  title={t('settings.moveDown')}
                                 >
                                   ↓
                                 </button>
@@ -956,8 +970,8 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </div>
                   ) : null}
                   <Field
-                    label="本地 Javapi 地址（自托管，免费）"
-                    hint="自托管 javapi（github.com/a1850976305/javapi）本地服务地址。JavDB API 元数据 + 8 个视频站，免费、无 Cloudflare/IP 风控。启动：AUTH_API_KEYS=你的key go run ./cmd/api"
+                    label={t("settings.localJavapiUrl")}
+                    hint={t("settings.localJavapiUrlHint")}
                   >
                     <input
                       className={inputCls}
@@ -967,23 +981,23 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     />
                   </Field>
                   <Field
-                    label="本地 Javapi API Key"
-                    hint="启动 javapi 时 AUTH_API_KEYS 指定的值；留空则跳过该源。"
+                    label={t("settings.localJavapiKey")}
+                    hint={t("settings.localJavapiKeyHint")}
                   >
                     <input
                       className={inputCls}
-                      placeholder={`留空则跳过 Javapi，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi'))}`}
+                      placeholder={t('settings.skipJavapiPlaceholder')}
                       value={draft.javapiKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javapiKey: e.target.value.trim() })}
                     />
                   </Field>
                   <Field
-                    label="Javinfo API Key（推荐）"
-                    hint="javinfo.dev 聚合 API：免爬虫、无 Cloudflare 风控。在 app.javinfo.dev 注册免费领取 1000+ 次查询额度，之后按量计费。填入后自动优先使用。"
+                    label={t("settings.javinfoApiKey")}
+                    hint={t("settings.javinfoApiKeyHint")}
                   >
                     <input
                       className={inputCls}
-                      placeholder={`留空则跳过 Javinfo，直接走 ${formatSourceOrder((draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).filter((s) => s !== 'javapi' && s !== 'javinfo'))}`}
+                      placeholder={t('settings.skipJavinfoPlaceholder')}
                       value={draft.javinfoKey ?? ''}
                       onChange={(e) => setDraft({ ...draft, javinfoKey: e.target.value.trim() })}
                     />
@@ -992,12 +1006,12 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="download" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">云端 API 批量抓取</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.batchFetchSection")}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">并发越高抓取越快，但更易触发各数据源风控；间隔用于限速兜底。对 JavDB / JavBus / JavLibrary / Javinfo / Javapi 全部生效。</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.batchFetchDesc")}</div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="block text-white/60 text-xs mb-1.5">并发数（1-8）</label>
+                      <label className="block text-white/60 text-xs mb-1.5">{t("settings.concurrencyLabel")}</label>
                       <input
                         className={inputCls}
                         type="number"
@@ -1013,7 +1027,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-white/60 text-xs mb-1.5">间隔（毫秒）</label>
+                      <label className="block text-white/60 text-xs mb-1.5">{t("settings.intervalLabel")}</label>
                       <input
                         className={inputCls}
                         type="number"
@@ -1032,10 +1046,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 外观 ===== */}
             {activeCategory === 'appearance' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="palette" title="外观" description="主题、海报墙密度与默认排序" />
+                <SectionHeader icon="palette" title={t("settings.appearanceSection")} description={t("settings.appearanceSectionDesc")} />
                 <Card>
-                  <div className="text-white/90 text-sm font-medium mb-1">皮肤</div>
-                  <div className="text-white/40 text-xs mb-3">选择影匣的整体视觉风格，应用后会立即生效</div>
+                  <div className="text-white/90 text-sm font-medium mb-1">{t("settings.themeLabel")}</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.themeDesc")}</div>
                   <div className="grid grid-cols-3 gap-3">
                     {THEME_OPTIONS.map((o) => (
                       <ThemeCard
@@ -1048,21 +1062,21 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   </div>
                 </Card>
                 <Card>
-                  <div className="text-white/90 text-sm font-medium mb-1">海报风格</div>
-                  <div className="text-white/40 text-xs mb-3">海报墙单屏显示的视频数量与卡片大小</div>
+                  <div className="text-white/90 text-sm font-medium mb-1">{t("settings.posterStyleLabel")}</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.posterStyleDesc")}</div>
                   <SegmentedControl
                     value={draft.posterDensity ?? 'standard'}
                     options={[
-                      { value: 'large', label: '大图沉浸' },
-                      { value: 'standard', label: '标准' },
-                      { value: 'compact', label: '高密度' }
+                      { value: 'large', label: t('settings.posterLarge') },
+                      { value: 'standard', label: t('settings.posterStandard') },
+                      { value: 'compact', label: t('settings.posterCompact') }
                     ]}
                     onChange={(v) => setDraft({ ...draft, posterDensity: v as Settings['posterDensity'] })}
                   />
                 </Card>
                 <Card>
-                  <div className="text-white/90 text-sm font-medium mb-1">默认排序方式</div>
-                  <div className="text-white/40 text-xs mb-3">打开库时列表/卡片墙的初始排序</div>
+                  <div className="text-white/90 text-sm font-medium mb-1">{t("settings.defaultSortLabel")}</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.defaultSortDesc")}</div>
                   <Select
                     value={draft.defaultSort ?? 'added'}
                     options={SORT_OPTIONS}
@@ -1074,14 +1088,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 隐私与安全 ===== */}
             {activeCategory === 'privacy' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="shield" title="隐私与安全" description="访问控制与隐私护盾" />
+                <SectionHeader icon="shield" title={t("settings.privacySection")} description={t("settings.privacySectionDesc")} />
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="shield" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">隐私护盾</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.privacyShield")}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-2">开启后，海报墙与详情页的封面会被模糊打码，防止他人窥视。</div>
-                  <FieldRow label="默认开启" hint="开启后应用启动时自动进入隐私模式（海报模糊打码）。">
+                  <div className="text-white/40 text-xs mb-2">{t("settings.privacyShieldDesc")}</div>
+                  <FieldRow label={t("settings.privacyDefaultOn")} hint={t("settings.privacyDefaultOnHint")}>
                     <div className="flex items-center gap-2">
                       <Icon name="shield" size={14} className="text-white/40" />
                       <Toggle
@@ -1094,25 +1108,25 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="lock" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">隐私锁</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.privacyLock")}</div>
                   </div>
                   <div className="text-white/40 text-xs mb-3">
-                    给软件上锁后，每次打开需输入密码；密码错误 5 次自动退出。密码以 SHA-256 哈希存储，不保存明文。
+                    {t("settings.privacyLockDesc")}
                   </div>
-                  <FieldRow label="当前状态" hint={settings.lockHash ? '已上锁' : '未上锁'}>
+                  <FieldRow label={t("settings.lockStatus")} hint={settings.lockHash ? t("settings.locked") : t("settings.notLocked")}>
                     <span
                       className={`px-2 py-0.5 rounded-md text-xs font-medium ${
                         settings.lockHash ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'
                       }`}
                     >
-                      {settings.lockHash ? '已上锁' : '未上锁'}
+                      {settings.lockHash ? t('settings.locked') : t('settings.notLocked')}
                     </span>
                   </FieldRow>
-                  <Field label="新密码" hint={settings.lockHash ? '输入新密码即修改；留空则显示「解除锁」按钮' : '设置你的锁屏密码'}>
+                  <Field label={t("settings.newPassword")} hint={settings.lockHash ? t("settings.newPasswordHint") : t("settings.setPasswordHint")}>
                     <input
                       type="password"
                       className={inputCls}
-                      placeholder={settings.lockHash ? '输入新密码（留空不改密码）' : '输入密码'}
+                      placeholder={settings.lockHash ? t('settings.enterNewPassword') : t('settings.enterPassword')}
                       value={lockPwd}
                       onChange={(e) => {
                         setLockPwd(e.target.value)
@@ -1125,7 +1139,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       <input
                         type="password"
                         className={inputCls}
-                        placeholder="再次输入确认"
+                        placeholder={t("settings.confirmPassword")}
                         value={lockPwd2}
                         onChange={(e) => setLockPwd2(e.target.value)}
                       />
@@ -1141,33 +1155,33 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                             onClick={async () => {
                               await api.lockSet(lockPwd)
                               setLockPwd('')
-                              setLockMsg('已修改密码')
+                              setLockMsg(t('settings.passwordModified'))
                               onSaved?.()
                             }}
                           >
-                            修改密码
+                            {t('settings.modifyPassword')}
                           </button>
                         ) : null}
                         <button
                           type="button"
                           className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 text-sm ring-1 ring-red-500/30 transition-colors cursor-pointer"
                           onClick={async () => {
-                            const current = prompt('请输入当前密码以解除隐私锁：')
+                            const current = prompt(t('settings.promptCurrentPassword'))
                             if (current === null) return
                             if (!current) {
-                              setLockMsg('请输入当前密码')
+                              setLockMsg(t('settings.enterCurrentPassword'))
                               return
                             }
                             const r = await api.lockDelete(current)
                             if (r.ok) {
-                              setLockMsg('已解除锁')
+                              setLockMsg(t('settings.lockRemoved'))
                               onSaved?.()
                             } else {
-                              setLockMsg(r.error ?? '密码错误，解除失败')
+                              setLockMsg(r.error ?? t('settings.passwordWrongRemoveFail'))
                             }
                           }}
                         >
-                          解除锁
+                          {t('settings.removeLock')}
                         </button>
                       </>
                     ) : (
@@ -1179,11 +1193,11 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                           await api.lockSet(lockPwd)
                           setLockPwd('')
                           setLockPwd2('')
-                          setLockMsg('已设置锁')
+                          setLockMsg(t('settings.lockSet'))
                           onSaved?.()
                         }}
                       >
-                        设置锁
+                        {t('settings.setLock')}
                       </button>
                     )}
                   </div>
@@ -1194,23 +1208,23 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 数据与存储 ===== */}
             {activeCategory === 'storage' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="database" title="数据与存储" description="扫描性能、数据目录与缓存" />
+                <SectionHeader icon="database" title={t("settings.storageSection")} description={t("settings.storageSectionDesc")} />
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="refresh" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">扫描</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.scanSection")}</div>
                   </div>
-                  <FieldRow label="启动时自动重扫" hint="每次打开软件自动对账所有媒体库（Excel 驱动）。">
+                  <FieldRow label={t("settings.autoRescan")} hint={t("settings.autoRescanHint")}>
                     <Toggle on={!!draft.autoRescan} onChange={(v) => setDraft({ ...draft, autoRescan: v })} />
                   </FieldRow>
-                  <FieldRow label="扫描并发数" hint="扫描库时 ffprobe 探测 / 截帧的并行任务数，越大越快。">
+                  <FieldRow label={t("settings.scanConcurrency")} hint={t("settings.scanConcurrencyHint")}>
                     <Select
                       value={String(draft.scanConcurrency ?? 2)}
-                      options={['1', '2', '3', '4', '6', '8'].map((n) => ({ value: n, label: `${n} 并发` }))}
+                      options={['1', '2', '3', '4', '6', '8'].map((n) => ({ value: n, label: t('settings.concurrentN', { n }) }))}
                       onChange={(v) => setDraft({ ...draft, scanConcurrency: Number(v) })}
                     />
                   </FieldRow>
-                  <FieldRow label="跳过小体积文件" hint="扫描时过滤小于该体积（MB）的视频，避免广告样片/短视频混入主列表；0 = 不过滤。">
+                  <FieldRow label={t("settings.skipSmallFiles")} hint={t("settings.skipSmallFilesHint")}>
                     <input
                       className={`${inputCls} w-24`}
                       type="number"
@@ -1225,7 +1239,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="folder" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">数据与缓存</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.dataAndCache")}</div>
                   </div>
                   <div className="text-white/40 text-xs mb-3 break-all">{dataDir || '…'}</div>
                   <div className="flex gap-2">
@@ -1234,13 +1248,13 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       onClick={() => dataDir && api.openPath(dataDir)}
                       disabled={!dataDir}
                     >
-                      打开数据目录
+                      {t('settings.openDataDir')}
                     </button>
                     <button
                       className="px-3 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm cursor-pointer transition-colors"
                       onClick={clearCache}
                     >
-                      清理海报缓存
+                      {t('settings.clearPosterCache')}
                     </button>
                   </div>
                   {clearMsg ? <div className="text-white/60 text-xs mt-2">{clearMsg}</div> : null}
@@ -1250,7 +1264,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 更新 ===== */}
             {activeCategory === 'update' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="refresh" title="更新" description="软件更新、检查源与自动更新频率" />
+                <SectionHeader icon="refresh" title={t("settings.updateSection")} description={t("settings.updateSectionDesc")} />
                 {/* 待处理更新横幅：只在 pendingUpdate.version 严格大于当前应用版本时显示，避免升级后残留显示 */}
                 {settings.pendingUpdate && appVersion && (() => {
                   const parse = (v: string) => v.replace(/^v/i, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0)
@@ -1275,13 +1289,13 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-white text-sm font-medium">发现新版本 v{settings.pendingUpdate.version}</span>
+                            <span className="text-white text-sm font-medium">{t("settings.foundNewVersion", { v: settings.pendingUpdate.version })}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${meta.bg} ${meta.color}`}>{meta.label}</span>
                           </div>
                           <div className="text-white/45 text-[11px] truncate">
                             {settings.pendingUpdate.publishedAt
-                              ? `发布于 ${new Date(settings.pendingUpdate.publishedAt).toLocaleDateString('zh-CN')}`
-                              : '可前往发布页下载'}
+                              ? t('settings.publishedOn', { date: new Date(settings.pendingUpdate.publishedAt).toLocaleDateString() })
+                              : t('settings.visitReleaseToDownload')}
                             {settings.pendingUpdate.assetName
                               ? ` · ${settings.pendingUpdate.assetName}${settings.pendingUpdate.assetSize ? ` (${formatBytes(settings.pendingUpdate.assetSize)})` : ''}`
                               : ''}
@@ -1291,7 +1305,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                           className={`shrink-0 h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${meta.bg} ${meta.color} hover:brightness-110`}
                           onClick={() => settings.pendingUpdate?.url && api.openExternal(settings.pendingUpdate.url)}
                         >
-                          前往下载
+                          {t('settings.goDownload')}
                         </button>
                       </div>
                     )
@@ -1300,9 +1314,9 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="refresh" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">手动检查更新</div>
+                    <div className="text-white/90 text-sm font-medium">{t("settings.manualCheckUpdate")}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">点击立即向所选源查询是否有新版本。自动更新也会按下方频率在后台检测。</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.manualCheckDesc")}</div>
                   <div className="flex items-center gap-3">
                     <button
                       className="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
@@ -1310,10 +1324,10 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       disabled={checking}
                     >
                       <Icon name="refresh" size={13} className={checking ? 'animate-spin' : ''} />
-                      {checking ? '检查中…' : '检查更新'}
+                      {checking ? t('settings.checking') : t('settings.checkUpdate')}
                     </button>
                     {updateRes && !updateRes.hasUpdate && !updateRes.error ? (
-                      <span className="text-xs text-emerald-400">已是最新版本</span>
+                      <span className="text-xs text-emerald-400">{t('settings.alreadyLatest')}</span>
                     ) : null}                  </div>
                   {updateRes ? (
                     (() => {
@@ -1324,18 +1338,18 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             {updateRes.error ? (
-                              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">检查失败</span>
+                              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">{t('settings.checkFailed')}</span>
                             ) : (
                               <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${meta.bg} ${meta.color}`}>{meta.label}</span>
                             )}
                             {!updateRes.error && updateRes.hasUpdate && updateRes.confidence ? (
                               <span className="text-white/35 text-[11px]">
-                                判定置信度：
+                                {t('settings.confidenceLabel')}
                                 {updateRes.confidence === 'full'
-                                  ? '完整（版本+安装包均匹配）'
+                                  ? t('settings.confidenceFull')
                                   : updateRes.confidence === 'partial'
-                                    ? '部分（版本较新但未找到安装包）'
-                                    : '无法判定'}
+                                    ? t('settings.confidencePartial')
+                                    : t('settings.confidenceUnknown')}
                               </span>
                             ) : null}
                           </div>
@@ -1344,25 +1358,25 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                               <div className="flex items-center gap-2">
                                 <span className="text-white text-sm font-medium">v{updateRes.latestVersion}</span>
                                 {updateRes.isPrerelease ? (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">预发布</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">{t('settings.prerelease')}</span>
                                 ) : null}
                                 {updateRes.isDraft ? (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">草稿</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">{t('settings.draft')}</span>
                                 ) : null}
                               </div>
                               {updateRes.publishedAt ? (
-                                <div className="text-white/50 text-xs">发布时间：{new Date(updateRes.publishedAt).toLocaleString('zh-CN', { hour12: false })}</div>
+                                <div className="text-white/50 text-xs">{t('settings.publishTime')}{new Date(updateRes.publishedAt).toLocaleString(undefined, { hour12: false })}</div>
                               ) : null}
                               {updateRes.assetMatched && updateRes.asset ? (
                                 <div className="text-white/70 text-xs">
-                                  匹配资源：{updateRes.asset.name}（{formatBytes(updateRes.asset.size)}）
-                                  {updateRes.checksumAsset ? ` · 校验：${updateRes.checksumAsset.name}` : ''}
+                                  {t('settings.matchedAsset', { name: updateRes.asset.name, size: formatBytes(updateRes.asset.size) })}
+                                  {updateRes.checksumAsset ? t('settings.checksumAsset', { name: updateRes.checksumAsset.name }) : ''}
                                 </div>
                               ) : !updateRes.error ? (
-                                <div className="text-amber-400/90 text-xs">未找到 Windows 安装包资源，仅版本号较新</div>
+                                <div className="text-amber-400/90 text-xs">{t('settings.noWindowsInstallerFound')}</div>
                               ) : null}
                               {updateRes.minimumVersion ? (
-                                <div className="text-red-400/90 text-xs">最低要求版本：v{updateRes.minimumVersion}（当前 v{updateRes.currentVersion}）</div>
+                                <div className="text-red-400/90 text-xs">{t("settings.minVersionRequired", { min: updateRes.minimumVersion, current: updateRes.currentVersion })}</div>
                               ) : null}
                               {updateRes.notes ? (
                                 <div className="text-white/40 text-xs line-clamp-3 whitespace-pre-line">{updateRes.notes}</div>
@@ -1373,14 +1387,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                                     className="text-brand hover:underline text-xs"
                                     onClick={() => api.openExternal(updateRes.asset!.downloadUrl)}
                                   >
-                                    直接下载安装包 →
+                                    {t('settings.downloadInstaller')} →
                                   </button>
                                 ) : null}
                                 <button
                                   className="text-white/50 hover:text-white/80 hover:underline text-xs"
                                   onClick={() => api.openExternal(updateRes.releaseUrl)}
                                 >
-                                  查看发布页 →
+                                  {t('settings.viewReleasePage')} →
                                 </button>
                               </div>
                             </div>
@@ -1395,14 +1409,14 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                                   disabled={checking}
                                 >
                                   <Icon name="globe" size={11} />
-                                  切换至 {(draft.updateSource ?? 'gitee') === 'gitee' ? 'GitHub' : 'Gitee'} 重试
+                                  {t('settings.switchToSourceRetry', { src: (draft.updateSource ?? 'gitee') === 'gitee' ? 'GitHub' : 'Gitee' })}
                                 </button>
                               </div>
                             </div>
                           ) : null}
                           {updateRes.fallback && !updateRes.error ? (
                             <div className="text-amber-400/80 text-xs mt-1">
-                              首选源不可用，已自动回退到 {updateRes.source === 'gitee' ? 'Gitee' : 'GitHub'} 检查
+                              {t('settings.fallbackToSource', { src: updateRes.source === 'gitee' ? 'Gitee' : 'GitHub' })}
                             </div>
                           ) : null}
                         </div>
@@ -1413,31 +1427,31 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="clock" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">自动更新频率</div>
+                    <div className="text-white/90 text-sm font-medium">{t('settings.autoUpdateFreq')}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">设置后，影匣会按此频率在启动时（及运行中）自动检测更新；检测到新版本会在此页与「设置」入口提示。</div>
+                  <div className="text-white/40 text-xs mb-3">{t('settings.autoUpdateFreqDesc')}</div>
                   <SegmentedControl
                     value={draft.autoUpdateFrequency ?? 'off'}
                     options={[
-                      { value: 'off', label: '关闭' },
-                      { value: 'daily', label: '每天' },
-                      { value: 'weekly', label: '每周' },
-                      { value: 'monthly', label: '每月' }
+                      { value: 'off', label: t('settings.updateOff') },
+                      { value: 'daily', label: t('settings.updateDaily') },
+                      { value: 'weekly', label: t('settings.updateWeekly') },
+                      { value: 'monthly', label: t('settings.updateMonthly') }
                     ]}
                     onChange={(v) => setDraft({ ...draft, autoUpdateFrequency: v as 'off' | 'daily' | 'weekly' | 'monthly' })}
                   />
                   {draft.autoUpdateFrequency && draft.autoUpdateFrequency !== 'off' && settings.lastUpdateCheck ? (
                     <div className="text-white/35 text-[11px] mt-2">
-                      上次自动检测：{new Date(settings.lastUpdateCheck).toLocaleString('zh-CN', { hour12: false })}
+                      {t('settings.lastAutoCheck')}{new Date(settings.lastUpdateCheck).toLocaleString(undefined, { hour12: false })}
                     </div>
                   ) : null}
                 </Card>
                 <Card>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon name="globe" size={16} className="text-white/70" />
-                    <div className="text-white/90 text-sm font-medium">检查更新源</div>
+                    <div className="text-white/90 text-sm font-medium">{t('settings.updateSourceLabel')}</div>
                   </div>
-                  <div className="text-white/40 text-xs mb-3">选择「检查更新」时使用的软件源（GitHub / Gitee）。首选源失败时自动回退到另一源重试；大陆网络建议 Gitee。</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.updateSourceDesc")}</div>
                   <SegmentedControl
                     value={draft.updateSource ?? 'gitee'}
                     options={[
@@ -1452,29 +1466,29 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
             {/* ===== 危险操作 ===== */}
             {activeCategory === 'danger' && (
               <section className="animate-fadeIn">
-                <SectionHeader icon="alert" title="危险操作" description="这些操作不可逆，请谨慎处理" />
+                <SectionHeader icon="alert" title={t("settings.dangerSection")} description={t("settings.dangerSectionDesc")} />
                 <Card className="border-red-500/20 bg-red-500/[0.04]">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-red-400 text-sm font-semibold mb-1">卸载影匣</div>
+                      <div className="text-red-400 text-sm font-semibold mb-1">{t("settings.uninstallApp")}</div>
                       <div className="text-white/40 text-xs leading-relaxed max-w-md">
-                        调用系统卸载程序，二次确认后删除应用与全部本地数据（海报缓存、媒体库配置）。此操作无法撤销。
+                        {t("settings.uninstallDesc")}
                       </div>
                     </div>
                     <button
                       className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 text-xs font-medium ring-1 ring-red-500/30 transition-colors cursor-pointer shrink-0"
                       onClick={async () => {
-                        if (!window.confirm('确定要卸载「影匣」吗？卸载后应用及其数据将被移除。')) return
-                        if (!window.confirm('再次确认：卸载将删除应用与全部本地数据（海报缓存、媒体库配置）。')) return
+                        if (!window.confirm(t('settings.confirmUninstallFirst'))) return
+                        if (!window.confirm(t('settings.confirmUninstallSecond'))) return
                         const r = await api.appUninstall()
                         if (!r.ok) {
-                          window.alert(r.error ?? '卸载失败')
+                          window.alert(r.error ?? t('settings.uninstallFailed'))
                         }
                       }}
                     >
                       <span className="flex items-center gap-1.5">
                         <Icon name="trash" size={14} />
-                        卸载影匣
+                        {t('settings.uninstallApp')}
                       </span>
                     </button>
                   </div>
@@ -1489,15 +1503,19 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
               className="px-4 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm cursor-pointer transition-colors"
               onClick={onClose}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               className="px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium cursor-pointer transition-colors flex items-center gap-1.5"
-              onClick={() => onSave(draft)}
+              onClick={() => {
+                // 语言变更立即生效（无需重启）
+                if (draft.language) setLocale(draft.language as Locale)
+                onSave(draft)
+              }}
             >
               <Icon name="save" size={15} />
-              保存
+              {t('common.save')}
             </button>
           </div>
         </div>

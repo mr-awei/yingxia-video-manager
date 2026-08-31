@@ -11,7 +11,7 @@
  *  尾部字母仅限「明确的单字母版本标签」（A-D / U / C），如 HUNTA-468A、IPX-219-C。
  *  SONE-560X、KSJK-013V 等非常规尾字母不剥（保留原值给 hasSeriesSuffix 判断）。
  */
-const SERIES_SUFFIX_RE = /^([A-Z]{2,}-\d+)(?:(?:-?(?:CD|PART|DISC|VOL)\d+)|(?:-\d+)|(?:-[A-DUC])|(?:[A-DUC]))$/i
+const SERIES_SUFFIX_RE = /^([A-Z]{2,}-\d+)(?:(?:-?(?:CD|PART|DISC|VOL)\d+)|(?:[_\s-]\d+)|(?:-[A-DUC])|(?:[A-DUC]))$/i
 
 /**
  * 番号归一化：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。

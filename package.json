@@ -1,8 +1,8 @@
 {
   "name": "local-video-manager",
   "productName": "影匣",
-  "version": "2.3.13",
-  "description": "本地视频管理工具 - 海报墙式影库，悬停看简介，点击看详情，本地播放器打开",
+  "version": "2.4.0",
+  "description": "Local-only video library manager — poster wall, hover preview, local playback, zero cloud uploads, privacy-first",
   "type": "module",
   "main": "out/main/index.js",
   "author": "",

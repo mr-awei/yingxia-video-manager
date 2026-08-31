@@ -7,6 +7,7 @@ import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
 import HoverDetail from './HoverDetail'
 import Icon from './Icon'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   entry: DisplayEntry
@@ -57,8 +58,8 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const cardRef = useRef<HTMLDivElement>(null)
   const isMissing = entry.kind === 'missing'
   const v0 = entry.video
-  // 封面优先级：手动设的封面（预览帧设为封面, manual）> javdbDetail.cover（本地真实海报）>
-  // 非截帧来源的 posterPath > ffmpeg 截帧 posterPath > 新截帧兜底
+  // 封面优先级：手动设的封面（预览帧{t('entry.setAsCover')}, manual）> javdbDetail.cover（本地真实海报）>
+  // 非{t('entry.reframe')}来源的 posterPath > ffmpeg {t('entry.reframe')} posterPath > 新{t('entry.reframe')}兜底
   const manualPoster = v0?.posterSource === 'manual' && v0?.posterPath ? v0.posterPath : null
   const detailCover = v0?.javdbDetail?.cover && !/^https?:\/\//.test(v0.javdbDetail.cover) ? v0.javdbDetail.cover : null
   const realPoster =
@@ -70,13 +71,13 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
       ? v0.posterPath
       : null
   const poster = manualPoster ?? detailCover ?? realPoster ?? v0?.posterPath ?? null
-  // coverVersion：手动设为封面后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
+  // coverVersion：手动{t('entry.setAsCover')}后文件内容变了但路径可能不变，用它让 lm:// URL 带 ?v= 强制立即刷新
   const originalSrc = poster ? posterUrl(poster, v0?.coverVersion) : null
   const hasValidSrc = originalSrc && !imgError ? originalSrc : null
   const { fallbackPoster } = useFrameFallback(entry.video, hasValidSrc)
   const src = hasValidSrc ?? fallbackPoster
   const showPoster = !!src
-  // 「截帧」标识：仅当实际展示的是视频画面一帧（新截帧兜底，或 posterPath 为 ffmpeg 截帧且无真实封面）
+  // 「{t('entry.reframe')}」标识：仅当实际展示的是视频画面一帧（新{t('entry.reframe')}兜底，或 posterPath 为 ffmpeg {t('entry.reframe')}且无真实封面）
   const isFrameFallback = src
     ? src === fallbackPoster || (!manualPoster && !detailCover && !realPoster && v0?.posterSource === 'ffmpeg')
     : false
@@ -213,7 +214,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
           {isMissing ? (
             <span className="px-1.5 py-0.5 rounded-md bg-red-600/90 backdrop-blur-sm text-[10px] text-white font-medium flex items-center gap-1">
               <Icon name="alert" size={10} />
-              缺失
+              {t('common.missing')}
             </span>
           ) : null}
           {isFavorite ? (
@@ -221,14 +222,14 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               <Icon name="heart" size={10} className="fill-current" />
             </span>
           ) : null}
-          {/* 截帧封面标识：无真实封面，展示的是视频里截取的一帧画面 */}
+          {/* {t('entry.reframe')}封面标识：无真实封面，展示的是视频里截取的一帧画面 */}
           {isFrameFallback && !isMissing ? (
             <span
               className="px-1.5 py-0.5 rounded-md bg-fuchsia-500/90 backdrop-blur-sm text-[10px] text-white font-bold flex items-center gap-1"
-              title="无真实封面，截取视频画面一帧作为封面"
+              title={t('entry.fallbackPosterHint')}
             >
               <Icon name="film" size={10} className="fill-current" />
-              截帧
+              {t('entry.reframe')}
             </span>
           ) : null}
           {/* 数据来源角标：Javapi / JavBus / Javinfo / JavLibrary 显示（无角标 = JavDB）—— v2.2.3 改为单源映射，避免合并冲突引入的重复 chip */}
@@ -250,7 +251,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
           })()}
           {entry.video?.posterSource === 'manual' ? (
             <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-sm text-[10px] text-white font-bold">
-              设为封面
+              {t('entry.setAsCover')}
             </span>
           ) : null}
         </div>
@@ -264,7 +265,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                 e.stopPropagation()
                 void api.videoOpen(entry.video!.id)
               }}
-              title="播放"
+              title={t('entry.playTitle')}
             >
               <Icon name="play" size={12} className="fill-current" />
             </button>
@@ -280,7 +281,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                     e.stopPropagation()
                     onToggleFlag(vid, 'favorite')
                   }}
-                  title={isFavorite ? '取消收藏' : '收藏'}
+                  title={isFavorite ? t('entry.unfavorite') : t('entry.favorite')}
                 >
                   <Icon name="heart" size={12} className={isFavorite ? 'fill-current' : ''} />
                 </button>
@@ -326,7 +327,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               e.stopPropagation()
               onEdit(entry.video!)
             }}
-            title="编辑"
+            title={t('entry.editTitle')}
           >
             <Icon name="pencil" size={12} />
           </button>
@@ -394,19 +395,19 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                     if (!displayTags.length) return null
                     return (
                       <div className="flex flex-wrap gap-1 mt-2 max-h-[64px] overflow-hidden">
-                        {displayTags.slice(0, 8).map((t) => (
+                        {displayTags.slice(0, 8).map((tagStr) => (
                           <button
-                            key={t}
+                            key={tagStr}
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               setPreview(null)
-                              onPickTag?.(t)
+                              onPickTag?.(tagStr)
                             }}
-                            title={`筛选「${t}」`}
+                            title={t('entry.filterTag', { tag: tagStr })}
                             className="px-1.5 py-0.5 rounded bg-white/8 ring-1 ring-white/5 text-[10px] text-white/70 max-w-full min-w-0 break-words hover:bg-brand/25 hover:text-brand hover:ring-brand/30 transition-colors"
                           >
-                            {t}
+                            {tagStr}
                           </button>
                         ))}
                       </div>
@@ -440,7 +441,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                 <>
                   <MenuItem
                     icon="play"
-                    label="播放"
+                    label={t('entry.playLabel')}
                     onClick={() => {
                       setMenu(null)
                       void api.videoOpen(entry.video!.id)
@@ -448,7 +449,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                   />
                   <MenuItem
                     icon="pencil"
-                    label="编辑"
+                    label={t('entry.editLabel')}
                     onClick={() => {
                       setMenu(null)
                       onEdit(entry.video!)
@@ -456,7 +457,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                   />
                   <MenuItem
                     icon="folderOpen"
-                    label="打开文件位置"
+                    label={t('entry.openLocationLabel')}
                     onClick={() => {
                       setMenu(null)
                       void api.shellRevealInFolder(entry.video!.path)
@@ -465,7 +466,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
                   {onDelete ? (
                     <MenuItem
                       icon="trash"
-                      label="删除文件"
+                      label={t('entry.deleteFileLabel')}
                       danger
                       onClick={() => {
                         setMenu(null)
@@ -478,7 +479,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               ) : (
                 <MenuItem
                   icon="folderOpen"
-                  label="打开简介"
+                  label={t('entry.openDescriptionLabel')}
                   onClick={() => {
                     setMenu(null)
                     onOpenMissing(entry)
@@ -487,7 +488,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
               )}
               <MenuItem
                 icon="copy"
-                label="复制番号"
+                label={t('entry.copyCodeLabel')}
                 onClick={() => {
                   setMenu(null)
                   api.copyText(entry.code)

@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import type { Library, Settings } from '../../../shared/types'
 import Icon, { type IconName } from './Icon'
+import { t } from '../../../shared/i18n'
 
 export interface TagInfo {
   tag: string
@@ -132,7 +133,7 @@ function Section({
       <button
         className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-ink-800/40 transition-colors"
         onClick={() => setOpen((o) => !o)}
-        title={open ? '收起此段' : '展开此段'}
+        title={open ? t('sidebar.collapseSection') : t('sidebar.expandSection')}
       >
         <div className={`flex items-center gap-1.5 font-semibold text-[12px] ${active ? 'text-brand' : 'text-white/90'}`}>
           <Icon name={icon} size={12} className={active ? 'text-brand' : 'text-brand/80'} />
@@ -149,9 +150,9 @@ function Section({
                 e.stopPropagation()
                 onClear()
               }}
-              title="清除此段筛选"
+              title={t('sidebar.clearSectionFilter')}
             >
-              清除
+              {t('sidebar.clear')}
             </button>
           ) : null}
           <Icon
@@ -191,7 +192,7 @@ function FacetGroup({
       <button
         className="w-full flex items-center justify-between py-1 px-0.5 rounded hover:bg-ink-800/60 transition-colors"
         onClick={() => setClosed((c) => !c)}
-        title={closed ? '展开' : '收起'}
+        title={closed ? t('sidebar.expand') : t('sidebar.collapse')}
       >
         <span className="flex items-center gap-1 text-white/55 text-[11px] font-medium tracking-wide">
           <Icon name="chevronDown" size={11} className={`transition-transform duration-200 ${closed ? '-rotate-90' : ''}`} />
@@ -210,7 +211,7 @@ function FacetGroup({
                 onClear()
               }}
             >
-              清除
+              {t('sidebar.clear')}
             </button>
           ) : null}
           <Icon name={closed ? 'chevronRight' : 'chevronDown'} size={11} className="text-white/30" />
@@ -219,7 +220,7 @@ function FacetGroup({
       {!closed ? (
         <div className="flex flex-wrap gap-1 mt-0.5">
           {facets.length === 0 ? (
-            <span className="text-white/30 text-[11px]">暂无</span>
+            <span className="text-white/30 text-[11px]">{t('app.noData')}</span>
           ) : (
             show.map((f) => {
               const sel = selected.has(f.name)
@@ -246,7 +247,7 @@ function FacetGroup({
               onClick={() => setExpanded((e) => !e)}
               className="h-6 px-1.5 rounded-md text-[11px] bg-white/5 hover:bg-white/10 text-white/50"
             >
-              {expanded ? '收起' : `+${facets.length - PER_CAT_LIMIT}`}
+              {expanded ? t('sidebar.collapse') : `+${facets.length - PER_CAT_LIMIT}`}
             </button>
           ) : null}
         </div>
@@ -287,7 +288,7 @@ function NavItem({
       {alert ? (
         <span
           className={`h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0 ${active ? 'ring-2 ring-brand/15' : ''}`}
-          title="有待处理项"
+          title={t('sidebar.hasPending')}
         />
       ) : null}
       {badge ? (
@@ -355,12 +356,12 @@ function SidebarInner(props: Props) {
     onClearYears()
   }
   const FILTER_TABS: { key: 'cat' | 'genre' | 'tag' | 'meta' | 'tech' | 'year'; label: string; icon: IconName; badge: number }[] = [
-    { key: 'cat', label: '分类', icon: 'folder', badge: selectedCategory ? 1 : 0 },
-    { key: 'genre', label: '类别', icon: 'layers', badge: genreSelectedCount },
-    { key: 'tag', label: '标签', icon: 'tag', badge: totalSelected },
-    { key: 'meta', label: '影人', icon: 'users', badge: metaSelectedCount },
-    { key: 'tech', label: '规格', icon: 'monitor', badge: techSelectedCount },
-    { key: 'year', label: '年份', icon: 'calendar', badge: selectedYears.size }
+    { key: 'cat', label: t('sidebar.category'), icon: 'folder', badge: selectedCategory ? 1 : 0 },
+    { key: 'genre', label: t('sidebar.genre'), icon: 'layers', badge: genreSelectedCount },
+    { key: 'tag', label: t('sidebar.tag'), icon: 'tag', badge: totalSelected },
+    { key: 'meta', label: t('sidebar.cast'), icon: 'users', badge: metaSelectedCount },
+    { key: 'tech', label: t('sidebar.spec'), icon: 'monitor', badge: techSelectedCount },
+    { key: 'year', label: t('sidebar.year'), icon: 'calendar', badge: selectedYears.size }
   ]
 
   if (collapsed) {
@@ -369,38 +370,38 @@ function SidebarInner(props: Props) {
         <button
           className="no-drag w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors"
           onClick={onToggleCollapsed}
-          title="展开侧栏"
+          title={t('sidebar.expandSidebar')}
         >
           <Icon name="chevronRight" size={16} />
         </button>
         <div className="mt-2 flex flex-col items-center gap-1">
-          <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'home' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('home')} title="首页">
+          <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'home' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('home')} title={t('sidebar.home')}>
             <Icon name="home" size={16} />
           </button>
-          <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'all' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('browse', 'all')} title="全部影片">
+          <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'all' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('browse', 'all')} title={t('sidebar.allVideos')}>
             <Icon name="grid" size={16} />
           </button>
           {favoriteCount > 0 ? (
-            <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'favorite' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('browse', 'favorite')} title="收藏">
+            <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'favorite' ? 'bg-brand/20 text-brand' : 'text-white/60 hover:text-white hover:bg-ink-700'}`} onClick={() => onNav('browse', 'favorite')} title={t('sidebar.favorites')}>
               <Icon name="heart" size={16} />
             </button>
           ) : null}
           {unlistedCount > 0 ? (
-            <button className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'unlisted' ? 'bg-brand/20 text-brand' : 'text-amber-400/90 hover:text-amber-400 hover:bg-amber-500/15'}`} onClick={() => onNav('browse', 'unlisted')} title="未收录">
+            <button className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${view === 'browse' && smart === 'unlisted' ? 'bg-brand/20 text-brand' : 'text-amber-400/90 hover:text-amber-400 hover:bg-amber-500/15'}`} onClick={() => onNav('browse', 'unlisted')} title={t('sidebar.untracked')}>
               <Icon name="alert" size={16} />
               <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
             </button>
           ) : null}
         </div>
-        <div className="mt-3 text-[10px] text-white/40 [writing-mode:vertical-rl] tracking-widest">筛选</div>
+        <div className="mt-3 text-[10px] text-white/40 [writing-mode:vertical-rl] tracking-widest">{t('sidebar.filter')}</div>
         <div className="mt-auto flex flex-col items-center gap-1 pt-2 border-t border-white/5 w-full">
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenStats} title="统计看板">
+          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenStats} title={t('sidebar.statsPanel')}>
             <Icon name="chart" size={15} />
           </button>
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenAbout} title="关于">
+          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenAbout} title={t('sidebar.about')}>
             <Icon name="info" size={15} />
           </button>
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenSettings} title="设置">
+          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-ink-700 transition-colors" onClick={onOpenSettings} title={t('sidebar.settings')}>
             <Icon name="sliders" size={15} />
           </button>
         </div>
@@ -414,12 +415,12 @@ function SidebarInner(props: Props) {
       <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
         <div className="flex items-center gap-1.5 text-white/90 font-semibold text-[12px]">
           <Icon name="layers" size={12} className="text-brand" />
-          导航
+          {t('sidebar.navigation')}
         </div>
         <button
           className="no-drag w-6 h-6 rounded flex items-center justify-center text-white/50 hover:text-white hover:bg-ink-700 transition-colors"
           onClick={onToggleCollapsed}
-          title="收起侧栏"
+          title={t('sidebar.collapseSidebar')}
         >
           <Icon name="chevronLeft" size={14} />
         </button>
@@ -428,20 +429,20 @@ function SidebarInner(props: Props) {
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {/* 导航 */}
         <div className="px-2 py-2 flex flex-col gap-0.5 shrink-0">
-          <NavItem icon="home" label="首页" active={view === 'home'} onClick={() => onNav('home')} />
+          <NavItem icon="home" label={t('sidebar.home')} active={view === 'home'} onClick={() => onNav('home')} />
           <NavItem
             icon="grid"
-            label="全部影片"
+            label={t('sidebar.allVideos')}
             active={view === 'browse' && smart === 'all'}
             onClick={() => onNav('browse', 'all')}
           />
         </div>
 
         {/* 媒体库 */}
-        <Section title="媒体库" icon="folder" active={false}>
+        <Section title={t('sidebar.library')} icon="folder" active={false}>
           <div className="flex flex-col gap-0.5">
             {libraries.length === 0 ? (
-              <div className="text-white/35 text-[11px] py-1 px-1">还没有媒体库</div>
+              <div className="text-white/35 text-[11px] py-1 px-1">{t('sidebar.noLibrary')}</div>
             ) : (
               libraries.map((l) => {
                 const sel = l.id === libraryId
@@ -466,7 +467,7 @@ function SidebarInner(props: Props) {
                       <button
                         className="no-drag w-6 h-6 mr-1 rounded flex items-center justify-center text-white/45 hover:text-white hover:bg-ink-600 transition-colors shrink-0"
                         onClick={onEditLibrary}
-                        title="库设置"
+                        title={t('sidebar.librarySettings')}
                       >
                         <Icon name="sliders" size={12} />
                       </button>
@@ -480,37 +481,37 @@ function SidebarInner(props: Props) {
               onClick={onAddLibrary}
             >
               <Icon name="plus" size={13} />
-              添加媒体库
+              {t('sidebar.addLibrary')}
             </button>
           </div>
         </Section>
 
         {/* 我的清单（用户主动创建的视图） */}
-        <Section title="我的清单" icon="heart">
+        <Section title={t('sidebar.myLists')} icon="heart">
           <div className="flex flex-col gap-0.5">
-            <NavItem icon="heart" label="收藏" badge={favoriteCount} active={view === 'browse' && smart === 'favorite'} onClick={() => onNav('browse', 'favorite')} />
-            <NavItem icon="clock" label="最近播放" badge={recentCount} active={view === 'browse' && smart === 'recent'} onClick={() => onNav('browse', 'recent')} />
+            <NavItem icon="heart" label={t('sidebar.favorites')} badge={favoriteCount} active={view === 'browse' && smart === 'favorite'} onClick={() => onNav('browse', 'favorite')} />
+            <NavItem icon="clock" label={t('sidebar.recentPlayed')} badge={recentCount} active={view === 'browse' && smart === 'recent'} onClick={() => onNav('browse', 'recent')} />
           </div>
         </Section>
 
         {/* 待处理（系统诊断 / 差异视图） */}
-        <Section title="待处理" icon="alert">
+        <Section title={t('sidebar.pending')} icon="alert">
           <div className="flex flex-col gap-0.5">
             <NavItem
               icon="alert"
-              label="未收录"
+              label={t('sidebar.untracked')}
               badge={unlistedCount}
               alert={unlistedCount > 0}
               active={view === 'browse' && smart === 'unlisted'}
               onClick={() => onNav('browse', 'unlisted')}
             />
-            <NavItem icon="star" label="未评分" badge={unratedCount} active={view === 'browse' && smart === 'unrated'} onClick={() => onNav('browse', 'unrated')} />
-            <NavItem icon="image" label="缺封面" badge={nocoverCount} active={view === 'browse' && smart === 'nocover'} onClick={() => onNav('browse', 'nocover')} />
+            <NavItem icon="star" label={t('sidebar.unrated')} badge={unratedCount} active={view === 'browse' && smart === 'unrated'} onClick={() => onNav('browse', 'unrated')} />
+            <NavItem icon="image" label={t('sidebar.noPoster')} badge={nocoverCount} active={view === 'browse' && smart === 'nocover'} onClick={() => onNav('browse', 'nocover')} />
           </div>
         </Section>
 
         {/* 筛选：合并为可折叠 Tab 组，默认收起，显著降低首屏高度 */}
-        <Section title="筛选" icon="sliders" count={filterCount} onClear={clearAllFilters} active={filterCount > 0} defaultOpen={false} grow>
+        <Section title={t('sidebar.filter')} icon="sliders" count={filterCount} onClear={clearAllFilters} active={filterCount > 0} defaultOpen={false} grow>
           <div className="flex flex-wrap gap-1 mb-2 shrink-0">
             {FILTER_TABS.map((tab) => {
               const sel = filterTab === tab.key
@@ -537,13 +538,13 @@ function SidebarInner(props: Props) {
           {filterTab === 'cat' ? (
             <div className="flex flex-col min-h-0 flex-1">
               <div className="flex items-center justify-between mb-1 shrink-0">
-                <span className="text-white/45 text-[11px] font-medium">分类</span>
+                <span className="text-white/45 text-[11px] font-medium">{t('sidebar.category')}</span>
                 {selectedCategory ? (
-                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearCategory}>清除</button>
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearCategory}>{t('sidebar.clear')}</button>
                 ) : null}
               </div>
               {visibleSections.length === 0 ? (
-                <div className="text-white/35 text-[11px] py-1">暂无分类</div>
+                <div className="text-white/35 text-[11px] py-1">{t('sidebar.noCategory')}</div>
               ) : (
                 <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
                   {(() => {
@@ -578,7 +579,7 @@ function SidebarInner(props: Props) {
                           <>
                             <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-white/5 text-white/35 text-[10px] font-medium">
                               <Icon name="zap" size={10} className="text-violet-400/70" />
-                              自动归类
+                              {t('sidebar.autoCategory')}
                             </div>
                             {autoSections.map(renderSection)}
                           </>
@@ -595,13 +596,13 @@ function SidebarInner(props: Props) {
           {filterTab === 'genre' ? (
             <div className="flex flex-col min-h-0 flex-1">
               <div className="flex items-center justify-between mb-1 shrink-0">
-                <span className="text-white/45 text-[11px] font-medium">类别</span>
+                <span className="text-white/45 text-[11px] font-medium">{t('sidebar.genre')}</span>
                 {genreSelectedCount > 0 ? (
-                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearGenres}>清除</button>
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClearGenres}>{t('sidebar.clear')}</button>
                 ) : null}
               </div>
               {genreFacets.length === 0 ? (
-                <div className="text-white/35 text-[11px] py-1">暂无类别（需抓取到元数据才有 genres）</div>
+                <div className="text-white/35 text-[11px] py-1">{t('sidebar.noGenre')}</div>
               ) : (
                 <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
                   {genreFacets.map((g) => {
@@ -632,13 +633,13 @@ function SidebarInner(props: Props) {
           {filterTab === 'tag' ? (
             <div className="flex flex-col min-h-0 flex-1">
               <div className="flex items-center justify-between mb-1 shrink-0">
-                <span className="text-white/45 text-[11px] font-medium">标签</span>
+                <span className="text-white/45 text-[11px] font-medium">{t('sidebar.tag')}</span>
                 {totalSelected > 0 ? (
-                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClear}>清除</button>
+                  <button className="h-5 px-1.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-ink-700 transition-colors" onClick={onClear}>{t('sidebar.clear')}</button>
                 ) : null}
               </div>
               <div className="flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
-              {tags.length === 0 ? <div className="text-white/35 text-xs py-2 text-center">暂无标签</div> : null}
+              {tags.length === 0 ? <div className="text-white/35 text-xs py-2 text-center">{t('sidebar.noTag')}</div> : null}
               {categories.map((cat) => {
                 const list = grouped.get(cat) ?? []
                 if (list.length === 0) return null
@@ -650,7 +651,7 @@ function SidebarInner(props: Props) {
                     <button
                       className="w-full flex items-center justify-between py-1 rounded px-0.5 hover:bg-ink-800/60 transition-colors"
                       onClick={() => setCollapsedTagCats((p) => ({ ...p, [cat]: !p[cat] }))}
-                      title={catClosed ? '展开此分类' : '收起此分类'}
+                      title={catClosed ? t('sidebar.expandCategory') : t('sidebar.collapseCategory')}
                     >
                       <span className="flex items-center gap-1 text-white/55 text-[11px] font-medium tracking-wide">
                         <Icon name="chevronDown" size={11} className={`transition-transform duration-200 ${catClosed ? '-rotate-90' : ''}`} />
@@ -681,7 +682,7 @@ function SidebarInner(props: Props) {
                         })}
                         {list.length > PER_CAT_LIMIT ? (
                           <button onClick={() => setExpanded((p) => ({ ...p, [cat]: !p[cat] }))} className="h-6 px-1.5 rounded-md text-[11px] bg-white/5 hover:bg-white/10 text-white/50">
-                            {isExpanded ? '收起' : `+${list.length - PER_CAT_LIMIT}`}
+                            {isExpanded ? t('sidebar.collapse') : `+${list.length - PER_CAT_LIMIT}`}
                           </button>
                         ) : null}
                       </div>
@@ -696,38 +697,38 @@ function SidebarInner(props: Props) {
           {/* 女演员 / 片商 / 系列 */}
           {filterTab === 'meta' ? (
             <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
-              <FacetGroup title="女演员" icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
-              <FacetGroup title="片商" icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
-              <FacetGroup title="系列" icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
+              <FacetGroup title={t('sidebar.actress')} icon="users" facets={actorFacets} selected={selectedActors} onToggle={onToggleActor} onClear={onClearActors} />
+              <FacetGroup title={t('sidebar.studio')} icon="building" facets={studioFacets} selected={selectedStudios} onToggle={onToggleStudio} onClear={onClearStudios} />
+              <FacetGroup title={t('sidebar.series')} icon="layers" facets={seriesFacets} selected={selectedSeries} onToggle={onToggleSeries} onClear={onClearSeries} />
             </div>
           ) : null}
 
           {/* 技术规格 */}
           {filterTab === 'tech' ? (
             <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-auto thin-scroll -mr-1 pr-1">
-              <FacetGroup title="分辨率" icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
-              <FacetGroup title="时长" icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
-              <FacetGroup title="评分" icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />
+              <FacetGroup title={t('sidebar.resolution')} icon="monitor" facets={resolutionFacets} selected={selectedResolutions} onToggle={onToggleResolution} onClear={onClearResolutions} />
+              <FacetGroup title={t('sidebar.duration')} icon="clock" facets={durationFacets} selected={selectedDurations} onToggle={onToggleDuration} onClear={onClearDurations} />
+              <FacetGroup title={t('sidebar.score')} icon="star" facets={scoreFacets} selected={selectedScores} onToggle={onToggleScore} onClear={onClearScores} />
             </div>
           ) : null}
 
           {/* 年份 */}
           {filterTab === 'year' ? (
-            <FacetGroup title="年份" icon="calendar" facets={yearFacets} selected={selectedYears} onToggle={onToggleYear} onClear={onClearYears} />
+            <FacetGroup title={t('sidebar.year')} icon="calendar" facets={yearFacets} selected={selectedYears} onToggle={onToggleYear} onClear={onClearYears} />
           ) : null}
         </Section>
       </div>
 
       {/* 底部固定：统计 / 关于 / 设置 */}
       <div className="shrink-0 border-t border-white/5 px-2 py-2 flex items-center gap-1.5">
-        <button className="flex-1 h-8 rounded-lg flex items-center justify-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white/80 text-xs font-medium transition-colors" onClick={onOpenStats} title="统计看板">
+        <button className="flex-1 h-8 rounded-lg flex items-center justify-center gap-1.5 bg-ink-700 hover:bg-ink-600 text-white/80 text-xs font-medium transition-colors" onClick={onOpenStats} title={t('sidebar.statsPanel')}>
           <Icon name="chart" size={14} />
-          统计
+          {t('sidebar.stats')}
         </button>
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenAbout} title="关于">
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenAbout} title={t('sidebar.about')}>
           <Icon name="info" size={14} />
         </button>
-        <button className="relative w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenSettings} title="设置">
+        <button className="relative w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/80 transition-colors" onClick={onOpenSettings} title={t('sidebar.settings')}>
           <Icon name="sliders" size={14} />
           {pendingUpdate ? (
             <span
@@ -740,7 +741,7 @@ function SidebarInner(props: Props) {
                       ? 'bg-sky-400'
                       : 'bg-emerald-400'
               }`}
-              title={`发现新版本 v${pendingUpdate.version}${pendingUpdate.urgency ? ` · ${pendingUpdate.urgency}` : ''}`}
+              title={t('sidebar.newVersionAvailable', { version: pendingUpdate.version, urgency: pendingUpdate.urgency ? ` · ${pendingUpdate.urgency}` : '' })}
             />
           ) : null}
         </button>

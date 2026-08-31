@@ -1,6 +1,7 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import EntryCard from './EntryCard'
+import { t } from '../../../shared/i18n'
 
 export interface WallSection {
   title: string
@@ -116,7 +117,7 @@ function VirtualizedWall({ sections, onOpen, onEdit, onOpenMissing, onToggleFlag
         // min-w-0 + truncate：超长分类名（如「大规模群P / 哈雷姆 / 大乱交（核心推荐）」）截断，不撑爆视图
         <div key={row.key} className="absolute inset-x-0 flex items-baseline gap-2 px-1 min-w-0" style={{ top: y, height: TITLE_H }}>
           <h2 className="section-title text-white font-semibold text-lg leading-none truncate min-w-0">{row.title}</h2>
-          <span className="text-white/40 text-xs shrink-0 tabular-nums">{row.count} 部</span>
+          <span className="text-white/40 text-xs shrink-0 tabular-nums">{row.count} {t('browse.unit')}</span>
         </div>
       )
     } else {

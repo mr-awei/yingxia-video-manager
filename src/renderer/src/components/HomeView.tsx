@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, titleSecondary } from '../lib/util'
 import { api } from '../lib/api'
+import { t } from '../../../shared/i18n'
 import EntryCard from './EntryCard'
 import Icon from './Icon'
 import type { SmartFilter } from './Sidebar'
@@ -73,10 +74,10 @@ function Row({
             <button
               className="text-white/45 hover:text-brand text-xs flex items-center gap-1 transition-colors"
               onClick={onRefresh}
-              title="换一批（手动刷新）"
+              title={t('home.refreshBatchTitle2')}
             >
               <Icon name="refresh" size={13} />
-              换一批
+              {t('home.refreshBatch')}
             </button>
           ) : null}
           {onMore ? (
@@ -84,7 +85,7 @@ function Row({
               className="text-white/45 hover:text-white text-xs flex items-center gap-0.5 transition-colors"
               onClick={onMore}
             >
-              查看全部 <Icon name="chevronRight" size={13} />
+              {t('home.viewAll')} <Icon name="chevronRight" size={13} />
             </button>
           ) : null}
         </div>
@@ -146,9 +147,9 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
         <div className="w-16 h-16 rounded-2xl bg-brand/10 ring-1 ring-brand/30 flex items-center justify-center mb-5">
           <Icon name="home" size={30} className="text-brand" />
         </div>
-        <div className="text-2xl font-semibold mb-2">首页</div>
+        <div className="text-2xl font-semibold mb-2">{t('home.title')}</div>
         <div className="text-white/50 text-sm max-w-md leading-relaxed">
-          选择一个媒体库后，这里会展示「随机推荐 / 最近添加 / 评分最高 / 最近播放 / 收藏」的精选墙。
+          {t('home.selectLibraryEmpty')}
         </div>
       </div>
     )
@@ -187,12 +188,12 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
           <div className="absolute top-5 right-5 flex items-center gap-2 z-10">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 text-slate-900 text-[11px] font-bold tracking-wider shadow-lg shadow-black/30">
               <span className="w-1.5 h-1.5 rounded-full bg-brand" />
-              为你推荐
+              {t('home.recommendForYou')}
             </span>
             <button
               className={`w-9 h-9 rounded-full bg-white/95 text-slate-700 flex items-center justify-center hover:bg-brand hover:text-white shadow-lg shadow-black/30 transition-all ${heroSpin ? 'animate-spin' : ''}`}
               onClick={(e) => { e.stopPropagation(); heroRefresh() }}
-              title="换一批（手动刷新随机推荐）"
+              title={t('home.refreshBatchTitle')}
             >
               <Icon name="refresh" size={14} />
             </button>
@@ -201,14 +202,14 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
               <button
                 className={`h-7 px-2 rounded-md flex items-center gap-1 text-xs font-medium transition-colors ${aspect === 'portrait' ? 'bg-brand text-white' : 'text-white/70 hover:text-white hover:bg-white/5'}`}
                 onClick={(e) => { e.stopPropagation(); onSetView('grid-portrait') }}
-                title="竖屏卡片"
+                title={t('home.verticalCardTitle')}
               >
                 <Icon name="grid" size={13} />
               </button>
               <button
                 className={`h-7 px-2 rounded-md flex items-center gap-1 text-xs font-medium transition-colors ${aspect === 'landscape' ? 'bg-brand text-white' : 'text-white/70 hover:text-white hover:bg-white/5'}`}
                 onClick={(e) => { e.stopPropagation(); onSetView('grid-landscape') }}
-                title="横屏卡片"
+                title={t('home.horizontalCardTitle')}
               >
                 <Icon name="film" size={13} />
               </button>
@@ -264,7 +265,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
                   onClick={(e) => { e.stopPropagation(); void api.videoOpen(heroV.id) }}
                 >
                   <Icon name="play" size={16} className="fill-current" />
-                  播放
+                  {t('home.play')}
                 </button>
                 {onToggleFlag ? (
                   <button
@@ -274,7 +275,7 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
                         : 'bg-black/40 hover:bg-brand/20 ring-white/15 text-white'
                     }`}
                     onClick={(e) => { e.stopPropagation(); onToggleFlag(heroV.id, 'favorite') }}
-                    title={heroV.favorite ? '取消收藏' : '收藏'}
+                    title={heroV.favorite ? t('home.unfavorite') : t('home.favorite')}
                   >
                     <Icon name="heart" size={17} className={heroV.favorite ? 'fill-current' : ''} />
                   </button>
@@ -282,10 +283,10 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
                 <button
                   className="h-11 px-5 rounded-xl flex items-center gap-2 bg-black/40 backdrop-blur-md hover:bg-black/60 ring-1 ring-white/15 text-white text-sm font-semibold transition-all"
                   onClick={(e) => { e.stopPropagation(); onOpen(hero) }}
-                  title="查看详情"
+                  title={t('home.detail')}
                 >
                   <Icon name="info" size={14} />
-                  详情
+                  {t('home.detail')}
                 </button>
               </div>
             </div>
@@ -294,12 +295,12 @@ export default function HomeView({ entries, onOpen, onEdit, onOpenMissing, onTog
       ) : null}
 
       {/* 精选 rows */}
-      <Row title="全库随机" icon="layers" entries={allRandom} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshAllRandom} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
-      <Row title="随机推荐" icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
-      <Row title="最近添加" icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
-      <Row title="评分最高" icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
-      <Row title="最近播放" icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
-      <Row title="我的收藏" icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.randomAll')} icon="layers" entries={allRandom} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={onRefreshAllRandom} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.randomRecommend')} icon="sparkles" entries={recommend} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onRefresh={refreshAll} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.recentAdded')} icon="clock" entries={recent} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.topRated')} icon="star" entries={topRated} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('all')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.recentPlayed')} icon="play" entries={recentPlayed} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('recent')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
+      <Row title={t('home.myFavorites')} icon="heart" entries={favorite} onOpen={onOpen} onEdit={onEdit} onOpenMissing={onOpenMissing} onToggleFlag={onToggleFlag} onMore={() => onBrowse('favorite')} onPickTag={onPickTag} onDelete={onDelete} aspect={aspect} />
     </div>
   )
 }

@@ -219,6 +219,8 @@ export interface Settings {
    * 只屏蔽「未配置片单」这一类提示，片单解析失败等真实错误仍照常提示。
    */
   suppressIntroExcelNotice?: boolean
+  /** v2.3.12：界面语言，zh-CN 中文 / en-US 英文 */
+  language?: 'zh-CN' | 'en-US'
 }
 
 export interface VideoFilter {
@@ -279,7 +281,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pendingUpdate: null,
   ignoredUnlistedPaths: [],
   noticeDismissed: false,
-  suppressIntroExcelNotice: false
+  suppressIntroExcelNotice: false,
+  language: 'zh-CN'
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javapi（本地免费）> javinfo > javdb > javbus > 截帧 > 占位 */
@@ -347,6 +350,8 @@ export interface DisplayEntry {
   score?: number
   /** 匹配到磁盘文件时的视频记录（用于海报与播放）；缺失时为 undefined */
   video?: Video
+  /** 同 code 的分集 / 多碟兄弟文件（reconcile 时 findFilesForCode 可能返回多个，主 entry 只取第一个做 video） */
+  siblingVideos?: Video[]
 }
 
 /** 文件夹存在但未收录进 md 的文件 */

@@ -26,9 +26,12 @@ async function getText(url: string, settings: Settings, cookie?: string): Promis
   }
   if (cookie) headers.Cookie = cookie
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 12000)
+  const timer = setTimeout(() => ctrl.abort(), 30000)
+  const t0 = Date.now()
   try {
+    console.log(`[javbus] start ${url}`)
     const res = await fetch(url, { headers, signal: ctrl.signal, dispatcher: getDispatcher(settings) })
+    console.log(`[javbus] ok ${url} status=${res.status} time=${Date.now() - t0}ms`)  
     if (!res.ok) {
       console.log(`[javbus] HTTP ${res.status} ${url}`)
       return ''
@@ -39,7 +42,7 @@ async function getText(url: string, settings: Settings, cookie?: string): Promis
     // 包装成更可读的格式：URL + 错误码 + 错误消息
     const err = e as NodeJS.ErrnoException
     const detail = `${err?.code || err?.name || 'UNKNOWN'} ${err?.message || e}`
-    console.log(`[javbus] fetch failed ${url} :: ${detail}`)
+    console.log(`[javbus] fetch failed ${url} :: ${detail} time=${Date.now() - t0}ms`)
     throw new Error(`JavBus fetch failed: ${url} → ${detail}`)
   } finally {
     clearTimeout(timer)
@@ -203,6 +206,7 @@ export async function fetchJavBusDetail(
   }
   const detail = parseJavBusDetailHtml(html, codeNorm)
   const b = base()
+  console.log(`[javbus] ${codeNorm} parsed cover=${JSON.stringify(detail.cover)} samples=${detail.samples.length}`)
   // v2.2.14-fix：DMM 图床 (pics.dmm.co.jp) 防盗链 — 必须用 **JavBus 详情页 URL** 当 Referer，
   // 站点根路径 https://www.seedmm.bond/ 会被 DMM 拒掉 → 所有 sample 返回 null → samples=[]
   // 封面是站点自己的相对路径，用根 Referer 没问题；但 samples 是 DMM 绝对 URL，必须 detailUrl

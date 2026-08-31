@@ -1,4 +1,4 @@
-import type { Video } from '../../../shared/types'
+﻿import type { Video } from '../../../shared/types'
 import { hasDocTags, primaryTags } from '../../../shared/types'
 import { formatDuration } from '../lib/util'
 

@@ -1,6 +1,7 @@
-import type { SortKey, ViewMode } from '../../../shared/types'
+﻿import type { SortKey, ViewMode } from '../../../shared/types'
 import Icon from './Icon'
 import type { SmartFilter } from './Sidebar'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   libraryName?: string
@@ -22,24 +23,6 @@ interface Props {
   onShowReconcile: () => void
 }
 
-const SORT_LABELS: Record<SortKey, string> = {
-  added: '最近添加',
-  title: '名称',
-  year: '年份',
-  score: '评分',
-  lastPlayed: '最近播放',
-  random: '随机'
-}
-
-const SMARTS: { key: SmartFilter; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
-  { key: 'all', label: '全部', icon: 'grid' },
-  { key: 'favorite', label: '收藏', icon: 'heart' },
-  { key: 'recent', label: '最近播放', icon: 'clock' },
-  { key: 'unrated', label: '未评分', icon: 'alert' },
-  { key: 'nocover', label: '缺封面', icon: 'image' },
-  { key: 'unlisted', label: '未收录', icon: 'alert' }
-]
-
 export default function BrowseBar(props: Props) {
   const {
     libraryName, categoryLabel, smart, onSmart, resultCount,
@@ -47,10 +30,28 @@ export default function BrowseBar(props: Props) {
     viewMode, onSetView, onClearAll, hasActiveFilters, mismatch, onShowReconcile
   } = props
 
+  const sortLabels: Record<SortKey, string> = {
+    added: t('settings.sort.added'),
+    title: t('settings.sort.title'),
+    year: t('settings.sort.year'),
+    score: t('settings.sort.score'),
+    lastPlayed: t('settings.sort.lastPlayed'),
+    random: t('settings.sort.random')
+  }
+
+  const smarts: { key: SmartFilter; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+    { key: 'all', label: t('browse.smartAll'), icon: 'grid' },
+    { key: 'favorite', label: t('sidebar.favorites'), icon: 'heart' },
+    { key: 'recent', label: t('sidebar.recentPlayed'), icon: 'clock' },
+    { key: 'unrated', label: t('sidebar.unrated'), icon: 'alert' },
+    { key: 'nocover', label: t('sidebar.noPoster'), icon: 'image' },
+    { key: 'unlisted', label: t('sidebar.untracked'), icon: 'alert' }
+  ]
+
   const crumbs: string[] = []
   if (libraryName) crumbs.push(libraryName)
   if (categoryLabel) crumbs.push(categoryLabel)
-  const smartLabel = SMARTS.find((s) => s.key === smart)?.label
+  const smartLabel = smarts.find((s) => s.key === smart)?.label
   if (smart !== 'all' && smartLabel && !categoryLabel) crumbs.push(smartLabel)
 
   return (
@@ -58,7 +59,7 @@ export default function BrowseBar(props: Props) {
       {/* 面包屑 */}
       <div className="flex items-center gap-1.5 text-sm min-w-0">
         {crumbs.length === 0 ? (
-          <span className="text-white/70 font-medium">全部影片</span>
+          <span className="text-white/70 font-medium">{t('browse.allVideos')}</span>
         ) : (
           crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-1.5 min-w-0">
@@ -69,15 +70,15 @@ export default function BrowseBar(props: Props) {
             </span>
           ))
         )}
-        <span className="text-white/35 text-xs tabular-nums ml-1">· {resultCount} 部</span>
+        <span className="text-white/35 text-xs tabular-nums ml-1">· {resultCount} {t('browse.unit')}</span>
         {mismatch ? (
           <button
             className="ml-2 h-6 px-2 rounded-md flex items-center gap-1 bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30 text-[11px] font-medium hover:bg-amber-500/25 transition-colors"
             onClick={onShowReconcile}
-            title="简介与文件夹不一致，点击查看对账"
+            title={t('browse.descriptionMismatch')}
           >
             <Icon name="alert" size={11} />
-            {mismatch.missing + mismatch.unlisted} 处差异
+            {mismatch.missing + mismatch.unlisted} {t('browse.differenceCount')}
           </button>
         ) : null}
       </div>
@@ -86,7 +87,7 @@ export default function BrowseBar(props: Props) {
 
       {/* 快捷过滤 chips */}
       <div className="flex items-center gap-1 flex-wrap">
-        {SMARTS.map((s) => {
+        {smarts.map((s) => {
           const active = smart === s.key
           return (
             <button
@@ -115,11 +116,11 @@ export default function BrowseBar(props: Props) {
         className="h-8 bg-ink-700 text-white text-sm rounded-lg px-2 outline-none ring-1 ring-transparent focus:ring-brand/50 cursor-pointer"
         value={sort}
         onChange={(e) => onSort(e.target.value as SortKey)}
-        title="排序方式"
+        title={t('browse.sortMethod')}
       >
-        {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+        {(Object.keys(sortLabels) as SortKey[]).map((k) => (
           <option key={k} value={k}>
-            {SORT_LABELS[k]}
+            {sortLabels[k]}
           </option>
         ))}
       </select>
@@ -128,7 +129,7 @@ export default function BrowseBar(props: Props) {
           desc ? 'bg-brand/20 text-brand' : 'bg-ink-700 hover:bg-ink-600 text-white/70'
         }`}
         onClick={onToggleDesc}
-        title={desc ? '当前降序，点击切升序' : '当前升序，点击切降序'}
+        title={desc ? t('browse.descToggle') : t('browse.ascToggle')}
       >
         <Icon name="sort" size={14} />
       </button>
@@ -139,18 +140,18 @@ export default function BrowseBar(props: Props) {
           groupMode === 'flat' ? 'bg-brand/15 text-brand ring-1 ring-brand/40' : 'bg-ink-700 hover:bg-ink-600 text-white/70'
         }`}
         onClick={onToggleGroup}
-        title={groupMode === 'flat' ? '全库混合模式' : '按分类分组'}
+        title={groupMode === 'flat' ? t('browse.mixedMode') : t('browse.groupMode')}
       >
         <Icon name={groupMode === 'flat' ? 'list' : 'layers'} size={13} />
-        {groupMode === 'flat' ? '全库' : '分组'}
+        {groupMode === 'flat' ? t('browse.all') : t('browse.group')}
       </button>
       {/* 视图模式：竖屏预览墙 / 横屏预览墙 / 纯文件名列表 */}
       <div className="inline-flex p-0.5 bg-ink-900/50 border border-white/10 rounded-lg">
         {(
           [
-            { value: 'grid-portrait' as ViewMode, icon: 'grid' as Parameters<typeof Icon>[0]['name'], label: '竖屏' },
-            { value: 'grid-landscape' as ViewMode, icon: 'film' as Parameters<typeof Icon>[0]['name'], label: '横屏' },
-            { value: 'list-filename' as ViewMode, icon: 'list' as Parameters<typeof Icon>[0]['name'], label: '文件名' }
+            { value: 'grid-portrait' as ViewMode, icon: 'grid' as Parameters<typeof Icon>[0]['name'], label: t('browse.vertical') },
+            { value: 'grid-landscape' as ViewMode, icon: 'film' as Parameters<typeof Icon>[0]['name'], label: t('browse.horizontal') },
+            { value: 'list-filename' as ViewMode, icon: 'list' as Parameters<typeof Icon>[0]['name'], label: t('browse.fileName') }
           ]
         ).map((o) => (
           <button
@@ -171,10 +172,10 @@ export default function BrowseBar(props: Props) {
         <button
           className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium bg-white/8 hover:bg-white/15 text-white/80 transition-colors"
           onClick={onClearAll}
-          title="清除所有筛选"
+          title={t('browse.clearFilterAll')}
         >
           <Icon name="x" size={12} />
-          清除筛选
+          {t('browse.clearFilter')}
         </button>
       ) : null}
     </div>

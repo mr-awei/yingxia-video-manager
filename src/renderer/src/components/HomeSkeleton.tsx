@@ -1,8 +1,10 @@
-/**
+﻿/**
  * 首页骨架屏：Hero 占位 + 五行 Row 骨架。
  * 与 HomeView 真实布局同尺寸（Hero 300px、Row 卡片 w-56/w-36 + aspect），
  * 数据加载完成后无缝替换为真实内容，避免「黑屏几秒 → 大空隙」的视觉断层。
  */
+import { t } from '../../../shared/i18n'
+
 export default function HomeSkeleton({
   aspect = 'landscape',
   label
@@ -10,7 +12,7 @@ export default function HomeSkeleton({
   aspect?: 'portrait' | 'landscape'
   label?: string
 }) {
-  const ROWS = ['随机推荐', '最近添加', '评分最高', '最近播放', '我的收藏']
+  const rowLabels = [t('home.randomRecommend'), t('home.recentAdded'), t('home.topRated'), t('home.recentPlayed'), t('home.myFavorites')]
   const cardW = aspect === 'landscape' ? 'w-56' : 'w-36'
   const cardH = aspect === 'landscape' ? 'aspect-video' : 'aspect-[2/3]'
   return (
@@ -23,8 +25,8 @@ export default function HomeSkeleton({
       </div>
 
       {/* 五行 Row 骨架 */}
-      {ROWS.map((t) => (
-        <section key={t} className="mb-6" aria-hidden="true">
+      {rowLabels.map((lbl) => (
+        <section key={lbl} className="mb-6" aria-hidden="true">
           <div className="flex items-center justify-between mb-2.5 px-0.5">
             <div className="h-4 w-24 rounded bg-white/[0.07] animate-pulse" />
             <div className="h-3 w-14 rounded bg-white/[0.05] animate-pulse" />

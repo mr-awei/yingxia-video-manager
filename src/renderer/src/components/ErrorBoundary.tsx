@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from 'react'
+﻿import { Component, type ReactNode } from 'react'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   children: ReactNode
@@ -25,7 +26,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="h-full w-full flex items-center justify-center p-8 bg-ink-900 text-white overflow-auto">
           <div className="max-w-3xl w-full">
-            <div className="text-red-400 text-xl font-semibold mb-3">⚠ 渲染层崩溃</div>
+            <div className="text-red-400 text-xl font-semibold mb-3">{t('err.rendererCrash')}</div>
             <div className="text-white/90 text-sm font-mono mb-3 break-all">
               {e.message || String(e)}
             </div>
@@ -35,7 +36,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               </pre>
             ) : null}
             <div className="text-white/40 text-xs mt-3">
-              详细信息已写入 %APPDATA%\local-video-manager\renderer-console.log，可发给 AI 排查。
+              {t('err.rendererCrashDetail')}
             </div>
           </div>
         </div>

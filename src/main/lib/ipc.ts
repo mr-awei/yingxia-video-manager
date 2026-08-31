@@ -1,11 +1,12 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+﻿import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
 import { IPC } from '../../shared/ipc'
 import type { ReconcileResult } from '../../shared/types'
 import * as repo from './repo'
 import { scanLibrary, walk } from './scanner'
 import path from 'node:path'
-import { readFileSync, promises as fs } from 'node:fs'
+import { readFileSync, promises as fs, existsSync } from 'node:fs'
+import * as XLSX from 'xlsx'
 import { spawn } from 'node:child_process'
 import { reconcileLibrary } from './reconcile'
 import { openVideo } from './player'
@@ -639,8 +640,9 @@ export function registerIpc(): void {
     const v = await repo.getVideo(id)
     if (!v) throw new Error('视频不存在')
     const settings = await repo.getSettings()
-    // 搜索源：title → folderName → fileName
-    const code = (v.title || v.folderName || v.fileName || '').trim()
+    // 搜索源：title → folderName → fileName；剥掉分集后缀，只取 base code 去搜（SONE-560_1 → SONE-560）
+    const rawCode = (v.title || v.folderName || v.fileName || '').trim()
+    const code = extractBaseCode(rawCode) || rawCode
     if (!code) return null
     // v2.2.10：单点补齐也推 fetchEvent（右下角浮层实时显示"javdb 失败 → 降级 javbus"）
     const mr = await fetchMovieDetail(code, settings, (e) => {
@@ -1094,6 +1096,78 @@ export function registerIpc(): void {
     return { count: codes.length, codes }
   })
 
+  // ---------- 导出番号清单（txt 或 xlsx 模板）----------
+  ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string, format: 'txt' | 'xlsx') => {
+    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
+    if (!lib) return { ok: false, error: 'library-not-found' }
+    // 复用上面的 walk + 提取番号逻辑
+    const files: string[] = []
+    for await (const f of walk(lib.folderPath)) files.push(f)
+    const seen = new Set<string>()
+    const codes: string[] = []
+    for (const f of files) {
+      const base = path.basename(f)
+      const ext = path.extname(f)
+      const name = base.slice(0, base.length - ext.length)
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      codes.push(name)
+    }
+    codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: format === 'xlsx' ? '导出番号清单 (Excel)' : '导出番号清单 (txt)',
+      defaultPath: `番号清单_${lib.name}.${format}`,
+      filters: format === 'xlsx'
+        ? [{ name: 'Excel', extensions: ['xlsx'] }]
+        : [{ name: 'Text', extensions: ['txt'] }]
+    })
+    if (canceled || !filePath) return { ok: false, error: 'canceled' }
+    try {
+      if (format === 'xlsx') {
+        const wb = XLSX.utils.book_new()
+        const rows: string[][] = [['编号', '品番', '简介', '评分', '标签', '备注', '封面路径']]
+        codes.forEach((c, i) => rows.push([String(i + 1), c, '', '', '', '', '']))
+        const ws = XLSX.utils.aoa_to_sheet(rows)
+        XLSX.utils.book_append_sheet(wb, ws, '片单')
+        XLSX.writeFile(wb, filePath)
+      } else {
+        fs.writeFile(filePath, codes.join('\n'), 'utf-8')
+      }
+      return { ok: true, path: filePath }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // ---------- 获取内置规范文件路径（按语言选） ----------
+  ipcMain.handle(IPC.specGet, async () => {
+    let lang = 'zh-CN'
+    try {
+      const settings = await repo.getSettings()
+      lang = settings.language || 'zh-CN'
+    } catch {
+      // repo 尚未初始化时兜底中文
+    }
+
+    const zhFile = '通用评分与简介规范.md'
+    const enFile = 'AV_Scoring_and_Synopsis_Guide_EN.md'
+
+    const candidates = lang === 'en-US'
+      ? [enFile, zhFile]
+      : [zhFile, enFile]
+
+    for (const name of candidates) {
+      const devPath = path.join(process.cwd(), 'src', 'main', 'assets', name)
+      const resPath = path.join(process.resourcesPath ?? '', name)
+      if (existsSync(devPath)) return { path: devPath }
+      if (existsSync(resPath)) return { path: resPath }
+    }
+
+    return { path: path.join(process.cwd(), 'src', 'main', 'assets', zhFile) }
+  })
+
   // ---------- 分享：扫描 .torrent → 磁链 → 复制 ----------
   ipcMain.handle(IPC.videoShareTorrents, async (_e, id: string) => {
     const v = await repo.getVideo(id)
@@ -1335,14 +1409,25 @@ export function registerIpc(): void {
   })
 
   // ---------- 应用信息 ----------
-  ipcMain.handle(IPC.appInfo, () => {
-    // 读取 CHANGELOG.md 顶部（最近一版），优先 packaged 资源，回退 dev 项目根
+  ipcMain.handle(IPC.appInfo, async () => {
+    // 读取 CHANGELOG.md 顶部（最近一版），按当前语言优先本地化版本
     let changelog = ''
-    const candidates = [
-      path.join(process.resourcesPath, 'CHANGELOG.md'),
-      path.join(app.getAppPath(), 'CHANGELOG.md'),
-      path.join(app.getAppPath(), '..', 'CHANGELOG.md')
-    ]
+    const settings = await repo.getSettings().catch(() => null)
+    const lang = settings?.language || 'zh-CN'
+    const candidates = lang === 'en-US'
+      ? [
+          path.join(process.resourcesPath, 'CHANGELOG.en.md'),
+          path.join(app.getAppPath(), 'CHANGELOG.en.md'),
+          path.join(app.getAppPath(), '..', 'CHANGELOG.en.md'),
+          path.join(process.resourcesPath, 'CHANGELOG.md'), // fallback
+          path.join(app.getAppPath(), 'CHANGELOG.md'),
+          path.join(app.getAppPath(), '..', 'CHANGELOG.md')
+        ]
+      : [
+          path.join(process.resourcesPath, 'CHANGELOG.md'),
+          path.join(app.getAppPath(), 'CHANGELOG.md'),
+          path.join(app.getAppPath(), '..', 'CHANGELOG.md')
+        ]
     for (const c of candidates) {
       try {
         const raw = readFileSync(c, 'utf-8')

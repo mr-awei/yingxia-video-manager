@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+﻿import { useEffect } from 'react'
 import Icon from './Icon'
+import { t } from '../../../shared/i18n'
 
 /**
  * 删除文件二次确认弹窗（Impeccable 设计规范）。
@@ -86,11 +87,11 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
   // 范围说明（按预检结果生成）
   const reasons: string[] = []
   if (isDir) {
-    reasons.push(`所在目录只含「${preview.fileName}」和 ${preview.torrentCount} 个 .torrent 种子`)
+    reasons.push(t('delete.dirReason', { fileName: preview.fileName, torrentCount: preview.torrentCount }))
   } else {
-    if (preview.otherVideoCount > 0) reasons.push(`同目录还有 ${preview.otherVideoCount} 个其他视频`)
-    if (preview.otherFileCount > 0) reasons.push(`同目录还有 ${preview.otherFileCount} 个其他文件`)
-    if (preview.torrentCount === 0) reasons.push('同目录无 .torrent 种子')
+    if (preview.otherVideoCount > 0) reasons.push(t('delete.sameDirOtherVideos', { count: preview.otherVideoCount }))
+    if (preview.otherFileCount > 0) reasons.push(t('delete.sameDirOtherFiles', { count: preview.otherFileCount }))
+    if (preview.torrentCount === 0) reasons.push(t('delete.noTorrent'))
   }
 
   return (
@@ -113,10 +114,10 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-white text-lg font-semibold leading-tight">
-                {isDir ? '删除整个目录' : '删除视频文件'}
+                {isDir ? t('delete.deleteDir') : t('delete.deleteVideo')}
               </h2>
               <p className="text-white/50 text-xs mt-1">
-                {isDir ? '操作会同时移除视频及其所在的种子文件夹' : '仅移除该视频文件，所在目录保留'}
+                {isDir ? t('delete.deleteDirDesc') : t('delete.deleteVideoDesc')}
               </p>
             </div>
             <button
@@ -124,7 +125,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
               onClick={onCancel}
               disabled={busy}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              aria-label="关闭"
+              aria-label={t('app.close')}
             >
               <Icon name="x" size={15} />
             </button>
@@ -132,7 +133,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
 
           {/* 文件信息卡（impeccable：清晰层次 + 单焦点） */}
           <div className="rounded-xl bg-white/[0.04] ring-1 ring-white/8 p-3.5 mb-4">
-            <div className="text-white/45 text-[11px] tracking-wider uppercase mb-1.5">待删除</div>
+            <div className="text-white/45 text-[11px] tracking-wider uppercase mb-1.5">{t('delete.toDelete')}</div>
             <div className="text-white text-sm font-medium leading-snug mb-2 break-all line-clamp-2" title={preview.title}>
               {preview.title}
             </div>
@@ -148,7 +149,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
           <div className={`rounded-xl ring-1 ${a.scopeBg} p-3 mb-4`}>
             <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase mb-1.5">
               <Icon name="info" size={12} />
-              删除范围
+              {t('delete.scope')}
             </div>
             <div className="text-[13px] leading-relaxed space-y-0.5">
               {reasons.map((r, i) => (
@@ -158,9 +159,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
                 </div>
               ))}
               <div className="font-medium pt-1">
-                {isDir
-                  ? '→ 整个目录（含视频 + 种子）将挪到回收站'
-                  : '→ 仅视频文件本身挪到回收站，所在目录保留'}
+                {isDir ? t('delete.dirScope') : t('delete.videoScope')}
               </div>
             </div>
           </div>
@@ -169,8 +168,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
           <div className="flex items-start gap-2 text-white/45 text-xs mb-5">
             <Icon name="info" size={12} className="mt-0.5 shrink-0 text-white/40" />
             <div className="leading-relaxed">
-              文件不会被彻底删除——会挪到系统<strong className="text-white/70 font-medium">回收站</strong>，可随时恢复。
-              删除后软件会自动重新扫描全库。
+              {t('delete.recycleHint')}
             </div>
           </div>
 
@@ -182,7 +180,7 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
               disabled={busy}
               className="h-9 px-4 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/8 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              取消
+              {t('delete.cancel')}
             </button>
             <button
               type="button"
@@ -193,12 +191,12 @@ export default function ConfirmDeleteModal({ open, preview, busy, onConfirm, onC
               {busy ? (
                 <>
                   <Icon name="refresh" size={13} className="animate-spin" />
-                  处理中…
+                  {t('delete.processing')}
                 </>
               ) : (
                 <>
                   <Icon name="trash" size={13} />
-                  {isDir ? '挪到回收站' : '挪到回收站'}
+                  {t('delete.toRecycle')}
                 </>
               )}
             </button>

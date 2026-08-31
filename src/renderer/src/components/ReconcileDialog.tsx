@@ -1,6 +1,7 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import type { ReconcileResult, RenamePreviewItem } from '../../../shared/types'
 import { extractCode } from '../../../shared/code'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   open: boolean
@@ -92,15 +93,15 @@ export default function ReconcileDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 pb-3 border-b border-white/5">
-          <div className="text-white font-semibold text-lg">对账提醒</div>
+          <div className="text-white font-semibold text-lg">{t('reconcile.title')}</div>
           <div className="text-white/50 text-xs mt-1">
-            Excel 片单与视频文件夹不一致，请及时处理。
+            {t('reconcile.description')}
             {mdPath ? (
               <button
                 className="ml-1 text-brand hover:underline"
                 onClick={() => onOpenFile(mdPath)}
               >
-                打开简介文件
+                {t('reconcile.openIntroFile')}
               </button>
             ) : null}
           </div>
@@ -108,13 +109,13 @@ export default function ReconcileDialog({
 
         <div className="flex-1 overflow-auto p-5 thin-scroll">
           {!hasAny ? (
-            <div className="text-white/60 text-sm py-8 text-center">本次对账完全一致 🎉</div>
+            <div className="text-white/60 text-sm py-8 text-center">{t('reconcile.allMatch')}</div>
           ) : null}
 
           {missing.length > 0 ? (
             <div className="mb-6">
               <div className="text-red-400 text-sm font-medium mb-2">
-                ⚠ 简介存在，但视频文件缺失（{missing.length}）—— 请去下载视频，或从简介中删除
+                {t('reconcile.videoMissing', { count: missing.length })}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {missing.map((m) => (
@@ -134,9 +135,9 @@ export default function ReconcileDialog({
           {unlisted.length > 0 ? (
             <div>
               <div className="text-amber-400 text-sm font-medium mb-2">
-                ⚠ 文件夹中有文件，但未收录进简介（{unlisted.length}）—— 请更新简介文件
+                {t('reconcile.fileUntracked', { count: unlisted.length })}
                 {onRevealInFolder ? (
-                  <span className="text-white/40 text-xs ml-2">点击文件名 → 在文件管理器中打开并选中（方便改名）</span>
+                  <span className="text-white/40 text-xs ml-2">{t('reconcile.fileClickHint')}</span>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-1.5 mb-3">
@@ -147,7 +148,7 @@ export default function ReconcileDialog({
                   >
                     <button
                       className="px-2 py-1 hover:bg-amber-500/40"
-                      title={`${u.path}\n点击：在文件管理器中显示并选中`}
+                      title={`${u.path}\n${t('reconcile.fileClickHint')}`}
                       onClick={() => onRevealInFolder?.(u.path)}
                     >
                       {u.fileName}
@@ -155,7 +156,7 @@ export default function ReconcileDialog({
                     {onIgnoreUnlisted ? (
                       <button
                         className="px-1.5 py-1 hover:bg-amber-500/40 text-white/50 hover:text-white disabled:opacity-40"
-                        title="忽略该项目，以后不再弹出提醒，但仍可在左侧「未收录」中找到"
+                        title={t('reconcile.ignoreHint')}
                         disabled={pendingIgnores.has(u.path)}
                         onClick={async () => {
                           setPendingIgnores((prev) => new Set(prev).add(u.path))
@@ -170,7 +171,7 @@ export default function ReconcileDialog({
                           }
                         }}
                       >
-                        忽略
+                        {t('reconcile.ignore')}
                       </button>
                     ) : null}
                   </div>
@@ -184,42 +185,42 @@ export default function ReconcileDialog({
                   onClick={handlePreview}
                   disabled={applying}
                 >
-                  🧹 一键清理文件名广告
+                  {t('reconcile.cleanAds')}
                 </button>
 
                 {/* 一键复制所有未收录番号（中文逗号间隔） */}
                 <button
                   className="px-3 py-1.5 rounded-lg bg-white/8 hover:bg-white/15 text-white/90 text-xs font-medium ring-1 ring-white/10 transition-colors"
                   onClick={handleCopyUnlistedCodes}
-                  title="复制所有未收录视频的番号，中文逗号间隔（方便粘贴到 Excel 片单 / 搜索）"
+                  title={t('reconcile.copyCodesHint')}
                 >
-                  {copied ? '✓ 已复制' : '📋 复制所有未收录番号'}
+                  {copied ? t('reconcile.copySuccess') : t('reconcile.copyCodes')}
                 </button>
               </div>
               {copied ? (
                 <div className="text-emerald-400 text-[11px] mt-1.5">
-                  ✓ 已复制 {unlisted.length} 个文件的番号到剪贴板（中文逗号间隔）
+                  ✓ {t('reconcile.copiedCount', { count: unlisted.length })}
                 </div>
               ) : null}
 
               {applyResult ? (
                 <div className="mt-2 text-xs">
-                  <span className="text-brand">改名成功 {applyResult.ok} 个</span>
+                  <span className="text-brand">{t('reconcile.renameSuccess', { count: applyResult.ok })}</span>
                   {applyResult.failed > 0 ? (
-                    <span className="text-amber-400 ml-2">失败 {applyResult.failed} 个</span>
+                    <span className="text-amber-400 ml-2">{t('reconcile.renameFailed', { count: applyResult.failed })}</span>
                   ) : null}
-                  <span className="text-white/40 ml-2">重新扫描后生效</span>
+                  <span className="text-white/40 ml-2">{t('reconcile.rescanAfterEffect')}</span>
                 </div>
               ) : null}
 
               {previews !== null ? (
                 <div className="mt-3">
                   {previews.length === 0 ? (
-                    <div className="text-white/50 text-xs">没有发现可清理的广告文件名 🎉</div>
+                    <div className="text-white/50 text-xs">{t('reconcile.noAdsFound')}</div>
                   ) : (
                     <>
                       <div className="text-white/80 text-xs mb-2">
-                        以下 {previews.length} 个文件将被重命名：
+                        {t('reconcile.aboutToRename', { count: previews.length })}
                       </div>
                       <div className="max-h-40 overflow-auto thin-scroll rounded bg-black/20 p-2 space-y-1">
                         {previews.map((p) => (
@@ -236,13 +237,13 @@ export default function ReconcileDialog({
                           onClick={handleApply}
                           disabled={applying}
                         >
-                          {applying ? '改名中…' : `确认改名 ${previews.length} 个`}
+                          {applying ? t('reconcile.renaming') : t('reconcile.confirmRename', { count: previews.length })}
                         </button>
                         <button
                           className="px-3 py-1 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-xs"
                           onClick={() => setPreviews(null)}
                         >
-                          取消
+                          {t('app.cancel')}
                         </button>
                       </div>
                     </>
@@ -258,7 +259,7 @@ export default function ReconcileDialog({
                     onClick={() => setShowIgnored((v) => !v)}
                   >
                     <span>{showIgnored ? '▾' : '▸'}</span>
-                    已忽略 {ignoredUnlistedPaths.length} 项（点击展开管理）
+                    {t('reconcile.ignoredCount', { count: ignoredUnlistedPaths.length })}
                   </button>
                   {showIgnored ? (
                     <div className="mt-2 max-h-40 overflow-auto thin-scroll rounded bg-black/20 p-2 space-y-1">
@@ -284,7 +285,7 @@ export default function ReconcileDialog({
                                 }
                               }}
                             >
-                              取消忽略
+                              {t('reconcile.unignore')}
                             </button>
                           ) : null}
                         </div>
@@ -302,7 +303,7 @@ export default function ReconcileDialog({
             className="px-4 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
             onClick={onClose}
           >
-            我知道了
+            {t('reconcile.iKnow')}
           </button>
         </div>
       </div>

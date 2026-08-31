@@ -60,7 +60,9 @@ const api: AppApi = {
     ipcRenderer.on(IPC.scanProgress, handler)
     return () => ipcRenderer.removeListener(IPC.scanProgress, handler)
   },
-  libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId)
+  libraryGetCodes: (libraryId) => ipcRenderer.invoke(IPC.libraryGetCodes, libraryId),
+  libraryExportCodes: (id, fmt) => ipcRenderer.invoke(IPC.libraryExportCodes, id, fmt),
+  specGet: () => ipcRenderer.invoke(IPC.specGet)
 }
 
 contextBridge.exposeInMainWorld('api', api)

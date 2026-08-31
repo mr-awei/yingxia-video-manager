@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import type { Library } from '../../../shared/types'
 import { api } from '../lib/api'
 import Icon from './Icon'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   open: boolean
@@ -11,9 +12,11 @@ interface Props {
   /** 保存（新建/更新）；返回是否成功 */
   onSave: (patch: Partial<Library>) => Promise<boolean>
   onRemove: () => void
+  /** 引导用户生成片单 Excel（introExcelPath 为空时显示） */
+  onGenerateSheet?: () => void
 }
 
-export default function LibraryModal({ open, library, onClose, onSave, onRemove }: Props) {
+export default function LibraryModal({ open, library, onClose, onSave, onRemove, onGenerateSheet }: Props) {
   const [name, setName] = useState('')
   const [folderPath, setFolderPath] = useState('')
   const [introExcelPath, setIntroExcelPath] = useState('')
@@ -69,12 +72,12 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
       >
         <div className="flex items-center justify-between mb-4">
           <div className="text-white font-semibold text-lg">
-            {adding ? '添加媒体库' : '媒体库设置'}
+            {adding ? t('library.addTitle') : t('library.editTitle')}
           </div>
           <button
             className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/60"
             onClick={onClose}
-            title="关闭"
+            title={t('app.close')}
           >
             <Icon name="x" size={16} />
           </button>
@@ -83,16 +86,16 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
         {/* 引导说明：告诉用户这两步分别是什么 */}
         {adding ? (
           <div className="mb-5 rounded-xl bg-ink-900/60 border border-white/5 p-3.5 space-y-2">
-            <div className="text-white/85 text-[13px] font-medium">只需两步，就能把影片变成海报墙：</div>
+            <div className="text-white/85 text-[13px] font-medium">{t('library.stepsIntro')}</div>
             <div className="flex items-start gap-2.5">
               <span className="w-5 h-5 rounded-md bg-brand/20 text-brand text-[11px] font-bold flex items-center justify-center shrink-0 mt-px">1</span>
               <div>
                 <div className="text-white/90 text-[13px]">
-                  选择视频文件夹
-                  <span className="text-white/40 ml-1.5">（必选）</span>
+                  {t('library.videoFolder')}
+                  <span className="text-white/40 ml-1.5">{t('library.requiredMark')}</span>
                 </div>
                 <div className="text-white/45 text-[12px] leading-relaxed mt-0.5">
-                  你的影片存在哪个文件夹，影匣就扫描哪里，自动识别文件夹和子文件夹里的所有视频文件。
+                  {t('library.step1Desc')}
                 </div>
               </div>
             </div>
@@ -100,11 +103,11 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
               <span className="w-5 h-5 rounded-md bg-brand/20 text-brand text-[11px] font-bold flex items-center justify-center shrink-0 mt-px">2</span>
               <div>
                 <div className="text-white/90 text-[13px]">
-                  选择 Excel 片单文件
-                  <span className="text-white/40 ml-1.5">（可选）</span>
+                  {t('library.excelFile')}
+                  <span className="text-white/40 ml-1.5">{t('library.optionalMark')}</span>
                 </div>
                 <div className="text-white/45 text-[12px] leading-relaxed mt-0.5">
-                  一个含每部影片「品番 / 分类 / 简介 / 标签 / 评分」的 Excel 文件。选了它，海报墙就能按分类浏览、悬停看简介；不选也可以，只是没有分类和简介。
+                  {t('library.step2Desc')}
                 </div>
               </div>
             </div>
@@ -112,27 +115,27 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
         ) : null}
 
         <label className="block mb-4">
-          <div className="text-white/80 text-sm mb-1">名称</div>
+          <div className="text-white/80 text-sm mb-1">{t('library.name')}</div>
           <input
             className={inputCls}
-            placeholder={adding ? '留空则自动使用文件夹名' : ''}
+            placeholder={adding ? t('library.namePlaceholder') : ''}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           {adding ? (
-            <div className="text-white/40 text-xs mt-1">给这个媒体库起个名字，方便区分多个库。</div>
+            <div className="text-white/40 text-xs mt-1">{t('library.nameHint')}</div>
           ) : null}
         </label>
 
         <label className="block mb-4">
           <div className="text-white/80 text-sm mb-1">
-            视频文件夹
-            {adding ? <span className="text-white/40 ml-1.5 text-xs">（必选）</span> : null}
+            {t('library.videoFolder')}
+            {adding ? <span className="text-white/40 ml-1.5 text-xs">{t('library.requiredMark')}</span> : null}
           </div>
           <div className="flex gap-2">
             <input
               className={inputCls}
-              placeholder="点击右侧「浏览…」选择影片所在文件夹"
+              placeholder={t('library.videoFolderHint')}
               value={folderPath}
               onChange={(e) => setFolderPath(e.target.value)}
             />
@@ -140,23 +143,23 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
               className="shrink-0 px-3 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
               onClick={pickFolder}
             >
-              浏览…
+              {t('library.browse')}
             </button>
           </div>
           <div className="text-white/40 text-xs mt-1">
-            影匣会扫描该文件夹及其子文件夹中的视频文件（mp4 / mkv / avi / wmv 等），生成海报墙。
+            {t('library.videoFolderDesc')}
           </div>
         </label>
 
         <label className="block mb-5">
           <div className="text-white/80 text-sm mb-1">
-            Excel 片单文件
-            <span className="text-white/40 ml-1.5 text-xs">（可选）</span>
+            {t('library.excelFile')}
+            <span className="text-white/40 ml-1.5 text-xs">{t('library.optionalMark')}</span>
           </div>
           <div className="flex gap-2">
             <input
               className={inputCls}
-              placeholder="选择「收藏整理_2026.xlsx」这类片单（品番/分类/评分/简介/标签）"
+              placeholder={t('library.excelPlaceholder2')}
               value={introExcelPath}
               onChange={(e) => setIntroExcelPath(e.target.value)}
             />
@@ -164,12 +167,22 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
               className="shrink-0 px-3 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
               onClick={pickExcel}
             >
-              浏览…
+              {t('library.browse')}
             </button>
           </div>
           <div className="text-white/40 text-xs mt-1">
-            海报墙按该 Excel 的分类/简介/标签/评分展示，对账差异会弹窗提醒。Excel 需含「品番」列（如 收藏整理_2026.xlsx 的「片单」工作表）。
+            {t('library.excelHint2')}
           </div>
+          {!introExcelPath && onGenerateSheet && (
+            <button
+              type="button"
+              onClick={onGenerateSheet}
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-brand hover:text-brand-hover transition"
+            >
+              <Icon name="sparkles" size={12} />
+              {t('library.generateSheetHint')}
+            </button>
+          )}
         </label>
 
         <div className="flex justify-between items-center">
@@ -178,11 +191,11 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
               className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 text-white text-sm"
               onClick={onRemove}
             >
-              删除媒体库
+              {t('library.deleteButton')}
             </button>
           ) : (
             <span className="text-white/35 text-[11px]">
-              {folderPath.trim() ? '' : '请先选择视频文件夹'}
+              {folderPath.trim() ? '' : t('library.needSelectFolder')}
             </span>
           )}
           <div className="flex gap-2">
@@ -190,14 +203,14 @@ export default function LibraryModal({ open, library, onClose, onSave, onRemove 
               className="px-4 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white text-sm"
               onClick={onClose}
             >
-              取消
+              {t('app.cancel')}
             </button>
             <button
               className="px-4 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={save}
               disabled={!folderPath.trim() || saving}
             >
-              {saving ? '保存中…' : adding ? '添加并扫描' : '保存'}
+              {saving ? t('library.saveInProgress') : adding ? t('library.addAndScan') : t('library.saveButton')}
             </button>
           </div>
         </div>

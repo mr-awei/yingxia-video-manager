@@ -1,8 +1,11 @@
 /**
- * 关于模块静态配置（一次性编辑，集中管理）
+ * About module static config (edit once, managed centrally)
  *
- * 链接类字段（website / github / gitee / feedback）留空则不渲染对应按钮。
- * 部署到自己的仓库后，把下面 TODO 占位换成真实地址即可。
+ * Link fields (website / github / gitee / feedback) — leave empty to skip rendering that button.
+ * After deploying to your own repo, replace the TODO placeholder with the real URL.
+ *
+ * getAbout(language) returns the localized ABOUT object; ABOUT_ZH / ABOUT_EN are exported directly;
+ * ABOUT is kept as a backward-compatible alias for ABOUT_ZH.
  */
 export interface AboutLink {
   key: 'website' | 'github' | 'gitee' | 'feedback'
@@ -23,7 +26,25 @@ export interface ThirdPartyItem {
   url: string
 }
 
-export const ABOUT = {
+export type About = {
+  name: string
+  tagline: string
+  description: string
+  author: string
+  year: number
+  license: string
+  licenseUrl: string
+  github: string
+  links: AboutLink[]
+  techStack: TechItem[]
+  thirdParty: ThirdPartyItem[]
+}
+
+export function getAbout(language: string): About {
+  return language === 'en-US' ? ABOUT_EN : ABOUT_ZH
+}
+
+export const ABOUT_ZH: About = {
   /** 应用名（与 package.json productName 一致） */
   name: '影匣',
   /** 一句话标语 */
@@ -65,7 +86,7 @@ export const ABOUT = {
       // TODO: 替换为 issue 页或邮箱（mailto:you@example.com）
       url: ''
     }
-  ] as AboutLink[],
+  ],
 
   /** 核心技术栈（自建部分） */
   techStack: [
@@ -74,12 +95,64 @@ export const ABOUT = {
     { name: 'TypeScript', detail: '开发语言', url: 'https://www.typescriptlang.org/' },
     { name: 'Vite', detail: '构建工具（electron-vite）', url: 'https://vitejs.dev/' },
     { name: 'Tailwind CSS', detail: '样式方案', url: 'https://tailwindcss.com/' }
-  ] as TechItem[],
+  ],
 
   /** 关键第三方依赖与数据来源（致谢） */
   thirdParty: [
     { name: 'undici', license: 'MIT', url: 'https://github.com/nodejs/undici' },
     { name: 'archiver', license: 'MIT', url: 'https://github.com/archiverjs/node-archiver' },
     { name: 'JavDB', license: '数据来源', url: 'https://javdb.com/' }
-  ] as ThirdPartyItem[]
-} as const
+  ]
+}
+
+export const ABOUT_EN: About = {
+  name: 'YingXia',
+  tagline: 'Local video poster wall · Excel-sheet-driven private library',
+  description:
+    'YingXia is a desktop tool for managing local video collections: point it at a video folder plus an Excel sheet, ' +
+    'and it generates a browseable poster wall organized by categories. The Excel sheet is the single source of truth ' +
+    '(categories / descriptions / tags / ratings). Optional JavDB metadata scraping with permanent local cache, ' +
+    'four themes, smooth virtual scrolling for large libraries, a privacy shield that blurs preview thumbnails, ' +
+    'plus actor / studio / series filtering and a statistics dashboard.',
+  author: 'YingXia',
+  year: 2026,
+  license: 'MIT',
+  licenseUrl: 'https://opensource.org/licenses/MIT',
+  github: 'https://github.com/mr-awei/yingxia-video-manager',
+  links: [
+    {
+      key: 'github',
+      label: 'GitHub',
+      icon: 'external',
+      url: 'https://github.com/mr-awei/yingxia-video-manager'
+    },
+    {
+      key: 'gitee',
+      label: 'Gitee',
+      icon: 'external',
+      url: 'https://gitee.com/mr-awei/yingxia-video-manager'
+    },
+    {
+      key: 'feedback',
+      label: 'Report Issue',
+      icon: 'info',
+      // TODO: replace with issue page or email (mailto:you@example.com)
+      url: ''
+    }
+  ],
+  techStack: [
+    { name: 'Electron', detail: 'Cross-platform desktop runtime', url: 'https://www.electronjs.org/' },
+    { name: 'React', detail: 'UI framework', url: 'https://react.dev/' },
+    { name: 'TypeScript', detail: 'Development language', url: 'https://www.typescriptlang.org/' },
+    { name: 'Vite', detail: 'Build tool (electron-vite)', url: 'https://vitejs.dev/' },
+    { name: 'Tailwind CSS', detail: 'Styling solution', url: 'https://tailwindcss.com/' }
+  ],
+  thirdParty: [
+    { name: 'undici', license: 'MIT', url: 'https://github.com/nodejs/undici' },
+    { name: 'archiver', license: 'MIT', url: 'https://github.com/archiverjs/node-archiver' },
+    { name: 'JavDB', license: 'Data source', url: 'https://javdb.com/' }
+  ]
+}
+
+// Backward-compatible alias
+export const ABOUT: About = ABOUT_ZH

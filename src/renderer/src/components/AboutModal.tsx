@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react'
+﻿import { useCallback, useMemo, useState } from 'react'
 import type { AppInfo, UpdateCheckResult } from '../../../shared/api-types'
-import { ABOUT } from '../../../shared/about'
+import { getAbout } from '../../../shared/about'
 import { api } from '../lib/api'
+import { t } from '../../../shared/i18n'
 import Icon from './Icon'
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   onClose: () => void
   /** 用默认浏览器打开外部链接 */
   onOpenExternal: (url: string) => void
+  /** 当前语言，用于本地化 About 文案 */
+  language?: string
 }
 
 function SectionTitle({ children }: { children: string }) {
@@ -30,10 +33,12 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function AboutModal({ open, info, onClose, onOpenExternal }: Props) {
+export default function AboutModal({ open, info, onClose, onOpenExternal, language }: Props) {
   const [copied, setCopied] = useState(false)
   const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
+
+  const about = useMemo(() => getAbout(language || 'zh-CN'), [language])
 
   // useCallback 稳定引用，避免每次 render 都重建 onClick 闭包（不影响功能，仅性能）
   // 主进程 fetch 已有 20s 超时（ipc.ts runUpdateCheck），checkUpdate 最迟 20s + fallback 第二个源最迟 40s 完成
@@ -43,7 +48,7 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
       const r = await api.updateCheck()
       setUpdateRes(r)
     } catch {
-      setUpdateRes({ source: 'github', currentVersion: info?.version || '', latestVersion: '', hasUpdate: false, releaseUrl: '', error: '检查更新失败' })
+      setUpdateRes({ source: 'github', currentVersion: info?.version || '', latestVersion: '', hasUpdate: false, releaseUrl: '', error: t('about.checkFailedShort') })
     } finally {
       setChecking(false)
     }
@@ -62,7 +67,7 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
     }
   }
 
-  const links = ABOUT.links.filter((l) => l.url)
+  const links = about.links.filter((l) => l.url)
 
   return (
     <div
@@ -80,17 +85,17 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-white font-bold text-xl">{ABOUT.name}</span>
+              <span className="text-white font-bold text-xl">{about.name}</span>
               <span className="px-1.5 py-0.5 rounded bg-brand/15 text-brand text-[11px] font-bold">
                 v{info?.version || '1.0.0'}
               </span>
             </div>
-            <div className="text-white/50 text-sm mt-0.5">{ABOUT.tagline}</div>
+            <div className="text-white/50 text-sm mt-0.5">{about.tagline}</div>
           </div>
           <button
             className="w-8 h-8 rounded-lg flex items-center justify-center bg-ink-700 hover:bg-ink-600 text-white/60 shrink-0"
             onClick={onClose}
-            title="关闭"
+            title={t('close')}
           >
             <Icon name="x" size={16} />
           </button>
@@ -113,23 +118,23 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
         ) : null}
 
         {/* 点亮 Star 引导 */}
-        {ABOUT.github ? (
+        {about.github ? (
           <div className="mt-4 rounded-xl bg-gradient-to-r from-brand/15 via-brand/10 to-transparent border border-brand/25 p-3.5 flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-brand/20 flex items-center justify-center shrink-0">
               <Icon name="star" size={18} className="text-brand" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-white text-sm font-medium">喜欢影匣吗？欢迎点亮 Star 支持</div>
+              <div className="text-white text-sm font-medium">{t('about.starTitle')}</div>
               <div className="text-white/45 text-[11px] mt-0.5 truncate">
-                开源不易，去 GitHub 点个 Star，让这个项目被更多人看到
+                {t('about.starDesc')}
               </div>
             </div>
             <button
               className="shrink-0 h-8 px-3 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              onClick={() => onOpenExternal(ABOUT.github)}
+              onClick={() => onOpenExternal(about.github)}
             >
               <Icon name="star" size={13} />
-              点亮 Star
+              {t('about.star')}
             </button>
           </div>
         ) : null}
@@ -140,15 +145,15 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
             <Icon name="refresh" size={18} className="text-brand" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-white text-sm font-medium">检查更新</div>
+            <div className="text-white text-sm font-medium">{t('about.checkUpdate')}</div>
             <div className="text-white/45 text-[11px] truncate">
               {updateRes
                 ? updateRes.error
-                  ? `检查失败：${updateRes.error}`
+                  ? t('about.checkFailed', { error: updateRes.error })
                   : updateRes.hasUpdate
-                    ? `发现新版本 v${updateRes.latestVersion}（当前 v${updateRes.currentVersion}）`
-                    : `已是最新（v${updateRes.currentVersion}）`
-                : `当前 v${info?.version || '1.0.0'} · 按所选源检查更新`}
+                    ? t('about.newVersionAvailable', { newVersion: updateRes.latestVersion, currentVersion: updateRes.currentVersion })
+                    : t('about.upToDate', { version: updateRes.currentVersion })
+                : t('about.currentVersion', { version: info?.version || '1.0.0' })}
             </div>
           </div>
           <button
@@ -157,7 +162,7 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
             disabled={checking}
           >
             <Icon name="refresh" size={13} className={checking ? 'animate-spin' : ''} />
-            {checking ? '检查中…' : '检查更新'}
+            {checking ? t('about.checking') : t('about.checkUpdate')}
           </button>
         </div>
         {updateRes?.hasUpdate && updateRes.releaseUrl ? (
@@ -166,32 +171,32 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
               className="text-brand hover:underline text-xs"
               onClick={() => onOpenExternal(updateRes.releaseUrl)}
             >
-              前往下载 / 查看发布页 →
+              {t('about.downloadLink')}
             </button>
           </div>
         ) : null}
 
         {/* 简介 */}
-        <p className="text-white/60 text-sm leading-relaxed mt-4">{ABOUT.description}</p>
+        <p className="text-white/60 text-sm leading-relaxed mt-4">{about.description}</p>
 
         {/* 版本与构建 */}
         <div className="mt-5">
-          <SectionTitle>版本与构建</SectionTitle>
+          <SectionTitle>{t('about.versionBuild')}</SectionTitle>
           <div className="grid grid-cols-2 gap-2">
-            <InfoRow label="应用版本" value={info?.version || '—'} />
+            <InfoRow label={t('about.appVersion')} value={info?.version || '—'} />
             <InfoRow label="Electron" value={info?.electron || '—'} />
             <InfoRow label="Node.js" value={info?.node || '—'} />
             <InfoRow label="Chromium" value={info?.chrome || '—'} />
             <div className="col-span-2 bg-ink-900/60 rounded-lg px-3 py-2">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-white/40 text-[11px]">数据目录</span>
+                <span className="text-white/40 text-[11px]">{t('about.dataDir')}</span>
                 <button
                   className="text-white/40 hover:text-brand text-[11px] flex items-center gap-1 transition-colors"
                   onClick={copyDataDir}
-                  title="复制路径"
+                  title={t('about.copyPath')}
                 >
                   <Icon name={copied ? 'check' : 'copy'} size={12} />
-                  {copied ? '已复制' : '复制'}
+                  {copied ? t('about.copied') : t('about.copy')}
                 </button>
               </div>
               <div className="text-white/85 text-sm font-medium break-all">
@@ -203,23 +208,23 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
 
         {/* 更新日志 */}
         <div className="mt-5">
-          <SectionTitle>更新日志</SectionTitle>
+          <SectionTitle>{t('about.changelog')}</SectionTitle>
           <div className="bg-ink-900/60 rounded-lg p-3 max-h-52 overflow-auto">
             {info?.changelog ? (
               <pre className="text-white/65 text-xs leading-relaxed whitespace-pre-wrap font-sans">
                 {info.changelog}
               </pre>
             ) : (
-              <div className="text-white/35 text-xs">暂无更新日志</div>
+              <div className="text-white/35 text-xs">{t('about.noChangelog')}</div>
             )}
           </div>
         </div>
 
         {/* 技术栈 */}
         <div className="mt-5">
-          <SectionTitle>技术栈</SectionTitle>
+          <SectionTitle>{t('about.techStack')}</SectionTitle>
           <div className="flex flex-wrap gap-2">
-            {ABOUT.techStack.map((t) => (
+            {about.techStack.map((t) => (
               <span
                 key={t.name}
                 className="px-2.5 py-1 rounded-lg bg-ink-700 text-white/75 text-xs"
@@ -233,9 +238,9 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
 
         {/* 第三方库 / 数据来源 */}
         <div className="mt-5">
-          <SectionTitle>第三方库与数据来源</SectionTitle>
+          <SectionTitle>{t('about.thirdParty')}</SectionTitle>
           <div className="space-y-1.5">
-            {ABOUT.thirdParty.map((t) => (
+            {about.thirdParty.map((t) => (
               <button
                 key={t.name}
                 className="w-full flex items-center justify-between bg-ink-900/60 hover:bg-ink-900 rounded-lg px-3 py-2 text-left transition-colors"
@@ -252,14 +257,14 @@ export default function AboutModal({ open, info, onClose, onOpenExternal }: Prop
         {/* 页脚：许可证与版权 */}
         <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between text-xs">
           <span className="text-white/40">
-            © {ABOUT.year} {ABOUT.author}
+            © {about.year} {about.author}
           </span>
           <button
             className="text-white/55 hover:text-brand flex items-center gap-1 transition-colors"
-            onClick={() => onOpenExternal(ABOUT.licenseUrl)}
+            onClick={() => onOpenExternal(about.licenseUrl)}
           >
             <Icon name="external" size={12} />
-            {ABOUT.license} 许可证
+            {about.license} {t('about.license')}
           </button>
         </div>
       </div>

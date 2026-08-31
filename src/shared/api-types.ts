@@ -236,4 +236,8 @@ export interface AppApi {
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   /** 仅扫描媒体库番号清单（不弹保存对话框、不写文件），供向导打开时自动加载 */
   libraryGetCodes(libraryId: string): Promise<{ count: number; codes: string[] }>
+  /** 导出番号清单为 txt 或 xlsx（模板：带表头留空供用户填简介/标签/评分等） */
+  libraryExportCodes(id: string, format: 'txt' | 'xlsx'): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** 返回内置规范文件路径（通用评分与简介规范.md） */
+  specGet(): Promise<{ path: string }>
 }

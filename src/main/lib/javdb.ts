@@ -127,12 +127,22 @@ export async function cacheRemoteImage(
   } catch {
     /* 需要下载 */
   }
+  // URL 校验：空串 / 相对路径 / 非 http(s) 协议直接跳过，避免 new URL / net.fetch 抛 Invalid URL。
+  if (!remoteUrl || !/^https?:\/\//i.test(remoteUrl)) {
+    console.log(`[cacheRemoteImage] ${safe} skip invalid URL ${JSON.stringify(remoteUrl)}`)
+    return null
+  }
   const headers: Record<string, string> = {
     'User-Agent': UA,
     Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
   }
   // DMM 图床被 Chromium 网络安全策略判定为跨站 Referer 不合法，直接去掉 Referer。
-  const isDmm = /\.dmm\.co\.jp$/i.test(new URL(remoteUrl).hostname)
+  let isDmm = false
+  try {
+    isDmm = /\.dmm\.co\.jp$/i.test(new URL(remoteUrl).hostname)
+  } catch {
+    isDmm = false
+  }
   if (!isDmm) headers.Referer = referer + '/'
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 15000)

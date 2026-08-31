@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import type { DisplayEntry, ReconcileResult } from '../../../shared/types'
 import { entryPrimaryTags, hasDocTags } from '../../../shared/types'
+import { t } from '../../../shared/i18n'
 import Icon from './Icon'
 
 interface Props {
@@ -37,9 +38,9 @@ function parseDuration(str?: string): number | null {
 function fmtDuration(sec: number): string {
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
-  if (h >= 24) return `${(h / 24).toFixed(1)} 天`
-  if (h > 0) return `${h} 小时 ${m} 分`
-  return `${m} 分`
+  if (h >= 24) return `${(h / 24).toFixed(1)}${t('stats.daysUnit')}`
+  if (h > 0) return `${h}${t('stats.hoursUnit')}${m}${t('stats.minsUnit')}`
+  return `${m}${t('stats.minsUnit')}`
 }
 
 /** 字节数 → 可读大小（B/KB/MB/GB/TB） */
@@ -244,7 +245,7 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
       .sort((a, b) => (a[0] === '未知' ? 1 : b[0] === '未知' ? -1 : Number(b[0]) - Number(a[0])))
     const resCount = ['4K', '2K', '1080p', '720p', '480p', 'SD', '未知']
       .filter((k) => (resCountMap.get(k) ?? 0) > 0)
-      .map((k) => ({ label: k, count: resCountMap.get(k)! }))
+      .map((k) => ({ label: k === '未知' ? t('app.unknown') : k, count: resCountMap.get(k)! }))
 
     return {
       total,
@@ -288,12 +289,12 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b border-white/5 bg-ink-900/95 backdrop-blur-sm">
           <div className="flex items-center gap-2 text-white font-semibold">
             <Icon name="chart" size={16} className="text-brand" />
-            统计看板
+            {t('stats.title')}
           </div>
           <button
             className="no-drag w-7 h-7 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-ink-700 transition-colors"
             onClick={onClose}
-            title="关闭"
+            title={t('close')}
           >
             <Icon name="x" size={15} />
           </button>
@@ -304,20 +305,20 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-ink-800/50 ring-1 ring-white/5 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-white tabular-nums">{stats.total}</div>
-              <div className="text-white/45 text-xs mt-1">影片总数</div>
+              <div className="text-white/45 text-xs mt-1">{t('stats.totalVideos')}</div>
             </div>
             <div className="bg-ink-800/50 ring-1 ring-white/5 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-white tabular-nums">
                 {stats.totalSec > 0 ? fmtDuration(stats.totalSec) : '—'}
               </div>
-              <div className="text-white/45 text-xs mt-1">总时长</div>
+              <div className="text-white/45 text-xs mt-1">{t('stats.totalDuration')}</div>
             </div>
             <div className="bg-ink-800/50 ring-1 ring-white/5 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-brand tabular-nums">
                 {stats.totalBytes > 0 ? fmtBytes(stats.totalBytes) : '—'}
               </div>
               <div className="text-white/45 text-xs mt-1">
-                总文件大小{stats.sizedCount ? `（${stats.sizedCount} 部）` : ''}
+                {t('stats.totalSize', { count: stats.sizedCount })}
               </div>
             </div>
             <div className="bg-ink-800/50 ring-1 ring-white/5 rounded-xl p-4 text-center">
@@ -325,21 +326,21 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
                 {stats.scoredCount ? stats.avgScore.toFixed(2) : '—'}
               </div>
               <div className="text-white/45 text-xs mt-1">
-                平均评分（{stats.scoredCount}）
+                {t('stats.avgScore', { count: stats.scoredCount })}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Section title="评分分布">
+            <Section title={t('stats.scoreDist')}>
               {stats.ratingDist.map((b) => (
                 <Bar key={b.label} label={b.label} count={b.count} max={maxRating} />
               ))}
             </Section>
 
-            <Section title="分类占比">
+            <Section title={t('stats.categoryShare')}>
               {stats.cats.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无分类</div>
+                <div className="text-white/35 text-xs">{t('stats.noCategory')}</div>
               ) : (
                 stats.cats.map(([name, c]) => (
                   <Bar key={name} label={name} count={c} max={maxCat} />
@@ -347,9 +348,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="演员 TOP 10">
+            <Section title={t('stats.actressTop10')}>
               {stats.topActors.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无演员数据（需先补齐 javdb 详情）</div>
+                <div className="text-white/35 text-xs">{t('stats.noActress')}</div>
               ) : (
                 stats.topActors.map(([name, c]) => (
                   <Bar key={name} label={name} count={c} max={maxActor} />
@@ -357,9 +358,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="标签 TOP 10">
+            <Section title={t('stats.tagTop10')}>
               {stats.topTags.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无标签</div>
+                <div className="text-white/35 text-xs">{t('stats.noTag')}</div>
               ) : (
                 stats.topTags.map(([name, c]) => (
                   <Bar key={name} label={name} count={c} max={maxTag} />
@@ -367,9 +368,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="最大的十大文件" hint={stats.sizedCount ? `共 ${stats.sizedCount} 部已探测大小` : 'ffprobe 未探测到文件大小（需 ffmpeg/ffprobe 可用）'}>
+            <Section title={t('stats.largestFiles')} hint={stats.sizedCount ? t('stats.probedFilesHint', { count: stats.sizedCount }) : t('stats.probeHint')}>
               {stats.topFiles.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无文件大小数据（需 ffprobe 探测）</div>
+                <div className="text-white/35 text-xs">{t('stats.noFileSize')}</div>
               ) : (
                 <div className="space-y-1">
                   {stats.topFiles.map(({ entry, size }, i) => (
@@ -377,7 +378,7 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
                       key={entry.video!.id}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors group"
                       onClick={() => onOpen?.(entry)}
-                      title={`点击查看「${entry.title}」详情`}
+                      title={t('stats.clickView', { title: entry.title })}
                     >
                       <span className="w-5 shrink-0 text-center text-xs font-bold text-white/30">
                         {i + 1}
@@ -394,9 +395,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title={`年份分布（${stats.years.length} 年）`}>
+            <Section title={t('stats.yearDist', { count: stats.years.length })}>
               {stats.years.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无年份数据</div>
+                <div className="text-white/35 text-xs">{t('stats.noYear')}</div>
               ) : (
                 stats.years.map(([y, c]) => (
                   <Bar key={y} label={String(y)} count={c} max={maxYear} />
@@ -404,9 +405,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="磁盘占用（按分类）" hint={stats.sizedCount ? `共 ${stats.sizedCount} 部已探测大小` : 'ffprobe 未探测到文件大小'}>
+            <Section title={t('stats.diskByCategory')} hint={stats.sizedCount ? t('stats.probedFilesHint', { count: stats.sizedCount }) : t('stats.probeHintShort')}>
               {stats.diskByCat.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无文件大小数据（需 ffprobe 探测）</div>
+                <div className="text-white/35 text-xs">{t('stats.noFileSize')}</div>
               ) : (
                 stats.diskByCat.map(([name, bytes]) => (
                   <ByteBar key={name} label={name} bytes={bytes} max={maxDiskCat} />
@@ -414,9 +415,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="磁盘占用（按年份）">
+            <Section title={t('stats.diskByYear')}>
               {stats.diskByYear.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无年份/文件大小数据</div>
+                <div className="text-white/35 text-xs">{t('stats.noYearOrSize')}</div>
               ) : (
                 stats.diskByYear.map(([y, bytes]) => (
                   <ByteBar key={y} label={y} bytes={bytes} max={maxDiskYear} />
@@ -424,9 +425,9 @@ export default function StatsPanel({ open, result, onClose, onOpen }: Props) {
               )}
             </Section>
 
-            <Section title="分辨率分布（按数量）" hint="需 ffprobe 探测到分辨率">
+            <Section title={t('stats.resolutionDist')} hint={t('stats.needResolutionProbe')}>
               {stats.resCount.length === 0 ? (
-                <div className="text-white/35 text-xs">暂无分辨率数据</div>
+                <div className="text-white/35 text-xs">{t('stats.noResolution')}</div>
               ) : (
                 stats.resCount.map((r) => (
                   <Bar key={r.label} label={r.label} count={r.count} max={maxRes} />

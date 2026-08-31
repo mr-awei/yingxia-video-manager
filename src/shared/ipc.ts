@@ -81,7 +81,11 @@ export const IPC = {
   scanProgress: 'scan:progress',
   // 片单变化事件（预留）
   // 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载）
-  libraryGetCodes: 'library:getCodes'
+  libraryGetCodes: 'library:getCodes',
+  // 导出番号清单为 txt 或 xlsx（模板：带 编号/品番/简介/评分/标签/备注/封面路径 表头）
+  libraryExportCodes: 'library:exportCodes',
+  // 返回内置规范文件路径（通用评分与简介规范.md）
+  specGet: 'system:specGet'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

@@ -1,9 +1,10 @@
-import { memo, useState } from 'react'
+﻿import { memo, useState } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import { entryPrimaryTags, hasDocTags } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatDuration, formatSize } from '../lib/util'
 import { useFrameFallback } from '../lib/frameFallback'
 import { api } from '../lib/api'
+import { t } from '../../../shared/i18n'
 import Icon from './Icon'
 
 interface Props {
@@ -25,7 +26,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
         <div className="w-14 h-14 rounded-2xl bg-ink-800 ring-1 ring-white/5 flex items-center justify-center mb-4">
           <Icon name="search" size={26} />
         </div>
-        当前筛选条件下没有匹配的影片，试试调整搜索或标签。
+        {t('list.noMatch')}
       </div>
     )
   }
@@ -74,7 +75,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                     {e.code !== (v?.fileName ? v.fileName.replace(/\.[^./\\]+$/, '') : e.title) ? e.code : ''}
                     {studio ? ` · ${studio}` : ''}
                     {series ? ` · ${series}` : ''}
-                    {v?.domestic ? ' · 国产片' : ''}
+                    {v?.domestic ? ` · ${t('list.domestic')}` : ''}
                   </div>
                 </div>
 
@@ -110,18 +111,18 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
 
                 {/* 标签：仅占所需宽度（不再 flex-1 抢占空间），文件名获得全部剩余宽度避免截断 */}
                 <div className="max-w-[260px] min-w-0 overflow-hidden hidden md:flex items-center gap-1">
-                  {tags.slice(0, 4).map((t) => (
+                  {tags.slice(0, 4).map((tag) => (
                     <button
-                      key={t}
+                      key={tag}
                       type="button"
-                      title={`筛选「${t}」`}
+                      title={t('list.filterTag', { tag })}
                       onClick={(ev) => {
                         ev.stopPropagation()
-                        onPickTag?.(t)
+                        onPickTag?.(tag)
                       }}
                       className="px-1.5 py-0.5 rounded bg-white/6 text-white/55 text-[10px] truncate max-w-[80px] md:max-w-[100px] lg:max-w-[120px] hover:bg-brand/25 hover:text-brand hover:ring-1 hover:ring-brand/30 transition-colors"
                     >
-                      {t}
+                      {tag}
                     </button>
                   ))}
                 </div>
@@ -146,7 +147,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                         ev.stopPropagation()
                         void api.videoOpen(v.id)
                       }}
-                      title="播放"
+                      title={t('list.play')}
                     >
                       <Icon name="play" size={12} className="fill-current" />
                     </button>
@@ -157,7 +158,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                           ev.stopPropagation()
                           onToggleFlag(v.id, 'favorite')
                         }}
-                        title={fav ? '取消收藏' : '收藏'}
+                        title={fav ? t('list.unfavorite') : t('list.favorite')}
                       >
                         <Icon name="heart" size={12} className={fav ? 'fill-current' : ''} />
                       </button>
@@ -168,7 +169,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                         ev.stopPropagation()
                         onEdit(v)
                       }}
-                      title="编辑"
+                      title={t('list.edit')}
                     >
                       <Icon name="pencil" size={12} />
                     </button>
@@ -214,18 +215,18 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                   const p = entryPrimaryTags(e)
                   const back = v?.backupTags ?? []
                   const show = hasDocTags({ tags: e.tags, tagCategories: e.tagCategories }) ? p : [...new Set([...p, ...back])]
-                  return show.slice(0, 4).map((t) => (
+                  return show.slice(0, 4).map((tag) => (
                     <button
-                      key={t}
+                      key={tag}
                       type="button"
-                      title={`筛选「${t}」`}
+                      title={t('list.filterTag', { tag })}
                       onClick={(ev) => {
                         ev.stopPropagation()
-                        onPickTag?.(t)
+                        onPickTag?.(tag)
                       }}
                       className="px-1.5 py-0.5 rounded bg-white/6 text-white/55 text-[10px] truncate max-w-[90px] hover:bg-brand/25 hover:text-brand hover:ring-1 hover:ring-brand/30 transition-colors"
                     >
-                      {t}
+                      {tag}
                     </button>
                   ))
                 })()}
@@ -240,7 +241,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                       ev.stopPropagation()
                       void api.videoOpen(v.id)
                     }}
-                    title="播放"
+                    title={t('list.play')}
                   >
                     <Icon name="play" size={12} className="fill-current" />
                   </button>
@@ -252,7 +253,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                           ev.stopPropagation()
                           onToggleFlag(v.id, 'favorite')
                         }}
-                        title={fav ? '取消收藏' : '收藏'}
+                        title={fav ? t('list.unfavorite') : t('list.favorite')}
                       >
                         <Icon name="heart" size={12} className={fav ? 'fill-current' : ''} />
                       </button>
@@ -264,7 +265,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
                       ev.stopPropagation()
                       onEdit(v)
                     }}
-                    title="编辑"
+                    title={t('list.edit')}
                   >
                     <Icon name="pencil" size={12} />
                   </button>
@@ -311,7 +312,7 @@ function ListThumb({ video, code, isMissing }: { video?: Video | null; code: str
           <img src={src} alt="" aria-hidden loading="lazy" className="absolute inset-0 h-full w-full scale-110 object-cover blur-md opacity-40" />
           <img src={src} alt="" loading="lazy" className="relative h-full w-full object-contain poster-img" onError={() => setImgError(true)} />
           {isFrameFallback ? (
-            <span className="absolute bottom-0.5 right-0.5 px-1 py-px rounded bg-black/70 text-white/90 text-[8px] font-bold leading-none">帧</span>
+            <span className="absolute bottom-0.5 right-0.5 px-1 py-px rounded bg-black/70 text-white/90 text-[8px] font-bold leading-none">{t('list.frameFallback')}</span>
           ) : null}
         </>
       ) : (
@@ -320,7 +321,7 @@ function ListThumb({ video, code, isMissing }: { video?: Video | null; code: str
         </div>
       )}
       {isMissing ? (
-        <span className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-[9px] font-bold">缺失</span>
+        <span className="absolute inset-0 flex items-center justify-center bg-red-600/70 text-white text-[9px] font-bold">{t('list.missing')}</span>
       ) : null}
     </div>
   )

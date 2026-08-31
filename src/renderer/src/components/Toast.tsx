@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+﻿import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Icon, { type IconName } from './Icon'
+import { t } from '../../../shared/i18n'
 
 export type ToastTone = 'ok' | 'warn' | 'err' | 'info'
 
@@ -57,7 +58,7 @@ const TONE: Record<ToastTone, { bar: string; icon: IconName; iconBg: string; tex
 }
 
 function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) {
-  const t = TONE[item.tone]
+  const toneCfg = TONE[item.tone]
   const pct = item.progress && item.progress.total > 0
     ? Math.round((item.progress.done / item.progress.total) * 100)
     : 0
@@ -69,10 +70,10 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
       }`}
       role="status"
     >
-      <div className={`h-1 ${t.bar}`} />
+      <div className={`h-1 ${toneCfg.bar}`} />
       <div className="p-4 flex items-start gap-3">
-        <div className={`shrink-0 w-8 h-8 rounded-full ${t.iconBg} flex items-center justify-center text-white text-sm shadow-md`}>
-          <Icon name={t.icon} size={15} />
+        <div className={`shrink-0 w-8 h-8 rounded-full ${toneCfg.iconBg} flex items-center justify-center text-white text-sm shadow-md`}>
+          <Icon name={toneCfg.icon} size={15} />
         </div>
         <div className="flex-1 min-w-0">
           {item.title ? (
@@ -90,7 +91,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
             <div className="mt-2.5">
               <div className="flex items-center justify-between text-[11px] text-white/55 mb-1">
                 <span className="truncate max-w-[210px]">
-                  {done ? '完成' : '处理中…'}
+                  {done ? t('app.done') : t('app.processing')}
                   {item.progress.current ? ` · ${item.progress.current}` : ''}
                 </span>
                 <span className="tabular-nums shrink-0 ml-2">
@@ -98,7 +99,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
                 </span>
               </div>
               <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div className={`h-full transition-all ${t.bar}`} style={{ width: `${pct}%` }} />
+                <div className={`h-full transition-all ${toneCfg.bar}`} style={{ width: `${pct}%` }} />
               </div>
             </div>
           ) : null}
@@ -114,7 +115,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
         <button
           onClick={onClose}
           className="shrink-0 w-6 h-6 rounded-md hover:bg-white/10 text-white/50 hover:text-white text-sm flex items-center justify-center transition-colors"
-          title="关闭"
+          title={t('app.close')}
         >
           ✕
         </button>

@@ -13,7 +13,7 @@ import { parseIntroExcel } from './excel'
 import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
 import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
-import { isDomestic, normalizeCode } from '../../shared/code'
+import { extractBaseCode, isDomestic, normalizeCode } from '../../shared/code'
 import { fetchDetailSmart, createSmartFetchState } from './javdb-smart'
 
 /**
@@ -165,13 +165,21 @@ function collectFiles(files: string[]): FileEntry[] {
  *   抓取源（javdb/javbus）显式处理，不要在文件名 keyMatches 上做强约束。
  */
 export function keyMatches(key: string, code: string): boolean {
-  const k = normalizeCode(key)
-  const c = normalizeCode(code)
+  // 先用 extractBaseCode 把 key 里的分集后缀剥掉（如 sone-560_1 → SONE-560），
+  // 避免 normalizeCode 去下划线后变成 SONE-5601 再被后缀边界杀。
+  const keyBase = extractBaseCode(key)
+  const codeBase = extractBaseCode(code)
+  const k = normalizeCode(keyBase)
+  const c = normalizeCode(codeBase)
   const i = k.indexOf(c)
   if (i < 0) return false
   const before = i > 0 ? k[i - 1] : ''
   if (before && /[A-Z0-9]/.test(before)) return false
   const after = k[i + c.length]
+  // 后缀边界：数字后缀可能是分集（已在 extractBaseCode 剥掉），
+  // 也可能是正常序号的一部分（SSIS-419 的 9 不是 41 的分集）。
+  // 现在 keyBase 已经剥过分集后缀，after 不会是分集数字了，
+  // 保留 /[0-9]/ 检查只是兜底防 extractBaseCode 漏网。
   if (after && /[0-9]/.test(after)) return false
   return true
 }
@@ -292,14 +300,10 @@ export async function reconcileLibrary(
   const introLookup = await readIntroDoc(library)
   const doc = introLookup.doc
 
-  // 片单加载失败：v2.2.4 硬性要求——必须告知用户，不能再静默吞错。
-  // 通过 onProgress 顺带把 introError 推给 renderer（与 scanProgress 同管道，
-  // renderer 看到 kind/introError 字段就弹 Toast）。
-  // v2.3.11：无片单用户可在「设置-通用」关闭这条提示（每次对账都弹、且不自动消失，太打扰）。
-  // 只屏蔽 kind==='not-configured'（本来就没片单）；片单存在但解析失败等真实错误仍提示。
-  const introNoticeSuppressed =
-    !!settings.suppressIntroExcelNotice && introLookup.error?.kind === 'not-configured'
-  if (introLookup.error && !introNoticeSuppressed) {
+  // 片单加载失败：必须告知用户，不能静默吞错。
+  // 通过 onProgress 把 introError 推给 renderer，由 renderer 决定弹 toast 还是引导向导。
+  // suppressIntroExcelNotice 只在 renderer 侧判断（主进程不屏蔽任何 kind）。
+  if (introLookup.error) {
     onProgress?.({
       libraryId: library.id,
       total: 0,
@@ -355,7 +359,14 @@ export async function reconcileLibrary(
         })
         const files = findFilesForCode(item.code, fileEntries, used)
         if (files.length > 0) {
+          // L352: 同 code 多文件（分集 / 多碟）时，主 entry 只绑定第一个文件作为 video（列表页不重复展示），
+          // 其余文件也 ensureVideo 后存入 siblingVideos，供详情页渲染分集列表（像爱奇艺那样）。
           const video = await ensureVideo(files[0], library, settings, item, changes)
+          const siblingVideos: Video[] = []
+          for (let i = 1; i < files.length; i++) {
+            const sib = await ensureVideo(files[i], library, settings, item, changes)
+            siblingVideos.push(sib)
+          }
           entries.push({
             kind: 'matched',
             category: cat.name,
@@ -366,8 +377,12 @@ export async function reconcileLibrary(
             tags: item.tags,
             tagCategories: item.tagCategories,
             score: item.score,
-            video
+            video,
+            siblingVideos
           })
+          if (siblingVideos.length > 0) {
+            console.log(`[reconcile] code=${item.code} main=${video.fileName} siblings=${siblingVideos.map(s => s.fileName).join(',')}`)
+          }
           matched++
         } else {
           // 文件缺失：若该番号在 data.json 中已无任何记录（用户主动删除过视频 + 记录），

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Video } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial } from '../lib/util'
 import Icon from './Icon'
+import { t } from '../../../shared/i18n'
 
 interface Props {
   video: Video | null
@@ -89,7 +90,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
       patch.posterSource = 'javdb'
     }
     onSave(video!.id, patch)
-    setSaveToast('已保存')
+    setSaveToast(t('editMeta.saved'))
     setTimeout(() => onClose(), 600)
   }
 
@@ -109,7 +110,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
               <Icon name="pencil" size={17} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-white font-semibold text-[15px] tracking-tight">编辑影片信息</div>
+              <div className="text-white font-semibold text-[15px] tracking-tight">{t('editMeta.title')}</div>
               <div className="text-white/40 text-xs mt-0.5 truncate flex items-center gap-1.5">
                 <Icon name="film" size={11} />
                 {video.fileName}
@@ -119,7 +120,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
           <button
             className="absolute top-4 right-4 no-drag w-9 h-9 rounded-lg text-white/50 hover:text-white hover:bg-white/10 ring-1 ring-white/5 flex items-center justify-center transition-all"
             onClick={onClose}
-            title="关闭（ESC）"
+            title={t('editMeta.closeEsc')}
           >
             <Icon name="x" size={15} />
           </button>
@@ -150,19 +151,19 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                   {javdbBusy ? (
                     <span className="inline-flex items-center justify-center gap-2">
                       <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      抓取中…
+                      {t('editMeta.fetching')}
                     </span>
-                  ) : '从 JavDB 获取封面'}
+                  ) : t('editMeta.fetchCoverFromJavdb')}
                 </button>
                 {javdbPoster ? (
                   <div className="inline-flex items-center justify-center gap-1 w-full text-emerald-400 text-[11px] font-medium">
-                    ✓ 已从 JavDB 抓取
+                    ✓ {t('editMeta.fetchedFromJavdb')}
                   </div>
                 ) : null}
                 <div className="pt-4 border-t border-white/5">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-1 h-3 rounded-full bg-brand" />
-                    <div className="text-white/70 text-[12px] font-medium">自定义封面</div>
+                    <div className="text-white/70 text-[12px] font-medium">{t('editMeta.customCover')}</div>
                   </div>
                   <input
                     className="w-full bg-ink-800/60 text-white text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 ring-brand/40 focus:bg-ink-800 transition-all border border-white/5 placeholder-white/30"
@@ -171,7 +172,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                     onChange={(e) => setManualPoster(e.target.value)}
                   />
                   <div className="text-white/35 text-[10px] mt-1.5 leading-relaxed">
-                    指定后优先于 JavDB 抓取
+                    {t('editMeta.customCoverHint')}
                   </div>
                 </div>
               </div>
@@ -179,7 +180,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
 
             {/* 右侧表单（大厂风格：更大 padding、focus 边框发光） */}
             <div className="px-7 py-6 space-y-5">
-              <FieldGroup label="标题">
+              <FieldGroup label={t('editMeta.titleField')}>
                 <input
                   ref={titleRef}
                   className="w-full bg-ink-800/60 text-white text-sm rounded-lg px-3.5 py-2.5 outline-none focus:ring-2 ring-brand/50 focus:bg-ink-800 transition-all border border-white/5 focus:border-brand/40"
@@ -190,7 +191,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
               </FieldGroup>
 
               <div className="grid grid-cols-2 gap-4">
-                <FieldGroup label="年份">
+                <FieldGroup label={t('editMeta.year')}>
                   <input
                     className="w-full bg-ink-800/60 text-white text-sm rounded-lg px-3.5 py-2.5 outline-none focus:ring-2 ring-brand/50 focus:bg-ink-800 transition-all border border-white/5 focus:border-brand/40"
                     value={year}
@@ -199,7 +200,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                     placeholder="2024"
                   />
                 </FieldGroup>
-                <FieldGroup label="我的评分" hint="0 - 10">
+                <FieldGroup label={t('editMeta.myRating')} hint="0 - 10">
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand font-bold">
                       ★
@@ -216,21 +217,21 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
               </div>
 
               <FieldGroup
-                label="标签"
-                hint={tags.length > 0 ? `${tags.length} 个 · 回车或逗号添加（Excel 片单为权威来源，下次对账会被覆盖）` : '回车或逗号添加（Excel 片单为权威来源，下次对账会被覆盖）'}
+                label={t('editMeta.tags')}
+                hint={tags.length > 0 ? t('edit.tagsCountHint', { count: tags.length }) : t('edit.tagsHint')}
               >
                 <div className="bg-ink-800/60 rounded-lg px-2.5 py-2 min-h-[44px] focus-within:ring-2 ring-brand/50 focus-within:bg-ink-800 transition-all border border-white/5 focus-within:border-brand/40">
                   <div className="flex flex-wrap gap-1.5 mb-1">
-                    {tags.map((t) => (
+                    {tags.map((tagStr) => (
                       <span
-                        key={t}
+                        key={tagStr}
                         className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-md bg-brand/15 text-brand text-xs font-medium ring-1 ring-brand/20"
                       >
-                        {t}
+                        {tagStr}
                         <button
-                          onClick={() => removeTag(t)}
+                          onClick={() => removeTag(tagStr)}
                           className="hover:bg-brand/30 hover:text-white w-4 h-4 rounded flex items-center justify-center text-brand/70 transition-colors"
-                          title="移除"
+                          title={t('editMeta.remove')}
                         >
                           ✕
                         </button>
@@ -249,7 +250,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                         setTags(tags.slice(0, -1))
                       }
                     }}
-                    placeholder={tags.length ? '' : '例如：剧情、收藏、片商…'}
+                    placeholder={tags.length ? '' : t('edit.tagPlaceholder')}
                   />
                 </div>
 
@@ -258,7 +259,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
                   <div className="mt-2.5 rounded-lg bg-sky-400/5 ring-1 ring-sky-300/15 px-3 py-2.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-sky-200/80 font-medium mb-1.5">
                       <span>📡</span>
-                      <span>数据源备用标签 · 来自 JavDB/JavBus 等 · 仅用于详情页折叠展示，不可编辑</span>
+                      <span>{t('editMeta.sourceTagsNote')}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {video!.backupTags.map((t) => (
@@ -275,15 +276,15 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
               </FieldGroup>
 
               <FieldGroup
-                label="简介"
-                hint={`${description.length} 字 · Excel 片单优先，本地编辑可叠加`}
+                label={t('editMeta.descPlaceholder')}
+                hint={t('editMeta.descHint', { count: description.length })}
               >
                 <textarea
                   className="w-full bg-ink-800/60 text-white/95 text-[13px] rounded-lg px-3.5 py-3 outline-none focus:ring-2 ring-brand/50 focus:bg-ink-800 transition-all border border-white/5 focus:border-brand/40 resize-none leading-relaxed"
                   rows={7}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="暂无简介（可在 Excel 片单中补充）"
+                  placeholder={t('editMeta.descPlaceholder')}
                 />
               </FieldGroup>
             </div>
@@ -295,7 +296,7 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
           <div className="flex items-center gap-1.5 text-xs text-white/40">
             <Icon name="info" size={12} className="shrink-0" />
             <span>
-              Excel 片单 <span className="text-white/60">优先于</span> 本地编辑
+              Excel {t('editMeta.sheetPriority')} <span className="text-white/60">{t('editMeta.prioritizedOver')}</span> {t('editMeta.localEdit')}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -308,13 +309,13 @@ export default function EditMetaModal({ video, onClose, onSave, onFetchJavdb }: 
               className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-sm transition-colors border border-white/5"
               onClick={onClose}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               className="px-5 py-2 rounded-lg bg-brand hover:brightness-110 text-white text-sm font-semibold transition-all shadow-md shadow-brand/30"
               onClick={handleSave}
             >
-              保存
+              {t('common.save')}
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
+import { t } from '../../../shared/i18n'
 import Icon from './Icon'
 
 interface Props {
@@ -38,24 +39,24 @@ export default function UserNoticeModal({ open, onClose }: Props) {
           </div>
           <div className="min-w-0">
             <h2 id="user-notice-title" className="text-white font-semibold text-lg leading-tight">
-              用户须知与免责声明
+              {t('notice.title')}
             </h2>
             <p className="text-white/45 text-xs mt-1">
-              首次使用前请认真阅读以下全部内容。继续使用即视为您已阅读、理解并同意本须知。
+              {t('notice.intro')}
             </p>
           </div>
         </div>
 
         {/* 正文（可滚动） */}
         <div className="px-6 py-4 overflow-y-auto thin-scroll flex-1 text-white/80 text-[13px] leading-relaxed space-y-4 select-text">
-          <Section title="一、软件性质声明">
+          <Section title={t('notice.section1')}>
             本软件（"影匣"）是一款<strong className="text-white">仅供个人使用的本地视频文件管理工具</strong>，其核心功能为：
             扫描本地文件夹、读取视频元数据、生成本地海报墙、管理本地视频库。
             本软件<strong className="text-amber-300">不提供、不存储、不传播任何片源内容</strong>，亦不连接任何涉嫌传播违法内容的资源服务器，
             不提供下载、上传、分享、传播涉嫌违法内容的功能。本软件对用户本地已存在的视频文件不进行任何形式的主动获取或传播。
           </Section>
 
-          <Section title="二、用户行为规范">
+          <Section title={t('notice.section2')}>
             用户应严格遵守《中华人民共和国刑法》《中华人民共和国治安管理处罚法》《中华人民共和国网络安全法》
             《中华人民共和国未成年人保护法》《中华人民共和国民法典》等法律法规，不得利用本软件从事：
             <ul className="list-disc list-inside space-y-1 mt-2 text-white/70 pl-2">
@@ -65,7 +66,7 @@ export default function UserNoticeModal({ open, onClose }: Props) {
             </ul>
           </Section>
 
-          <Section title="三、相关法律法规（节选）" highlight>
+          <Section title={t('notice.section3')} highlight>
             <p>
               <strong className="text-amber-300">《中华人民共和国刑法》第三百六十三条【制作、复制、出版、贩卖、传播淫秽物品牟利罪】</strong>：
               以牟利为目的，制作、复制、出版、贩卖、传播淫秽物品的，处三年以下有期徒刑、拘役或者管制，并处罚金；
@@ -97,18 +98,18 @@ export default function UserNoticeModal({ open, onClose }: Props) {
             </p>
           </Section>
 
-          <Section title="四、未成年人特别保护">
+          <Section title={t('notice.section4')}>
             严禁向未满十八（18）周岁的未成年人传播、展示或提供任何涉嫌淫秽、色情、暴力、恐怖或其他不适宜未成年人的内容。
             依据上述法律法规及《未成年人保护法》相关规定，向未成年人传播相关内容的，将依法从重处罚。
           </Section>
 
-          <Section title="五、免责声明">
+          <Section title={t('notice.section5')}>
             本软件开发者仅提供本地文件管理与检索工具，<strong className="text-white">不参与、不认可、不承担</strong>
             用户使用本软件所从事的任何违法活动所产生的法律责任。本软件开发者保留依法向有关主管部门报告、协助调查的权利。
             所有法律责任由使用本软件从事违法活动的当事人自行承担。
           </Section>
 
-          <Section title="六、确认与持续提示">
+          <Section title={t('notice.section6')}>
             继续使用本软件即视为您已阅读、理解并同意本须知全部内容，并承诺依法、合规地使用本软件。
             <br />
             <span className="text-white/50 text-[12px]">
@@ -127,7 +128,7 @@ export default function UserNoticeModal({ open, onClose }: Props) {
               className="w-4 h-4 rounded border-white/20 bg-ink-700 text-brand focus:ring-2 focus:ring-brand/40 shrink-0 cursor-pointer"
             />
             <span className="text-white/80 text-[13px] leading-snug">
-              我已阅读并同意本须知，<span className="text-white/55">下次启动不再显示</span>
+              {t('notice.agreeAndDismiss')}
             </span>
           </label>
           <div className="flex-1" />
@@ -136,7 +137,7 @@ export default function UserNoticeModal({ open, onClose }: Props) {
             onClick={() => onClose(dontShowAgain)}
             className="h-10 px-6 rounded-xl bg-brand hover:brightness-110 text-white text-sm font-semibold shadow-lg shadow-brand/30 transition-all"
           >
-            我已阅读并继续
+            {t('notice.readAndContinue')}
           </button>
         </div>
       </div>

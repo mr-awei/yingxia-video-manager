@@ -1,4 +1,4 @@
-import type { ReactNode, SVGProps } from 'react'
+﻿import type { ReactNode, SVGProps } from 'react'
 
 /** 图标名（Lucide 风格，24 viewBox，stroke 线条） */
 export type IconName =
