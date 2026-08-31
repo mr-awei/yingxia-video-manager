@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## v2.4.6 (2026-09-01)
+
+**Fixed preview frames not refreshing after re-frame**
+
+- Root cause: Preview frame filenames are fixed as <id>_preview_<n>.jpg; re-framing only overwrites the files in place. React reused the DOM because key={url} did not change, and Chromium cached the local lm:// image, so the detail page still showed the old frames.
+- Fix: Added a previewVersion state that increments after re-framing. All preview frame URLs now go through posterUrl(url, previewVersion) with a ?v=N cache-busting query; the React key also uses the versioned URL, forcing a fresh <img> render and a new Chromium request.
+- Zoom overlay, set-as-cover and other interactions also use the versioned preview URLs to avoid stale images.
+# Changelog
+
 ## v2.4.5 (2026-09-01)
 
 **Re-frame randomization + quality filtering + library display mode setting**
@@ -553,6 +562,7 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 
 

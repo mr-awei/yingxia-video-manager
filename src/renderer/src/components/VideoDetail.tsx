@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { hasDocTags, primaryTags, NON_TAG_CATEGORY_NAMES } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize, formatDuration, resolveEntryPoster } from '../lib/util'
@@ -80,11 +80,19 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   /** 封面缓存失效版本号：手动设封面/重新截帧后 +1，让封面 img 的 lm:// URL 带 ?v= 强制立即刷新；
    *  初始值取自 App 的 coverVersion，重开详情页时与列表端版本一致，避免退回旧缓存 */
   const [posterVersion, setPosterVersion] = useState(video.coverVersion ?? 0)
+  /** 预览帧缓存失效版本号：重新截帧后文件路径不变但内容已覆盖，+1 强制刷新 */
+  const [previewVersion, setPreviewVersion] = useState(0)
+  /** 带缓存失效版本号的预览图 URL 列表 */
+  const previewUrls = useMemo(
+    () => localVideo.previewPaths?.map((url) => posterUrl(url, previewVersion) ?? '') ?? [],
+    [localVideo.previewPaths, previewVersion]
+  )
   useEffect(() => {
     setLocalVideo(video)
     setDetail(video.javdbDetail)
     setCoverImgError(false)
     setPosterVersion(video.coverVersion ?? 0)
+    setPreviewVersion(0)
   }, [video.id])
   /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
@@ -139,6 +147,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       if (updated?.posterPath) {
         setLocalVideo((prev) => ({ ...prev, posterPath: updated.posterPath, posterSource: updated.posterSource ?? 'ffmpeg', previewPaths: updated.previewPaths }))
         setPosterVersion((v) => v + 1)
+        setPreviewVersion((v) => v + 1)
         onPosterFetched?.(localVideo.id, updated.posterPath, updated.previewPaths, updated.posterSource ?? 'ffmpeg')
         toast({ text: t('detail.reframeDone'), tone: 'ok' })
       } else {
@@ -911,23 +920,23 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
               ) : null}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {localVideo.previewPaths.map((url, i) => (
+              {previewUrls.map((displayUrl, i) => (
                 <div
-                  key={url}
+                  key={displayUrl}
                   className="aspect-video rounded-lg overflow-hidden bg-ink-800 cursor-zoom-in relative group/preview"
                   title={t('detail.hoverHint2')}
                   onMouseEnter={() => {
-                    setZoomGroup(localVideo.previewPaths!, 'preview', url)
-                    cancelClose(); scheduleOpen(url)
+                    setZoomGroup(previewUrls, 'preview', displayUrl)
+                    cancelClose(); scheduleOpen(displayUrl)
                   }}
                   onMouseLeave={clearOpenTimer}
                   onClick={() => {
-                    setZoomGroup(localVideo.previewPaths!, 'preview', url)
-                    setZoomUrl(url)
+                    setZoomGroup(previewUrls, 'preview', displayUrl)
+                    setZoomUrl(displayUrl)
                   }}
                 >
                   <img
-                    src={posterUrl(url) ?? ''}
+                    src={displayUrl}
                     alt={`preview-${i}`}
                     loading="lazy"
                     decoding="async"
@@ -939,7 +948,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                     className="absolute bottom-1.5 right-1.5 opacity-0 group-hover/preview:opacity-100 transition-opacity px-2 py-1 rounded-md bg-white/95 text-slate-900 hover:bg-brand hover:text-white text-[11px] font-medium flex items-center gap-1 no-drag shadow-md shadow-black/25"
                     onClick={(e) => {
                       e.stopPropagation()
-                      void handleSetPreviewAsCover(url)
+                      void handleSetPreviewAsCover(localVideo.previewPaths![i])
                     }}
                     title={t('detail.setAsCoverTitle')}
                   >
@@ -948,7 +957,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   </button>
                 </div>
               ))}
-             </div>
+            </div>
           </div>
         ) : null}
 
