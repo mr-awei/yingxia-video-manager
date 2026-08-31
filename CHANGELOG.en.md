@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.6.1 (2026-09-01)
+
+**Installer language picker trimmed to CN/EN + pack output back to project release/**
+
+- **Installer language picker now shows only Chinese/English**: Replaced `MUI_LANGDLL_DISPLAY` (which pulled in 30+ unrelated languages) with a custom nsDialogs dialog featuring just two radio buttons — 简体中文 and English.
+- **`scripts/pack.mjs` now outputs to `<project>/release` by default**: Previously hard-coded to `~/yingxia-release/<timestamp>` (a legacy workaround for another IDE's file watcher locking app.asar), it now respects `directories.output: release` from `electron-builder.yml`. Set `YINGXIA_PACK_OUT=<absPath>` to override when needed.
+
 ## v2.6.0 (2026-09-01)
 
 **Multilingual Installer + Reliable Upgrade Path + Documentation Aligned**

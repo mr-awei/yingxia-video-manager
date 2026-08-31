@@ -1,28 +1,40 @@
 /**
  * 打包入口（npm run pack 第二步，build 之后调用）。
  *
- * 输出目录放在 WorkBuddy 工作区之外（~/yingxia-release/<时间戳>），
- * WorkBuddy 的索引/监视服务扫描不到 → app.asar 永远不会被占用，
- * 彻底根治 win-unpacked\resources\app.asar 被锁导致无法删除/打包失败。
+ * 默认走 electron-builder.yml 中的 `directories.output: release` 配置，
+ * 即产物输出到 <project>/release/。
+ *
+ * 如需输出到项目外（例如历史上规避 WorkBuddy 索引服务占用 app.asar），
+ * 可设置环境变量 YINGXIA_PACK_OUT=绝对路径 来覆盖：
+ *   YINGXIA_PACK_OUT="C:/Users/xxx/yingxia-release/2026-09-01" npm run pack
  */
 import { execSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const pad = (n) => String(n).padStart(2, '0')
-const d = new Date()
-const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
-// 输出根目录：用户主目录下，绝对在 WorkBuddy 工作区树之外（与项目目录无关）
-const outRoot = path.join(os.homedir(), 'yingxia-release')
-const out = path.join(outRoot, stamp)
-mkdirSync(out, { recursive: true })
-console.log(`[pack] 输出目录：${out}`)
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-// 用绝对路径传给 electron-builder，避免相对路径歧义
+let out
+const override = process.env.YINGXIA_PACK_OUT
+if (override) {
+  out = path.resolve(override)
+  mkdirSync(out, { recursive: true })
+  console.log(`[pack] 使用 YINGXIA_PACK_OUT 覆盖输出目录：${out}`)
+} else {
+  // 让 electron-builder 直接读取 electron-builder.yml 中的 directories.output
+  out = path.join(projectRoot, 'release')
+  console.log(`[pack] 使用 electron-builder.yml 默认配置，输出目录：${out}`)
+}
+
 const absOut = path.resolve(out)
-execSync(`npx electron-builder --config.directories.output="${absOut}"`, {
+const args = override
+  ? `--config.directories.output="${absOut}"`
+  : ''
+
+execSync(`npx electron-builder ${args}`.trim(), {
   stdio: 'inherit',
+  cwd: projectRoot,
   env: {
     ...process.env,
     ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/'

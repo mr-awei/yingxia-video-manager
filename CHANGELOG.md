@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v2.6.1（2026-09-01）
+
+**安装器语言选择框精简 + 打包路径回归项目内 release 目录**
+
+- **安装器语言选择框仅保留中/英**：弃用 `MUI_LANGDLL_DISPLAY`（会拉出 30+ 种无关语言），改用自定义 nsDialogs 对话框，仅展示「简体中文」和「English」两个单选按钮。
+- **`scripts/pack.mjs` 默认输出回归 `<project>/release`**：之前硬编码 `~/yingxia-release/<时间戳>`（历史上为规避另一 IDE 索引服务锁 app.asar），现在按 `electron-builder.yml` 的 `directories.output: release` 打包到项目根目录的 `release/`；如需临时改输出目录，可设 `YINGXIA_PACK_OUT` 环境变量覆盖。
+
 ## v2.6.0（2026-09-01）
 
 **安装器多语言 + 升级链路可靠性 + 文档版本同步**
