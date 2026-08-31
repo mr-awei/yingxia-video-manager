@@ -87,66 +87,47 @@ function normalizeProxy(s: Settings): Settings {
   }
 }
 
+/** 数据源标签（固定英文品牌名，不走 i18n） */
+const SOURCE_LABELS = {
+  javapi: 'Javapi',
+  javinfo: 'Javinfo',
+  javdb: 'JavDB',
+  javbus: 'JavBus',
+  javlibrary: 'JavLibrary'
+} as const
+const ALL_SOURCE_ORDER: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']
+
+/**
+ * 数据源三维度信息 —— 改成 getter 函数，每次 render 重新取当前 locale 的翻译。
+ * 之前 SOURCE_META 在模块顶层用 t() 固化 tier/risk/cost，切换到英文后还是中文。
+ */
+function getSourceMeta(src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary') {
+  return {
+    label: SOURCE_LABELS[src],
+    tier: t(`settings.source.${src}.tier`),
+    risk: t(`settings.source.${src}.risk`),
+    cost: src === 'javinfo' ? t('settings.source.javinfo.cost') : t('settings.source.free'),
+    desc: t(`settings.source.${src}.desc`)
+  }
+}
+
 /**
  * 把任意顺序归一化到完整的 5 个源（缺哪个补默认 javapi→javinfo→javdb→javbus→javlibrary），
  * 用于 UI 拖拽排序时的初始 / 兜底。
  */
 function normalizeSourceOrder(order?: string[]): Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> {
-  const ALL: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'> = ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']
-  if (!Array.isArray(order) || order.length !== 5) return ALL
+  if (!Array.isArray(order) || order.length !== 5) return [...ALL_SOURCE_ORDER]
   const set = new Set(order)
-  // 必须正好 5 个合法源
-  if (ALL.some((s) => !set.has(s))) return ALL
+  if (ALL_SOURCE_ORDER.some((s) => !set.has(s))) return [...ALL_SOURCE_ORDER]
   return order as Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>
 }
 
-/** 数据源展示信息（标签 + 三维度评估 + 介绍） */
-const SOURCE_META: Record<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary', { label: string; tier: string; risk: string; cost: string; desc: string }> = {
-  javapi: {
-    label: 'Javapi',
-    tier: t('settings.source.javapi.tier'),
-    risk: t('settings.source.javapi.risk'),
-    cost: t('settings.source.free'),
-    get desc() { return t('settings.source.javapi.desc') }
-  },
-  javinfo: {
-    label: 'Javinfo',
-    tier: t('settings.source.javinfo.tier'),
-    risk: t('settings.source.javinfo.risk'),
-    cost: t('settings.source.javinfo.cost'),
-    get desc() { return t('settings.source.javinfo.desc') }
-  },
-  javdb: {
-    label: 'JavDB',
-    tier: t('settings.source.javinfo.tier'),
-    risk: t('settings.source.javdb.risk'),
-    cost: t('settings.source.free'),
-    get desc() { return t('settings.source.javdb.desc') }
-  },
-  javbus: {
-    label: 'JavBus',
-    tier: t('settings.source.javbus.tier'),
-    risk: t('settings.source.javbus.risk'),
-    cost: t('settings.source.free'),
-    get desc() { return t('settings.source.javbus.desc') }
-  },
-  javlibrary: {
-    label: 'JavLibrary',
-    tier: t('settings.source.javlibrary.tier'),
-    risk: t('settings.source.javlibrary.risk'),
-    cost: t('settings.source.free'),
-    get desc() { return t('settings.source.javlibrary.desc') }
-  }
-}
-
 /**
- * 把当前顺序拼成 "Javapi → Javinfo → JavDB → ..." 文案给顶部说明文字用，
- * 跟着用户的拖拽走，**不是**写死默认顺序。
- * 函数形式让 React 每次 render 都重新算（draft.customSourceOrder 改了 → 文案立即变）。
+ * 把当前顺序拼成 "Javapi → Javinfo → JavDB → ..." 文案给顶部说明文字用。
  */
 function formatSourceOrder(order?: Array<'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'>): string {
   const arr = normalizeSourceOrder(order)
-  return arr.map((s) => SOURCE_META[s].label).join(' → ')
+  return arr.map((s) => SOURCE_LABELS[s]).join(' → ')
 }
 function formatBytes(n?: number): string {
   if (n == null || n <= 0) return ''
@@ -876,17 +857,18 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                   {/* 选中具体数据源时显示介绍；auto 模式不显示 */}
                   {(draft.dataSource && draft.dataSource !== 'auto') ? (
                     <div className="mt-3 rounded-lg border border-white/10 bg-white/3 p-3 animate-fadeIn">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-white/90 text-xs font-medium">
-                          {SOURCE_META[draft.dataSource].label}
-                        </span>
-                        <span className="text-[10px] text-white/50">
-                          {SOURCE_META[draft.dataSource].tier} · {SOURCE_META[draft.dataSource].risk} · {SOURCE_META[draft.dataSource].cost}
-                        </span>
-                      </div>
-                      <div className="text-white/60 text-[11.5px] leading-relaxed">
-                        {SOURCE_META[draft.dataSource].desc}
-                      </div>
+                      {(() => {
+                        const meta = getSourceMeta(draft.dataSource as 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary')
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-white/90 text-xs font-medium">{meta.label}</span>
+                              <span className="text-[10px] text-white/50">{meta.tier} · {meta.risk} · {meta.cost}</span>
+                            </div>
+                            <div className="text-white/60 text-[11.5px] leading-relaxed">{meta.desc}</div>
+                          </>
+                        )
+                      })()}
                     </div>
                   ) : null}
                   {/* v2.2.6：自定义数据源采集顺序。auto 模式下生效，按这个顺序降级。
@@ -908,7 +890,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                       </div>
                       <div className="space-y-1.5">
                         {(draft.customSourceOrder ?? ['javapi', 'javinfo', 'javdb', 'javbus', 'javlibrary']).map((src, idx, arr) => {
-                          const meta = SOURCE_META[src]
+                          const meta = getSourceMeta(src)
                           return (
                             <div
                               key={src}
@@ -967,7 +949,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                         })}
                       </div>
                       <div className="mt-2 text-white/35 text-[10.5px] leading-relaxed">
-                        抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。
+                        {t('settings.network.fetchLogic')}
                       </div>
                     </div>
                   ) : null}

@@ -552,7 +552,7 @@ export default {
   'settings.network.restoreDefault': '恢复推荐',
   'settings.network.moveUp': '上移',
   'settings.network.moveDown': '下移',
-  'settings.network.fetchLogic': '抓取逻辑：按顺序逐个尝试…',
+  'settings.network.fetchLogic': '抓取逻辑：按顺序逐个尝试，任一源命中即停。任一源连续 3 部网络失败自动跳过本轮。JavBus 连续 3 部失败会停止整批（防空转）。所有源都失败 → 走 ffmpeg 截帧兜底。',
   'settings.network.javapiUrl': '本地 Javapi 地址（自托管，免费）',
   'settings.network.javapiUrlHint': '自托管 javapi（github.com/a1850976305/javapi）本地服务地址。JavDB API 元数据 + 8 个视频站，免费、无 Cloudflare/IP 风控。启动：AUTH_API_KEYS=你的key go run ./cmd/api',
   'settings.network.javapiKey': '本地 Javapi API Key',

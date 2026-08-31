@@ -1,5 +1,15 @@
 # 更新日志（Changelog）
 
+## v2.6.2（2026-09-01）
+
+**数据源介绍国际化修复 + 卸载器可选删除用户数据 + 打包路径回归项目内 release**
+
+- **设置页数据源介绍跟随语言切换**：`SOURCE_META` 从模块顶层静态对象（`t()` 在加载时固化）改为 `getSourceMeta()` 函数，每次 render 重新取当前 locale 翻译。修复英文版仍显示 "Javapi 首选·无风险·免费" 等中文三维度标签；修复 `javdb.tier` 错误写成 `javinfo.tier` 的 typo。
+- **抓取逻辑文案走 i18n**：auto 模式下数据源排序底部的详细说明从硬编码中文改为 `t('settings.network.fetchLogic')`，英文字段同步补充完整翻译。
+- **卸载器新增复选框，可选删除 AppData 用户数据目录**：nsis hook `customUnInstall` 在卸载阶段弹窗询问，默认不勾选（保留数据），用户手动勾选才执行 `RMDir /r %APPDATA%\local-video-manager`。卸载器语言跟随安装时选择的语言。
+- **修复 customInit 在卸载时也弹语言选择框**：加 `!ifdef IsUninst` 判断，卸载流程跳过安装时的语言选择和运行中检测。
+- **`scripts/pack.mjs` 默认输出回归 `<project>/release`**：弃用历史上规避另一 IDE 索引服务的 `~/yingxia-release/<时间戳>` 硬编码，改用 `electron-builder.yml` 的 `directories.output: release`；保留 `YINGXIA_PACK_OUT` 环境变量覆盖开关。
+
 ## v2.6.1（2026-09-01）
 
 **安装器语言选择框精简 + 打包路径回归项目内 release 目录**

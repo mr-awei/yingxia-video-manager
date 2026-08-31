@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // en-US —— 影匣 English locale
 // 所有 key → 自然英文翻译，非机翻腔。
 // ============================================================================
@@ -552,7 +552,7 @@ export default {
   'settings.network.restoreDefault': 'Restore defaults',
   'settings.network.moveUp': 'Move up',
   'settings.network.moveDown': 'Move down',
-  'settings.network.fetchLogic': 'Fetch logic: try each in order…',
+  'settings.network.fetchLogic': 'Fetch logic: try each source in order; stop on first hit. A source that fails 3 consecutive network requests is auto-skipped for the current round. JavBus stops the whole batch after 3 consecutive failures (prevents spinning). If all sources fail → fall back to ffmpeg frame extraction.',
   'settings.network.javapiUrl': 'Local Javapi URL (self-hosted, free)',
   'settings.network.javapiUrlHint': 'Self-hosted Javapi (github.com/a1850976305/javapi) — free metadata + 8 video sites, no Cloudflare/IP bans. Start with: AUTH_API_KEYS=yourkey go run ./cmd/api',
   'settings.network.javapiKey': 'Local Javapi API Key',

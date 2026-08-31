@@ -1,6 +1,14 @@
 # Changelog
 
-## v2.6.1 (2026-09-01)
+## v2.6.2 (2026-09-01)
+
+**Data-source metadata i18n fix + uninstaller optional data removal + pack output back to project release**
+
+- **Data-source metadata follows current locale**: `SOURCE_META` (static object with `t()` called at module load) replaced by a `getSourceMeta()` function that re-reads translations on every render. English users previously saw Chinese three维度 labels like "Javapi 首选·无风险·免费". Also fixed `javdb.tier` accidentally pointing to `javinfo.tier`.
+- **Fetch-logic note goes through i18n**: The detailed explanation under auto-mode source order was a hard-coded Chinese string; now uses `t('settings.network.fetchLogic')` with a full English translation added.
+- **Uninstaller now offers optional AppData removal**: New NSIS `customUnInstall` hook shows a checkbox (unchecked by default) asking whether to delete `%APPDATA%\local-video-manager`. Only checked boxes trigger `RMDir /r`. Dialog language follows the installer language.
+- **customInit skips language dialog during uninstall**: Added `!ifdef IsUninst` guard so uninstall does not re-run the installer's language picker and running-app check.
+- **`scripts/pack.mjs` now outputs to `<project>/release` by default**: Dropped the legacy `~/yingxia-release/<timestamp>` hard-coded path (used to work around another IDE's file watcher locking app.asar) in favour of `electron-builder.yml`'s `directories.output: release`. Override remains via `YINGXIA_PACK_OUT=<absPath>`.
 
 **Installer language picker trimmed to CN/EN + pack output back to project release/**
 
