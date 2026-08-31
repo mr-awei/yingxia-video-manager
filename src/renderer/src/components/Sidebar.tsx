@@ -441,41 +441,43 @@ function SidebarInner(props: Props) {
         {/* 媒体库 */}
         <Section title={t('sidebar.library')} icon="folder" active={false}>
           <div className="flex flex-col gap-0.5">
-            {libraries.length === 0 ? (
-              <div className="text-white/35 text-[11px] py-1 px-1">{t('sidebar.noLibrary')}</div>
-            ) : (
-              libraries.map((l) => {
-                const sel = l.id === libraryId
-                return (
-                  <div
-                    key={l.id}
-                    className={`group/lib flex items-center gap-1 rounded-lg transition-colors ${
-                      sel ? 'bg-brand/15' : 'hover:bg-ink-700'
-                    }`}
-                  >
-                    <button
-                      className={`flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
-                        sel ? 'text-brand font-medium' : 'text-white/80 hover:text-white'
+            <div className="flex flex-col gap-0.5 max-h-[320px] overflow-auto thin-scroll -mr-1 pr-1">
+              {libraries.length === 0 ? (
+                <div className="text-white/35 text-[11px] py-1 px-1">{t('sidebar.noLibrary')}</div>
+              ) : (
+                libraries.map((l) => {
+                  const sel = l.id === libraryId
+                  return (
+                    <div
+                      key={l.id}
+                      className={`group/lib flex items-center gap-1 rounded-lg transition-colors ${
+                        sel ? 'bg-brand/15' : 'hover:bg-ink-700'
                       }`}
-                      onClick={() => onLibrary(l.id)}
-                      title={l.name}
                     >
-                      <Icon name="film" size={13} className={sel ? 'text-brand shrink-0' : 'text-white/45 shrink-0'} />
-                      <span className="truncate">{l.name}</span>
-                    </button>
-                    {sel ? (
                       <button
-                        className="no-drag w-6 h-6 mr-1 rounded flex items-center justify-center text-white/45 hover:text-white hover:bg-ink-600 transition-colors shrink-0"
-                        onClick={onEditLibrary}
-                        title={t('sidebar.librarySettings')}
+                        className={`flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
+                          sel ? 'text-brand font-medium' : 'text-white/80 hover:text-white'
+                        }`}
+                        onClick={() => onLibrary(l.id)}
+                        title={l.name}
                       >
-                        <Icon name="sliders" size={12} />
+                        <Icon name="film" size={13} className={sel ? 'text-brand shrink-0' : 'text-white/45 shrink-0'} />
+                        <span className="truncate">{l.name}</span>
                       </button>
-                    ) : null}
-                  </div>
-                )
-              })
-            )}
+                      {sel ? (
+                        <button
+                          className="no-drag w-6 h-6 mr-1 rounded flex items-center justify-center text-white/45 hover:text-white hover:bg-ink-600 transition-colors shrink-0"
+                          onClick={onEditLibrary}
+                          title={t('sidebar.librarySettings')}
+                        >
+                          <Icon name="sliders" size={12} />
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })
+              )}
+            </div>
             <button
               className="mt-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-brand hover:bg-brand/10 transition-colors"
               onClick={onAddLibrary}
