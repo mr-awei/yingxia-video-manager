@@ -9,6 +9,8 @@ const posterUrlCache = new Map<string, string>()
 export function posterUrl(posterPath?: string, version?: number | string): string | null {
   if (!posterPath) return null
   if (/^https?:\/\//.test(posterPath)) return posterPath
+  // 已经转换好的 lm:// URL 直接透传，避免详情页 zoom 浮层再次调用时被二次 base64
+  if (/^lm:\/\//.test(posterPath)) return posterPath
   const cacheKey = version != null ? `${posterPath}\u0000v${version}` : posterPath
   const cached = posterUrlCache.get(cacheKey)
   if (cached) return cached

@@ -2,15 +2,15 @@
 
 | Project | YingXia Local Video Manager & Poster Wall |
 |---|---|
-| Doc version | v1.0 |
-| Written | 2026-08-30 |
-| Current product version | v2.2.10 |
+| Doc version | v2.5.0 |
+| Written | 2026-09-01 |
+| Current product version | v2.5.0 |
 | Doc status | Reviewed (single-author spec) |
 | Source | Personal collection management + historical feature iteration |
 | References | `HANDOFF.md` (project handoff), `CHANGELOG.md` (version history), `src/shared/ipc.ts` (capability list) |
 
 > This document follows an enterprise-grade PRD structure: **context → evolution → full feature spec → non-functional requirements → data model → risks & roadmap**.
-> All modules verified against the codebase (as of v2.2.10). Markers like 【Current】indicate features still present in v2.2.10.
+> All modules verified against the codebase (as of v2.5.0). Markers like 【Current】indicate features still present in v2.5.0.
 
 ---
 
@@ -59,6 +59,9 @@ The user owns a large collection of local video files organized into folders nam
 | Category & fallback | v2.1.0 | Auto-categorize videos with genres as `【Source】genre1·genre2`; frame-fetch 30s timeout; batch cap 200 |
 | Stability fixes | v2.2.0–2.2.3 | Drop markdown intro sheets (Excel-only); customSourceOrder field; code parsing enhancement; autoFindIntroExcel scans library root |
 | **Issue-driven fixes** | **v2.2.4–v2.2.10** | **User-feedback-driven fixes** (see 2.1) |
+| Experience & networking | v2.3.x | Bilingual UI (zh-CN/en-US), series episodes, batch fetch progress panel (pause/resume/stop), proxy covering both Node.js and Chromium network stacks |
+| Installer & browsing | v2.4.x | Installer UX improvements (detect running app, no forced kill), list view mode toggle (flat/grouped), random frame extraction with quality filtering |
+| Stability release | v2.5.0 | Fix self-killing upgrade detection; feature stabilization and PRD alignment |
 
 ### 2.1 Recent Fix Cluster (v2.2.4 – v2.2.10)
 
@@ -106,6 +109,12 @@ The user owns a large collection of local video files organized into folders nam
 | M10 Settings Center | 7 sections (General / Network / Appearance / Privacy / Storage / Updates / Dangerous Ops) | P1 | ✅ Current |
 | M11 System Integration | Update check, tray, auto-start, About, logs | P1 | ✅ Current |
 | M12 Visualization & UX | Fetch overlay, progress prompts, error toasts, skeleton screen | P1 | ✅ Current |
+| M13 Bilingual UI | zh-CN/en-US language switching, localized copy, date/number formatting | P1 | ✅ Current |
+| M14 Series Episodes | Group multiple CDs/episodes under same base code, episode selection, continuous browsing | P1 | ✅ Current |
+| M15 Batch Fetch Progress Panel | Dedicated progress window with pause/resume/stop, per-source status | P1 | ✅ Current |
+| M16 Proxy Coverage | Unified proxy for Node.js and Chromium network stacks, PAC/system proxy support | P1 | ✅ Current |
+| M17 Installer UX | Detect running instance, gentle prompt, no forced kill | P2 | ✅ Current |
+| M18 List View Mode | Flat vs. grouped view toggle, series/source-category grouping | P1 | ✅ Current |
 
 ---
 
@@ -390,4 +399,4 @@ Video {
 
 ---
 
-*End of document. This PRD covers all features present as of v2.2.10. New requirements should be appended to Section 10 Roadmap and reviewed.*
+*End of document. This PRD covers all features present as of v2.5.0. New requirements should be appended to Section 10 Roadmap and reviewed.*

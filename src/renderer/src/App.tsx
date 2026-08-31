@@ -245,15 +245,6 @@ export default function App() {
     if (settings.language) setLocale(settings.language as 'zh-CN' | 'en-US')
   }, [settings.language])
 
-  // 用户切换分组模式时持久化到设置（设置页与顶部「分组」按钮同步）
-  useEffect(() => {
-    if (!loaded) return
-    if (settings.listViewMode !== filter.groupMode) {
-      void api.settingsSet({ listViewMode: filter.groupMode })
-        .then(() => setSettings((prev) => ({ ...prev, listViewMode: filter.groupMode })))
-        .catch(() => {})
-    }
-  }, [filter.groupMode, loaded, settings.listViewMode])
 
   // 后台轻量刷新设置：让「自动检查更新」写入的 pendingUpdate / lastUpdateCheck 自动回流到 UI（徽标、设置页横幅）
   useEffect(() => {
@@ -1463,6 +1454,10 @@ export default function App() {
   const handleSaveSettings = useCallback(async (patch: Partial<Settings>) => {
     const s = await api.settingsSet(patch)
     setSettings(s)
+    // 设置页切换列表展示模式后，立即同步到当前列表视图
+    if (s.listViewMode) {
+      setFilter((f) => ({ ...f, groupMode: s.listViewMode as 'flat' | 'grouped' }))
+    }
     setSettingsOpen(false)
     // 刚开启自动更新频率时，立即联网检测一次，让「待处理更新」尽快可见
     if (patch.autoUpdateFrequency && patch.autoUpdateFrequency !== 'off') {
@@ -1893,7 +1888,13 @@ export default function App() {
                 desc={filter.desc}
                 onToggleDesc={() => setFilter((f) => ({ ...f, desc: !f.desc }))}
                 groupMode={filter.groupMode}
-                onToggleGroup={() => setFilter((f) => ({ ...f, groupMode: f.groupMode === 'grouped' ? 'flat' : 'grouped' }))}
+                onToggleGroup={() => {
+                  const next = filter.groupMode === 'grouped' ? 'flat' : 'grouped'
+                  setFilter((f) => ({ ...f, groupMode: next }))
+                  void api.settingsSet({ listViewMode: next })
+                    .then((s) => setSettings(s))
+                    .catch(() => {})
+                }}
                 viewMode={viewMode}
                 onSetView={setViewMode}
                 onClearAll={clearAllFilters}

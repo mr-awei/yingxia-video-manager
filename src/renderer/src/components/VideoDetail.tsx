@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DisplayEntry, JavdbDetail, Video } from '../../../shared/types'
 import { hasDocTags, primaryTags, NON_TAG_CATEGORY_NAMES } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatSize, formatDuration, resolveEntryPoster } from '../lib/util'
@@ -1051,7 +1051,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
           }}
         >
           <img
-            src={posterUrl(zoomUrl) ?? ''}
+            src={zoomUrl}
             alt="sample-zoom"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => {

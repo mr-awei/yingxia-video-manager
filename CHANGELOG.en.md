@@ -1,4 +1,11 @@
-﻿# Changelog
+# Changelog
+
+## v2.5.0 (2026-09-01)
+
+**Documentation & Project Showcase Overhaul (README / PRD Bilingual Rewrite)**
+
+- **README rewritten in Chinese and English**: refreshed product positioning, core features, privacy statement, and development guide. English is the default on GitHub, with a top-bar language switch to Chinese.
+- **PRD updated in Chinese and English**: document version and product version aligned to v2.5.0; added milestones and feature modules for v2.3.x – v2.5.0 (bilingual UI, series episodes, batch-fetch progress panel, proxy coverage for Chromium, installer UX, etc.).
 
 ## v2.4.9 (2026-09-01)
 
