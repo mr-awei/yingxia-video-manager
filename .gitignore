@@ -16,6 +16,7 @@ build/ffmpeg/
 
 # 临时 / 调试脚本（可能含个人 cookie / token）
 .tmp-*.mjs
+commit-msg.txt
 
 # 项目内部数据
 .workbuddy
