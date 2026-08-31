@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## v2.4.7 (2026-09-01)
+
+**Installer no longer force-kills old process; shows friendly prompt instead**
+
+- uild/installer.nsh previously used 	askkill + FindWindow to force-end the old process before overwriting. Now it only checks for a window titled "影匣".
+- If the app is still running, a MessageBox prompts the user: "Please fully close 影匣 (including the tray icon), then re-run the installer. The installer will exit after you click OK."
+- Calling Abort exits the installer after the user clicks OK, preventing accidental data loss from a forced kill.
+# Changelog
+
 ## v2.4.6 (2026-09-01)
 
 **Fixed preview frames not refreshing after re-frame**
@@ -562,6 +571,7 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 
 
