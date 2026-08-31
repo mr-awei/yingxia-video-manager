@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## v2.4.8 (2026-09-01)
+
+**Installer friendly prompt + fix NSIS Chinese encoding**
+
+- When the installer detects 影匣 is running, it shows a Chinese MessageBox asking the user to fully close the app (including the tray icon) before re-running the installer. Clicking OK exits the installer without force-killing the process.
+- Fixed NSIS parsing failure caused by Chinese text in uild/installer.nsh: the file is now saved as UTF-8 with BOM so makensis reads the Chinese strings correctly.
+# Changelog
+
 ## v2.4.7 (2026-09-01)
 
 **Installer no longer force-kills old process; shows friendly prompt instead**
@@ -571,6 +579,7 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 
 
