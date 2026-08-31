@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v2.4.2（2026-09-01）
+
+**扫描库进度条只触发一次 + GitHub 默认英文版 README**
+
+- **修复扫描进度条触发两次**：点击"扫描库"按钮时，`handleScan` 原先串行调用 `videoScan` 和 `libraryReconcile` 两个独立 IPC，各推一轮 `emitProgress`，导致进度条弹两轮。主进程新增 `IPC.libraryScanAndReconcile` 合并 scan + reconcile 为单次调用，reconcile 阶段的常规进度被屏蔽（`introError` / `fetchEvent` 仍正常推送），UI 上只剩一条连续进度条。
+- **README 默认展示英文版**：`README.md` 改为英文版（GitHub 仓库首页只认这个），原中文版改名为 `README.zh-CN.md`；两份文件顶部加 `English · 中文` 切换条，互相跳转。
+
 ## v2.4.1（2026-08-31）
 
 **批量抓取进度面板 + 代理测试体验 + 拖拽与侧边栏优化**

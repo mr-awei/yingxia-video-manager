@@ -1,3 +1,12 @@
+﻿# Changelog
+
+## v2.4.2 (2026-09-01)
+
+**Scan library progress fires only once + GitHub README defaults to English**
+
+- **Fixed scan progress firing twice**: Clicking the "Scan Library" button used to invoke two separate IPCs (ideoScan → libraryReconcile via finally), each pushing its own round of emitProgress. The UI saw two progress bars pop up. Added a merged IPC.libraryScanAndReconcile handle in the main process that runs scanLibrary then econcileLibrary as a single call, suppressing econcile's regular progress pushes while still forwarding introError / etchEvent events. The renderer now sees one continuous progress bar.
+- **README defaults to English on GitHub**: README.md is now the English version (GitHub home page always renders this file), and the former Chinese copy is README.zh-CN.md. Both files have an English · 中文 language switcher at the top.
+
 # Changelog
 
 ## v2.4.1 (2026-08-31)
@@ -517,3 +526,4 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
