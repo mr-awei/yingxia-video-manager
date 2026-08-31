@@ -1,47 +1,55 @@
-# 影匣 YingXia
+# YingXia (影匣)
 
-## 面向成人内容的本地视频影库管理工具
+<div align="center">
+  <strong><a href="README.md">English</a></strong>
+  <span> · </span>
+  <a href="README.zh-CN.md">中文</a>
+</div>
 
-**核心原则：纯本地、不采集、不传输。** 所有元数据（影片信息、评分、标签）都存储在本地 JSON 文件中，应用本身**不主动联网抓取任何影片数据**。用户可自行配置第三方封面服务（可选），但所有请求仅用于拉取封面图片，不携带任何用户标识，也不上传任何数据。
+<br />
 
-选择一个本地视频文件夹 → 配一份简介 md 文件 → 自动生成海报墙式影库：悬停看简介，点击看详情，用本地播放器打开视频，还能对账文件夹与简介的差异。
+## Local Video Poster Wall Manager · Excel-Sheet-Driven Private Library
 
-## 功能
+**Core principle: 100% local. No data collection. No outbound transmission.** All metadata (video info, ratings, tags) is stored in local JSON files. The app **never actively crawls any third-party services for video data**. Users may optionally configure a third-party cover image service, but all requests are made solely to fetch cover images — with no user identifiers attached and nothing uploaded anywhere.
 
-- **海报墙浏览**：按简介 md 的分类展示影片，支持大图沉浸、标准、高密度三种密度
-- **悬停预览**：鼠标悬停显示简介、编号、标签、自定义字段
-- **详情页**：海报、标签筛选、系列分集联动、随机推荐
-- **本地播放**：调用系统默认播放器打开影片
-- **简介对账**：自动比对文件夹里的视频和 md 里的条目，列出未收录的视频
-- **封面补齐（可选）**：缺封面的影片可由用户自行配置的第三方封面服务拉取封面，全程透明可关闭
-- **ffmpeg 自适应**：优先使用系统已装的 ffmpeg，节省磁盘空间
-- **隐私模式**：一键打码所有封面，适合屏幕共享
-- **统计面板**：总文件大小、最大的十大文件、按标签/系列/自定义字段的筛选与统计
-- **设置项**：开机自启、最小化到托盘、隐私默认开启、扫描并发数、语言切换（中文 / English）等
+Point it at a local video folder → optionally pair it with an Excel sheet → get an auto-generated poster wall library: hover to see descriptions, click for details, open videos with your local player, and reconcile folders against the sheet to spot missing entries.
 
-## 技术栈
+## Features
+
+- **Poster wall browsing**: browse videos grouped by categories from your sheet, with three density levels — immersive, standard, and compact
+- **Hover preview**: mouse hover reveals description, code, tags, and custom fields
+- **Detail page**: poster, tag filtering, series episode linking, and random recommendations
+- **Local playback**: opens videos with your system's default player
+- **Sheet reconciliation**: automatically reconciles files in the folder against entries in your sheet, listing any videos not yet cataloged
+- **Cover auto-fetch (optional)**: for videos missing cover art, pull covers from a user-configured third-party service — fully transparent and toggleable
+- **Smart ffmpeg resolution**: prefers an ffmpeg installation already on your system to save disk space
+- **Privacy mode**: one-click blur of all cover images, ideal for screen sharing
+- **Statistics panel**: total file size, top 10 largest files, filter and aggregate by tag / series / custom field
+- **Settings**: auto-start on boot, minimize to tray, privacy mode default-on, scan concurrency, language switch (中文 / English), and more
+
+## Tech Stack
 
 - Electron + electron-vite
 - React 18 + TypeScript
 - Tailwind CSS
-- electron-builder（Windows NSIS 安装包）
+- electron-builder (Windows NSIS installer)
 
-## 开发
+## Development
 
 ```bash
 npm install
-npm run dev        # 启动开发版（自动打开 DevTools）
-npm run build      # 仅构建
-npm run pack       # 清理 + 构建 + electron-builder 打安装包
+npm run dev        # start dev mode (DevTools opens automatically)
+npm run build      # build only
+npm run pack       # clean + build + electron-builder installer
 ```
 
-## 数据隐私声明
+## Privacy Statement
 
-1. **零上传**：应用不向任何服务器上传任何用户数据——不包括影片列表、标签、评分、路径、文件名
-2. **本地存储**：所有数据存在 `%APPDATA%\local-video-manager\data.json`，可随时备份或删除
-3. **网络请求**：仅在用户主动配置封面服务后，应用会向该服务请求封面图片；请求不携带任何用户标识（匿名 User-Agent，不发 Cookie）
-4. **可离线使用**：完全切断网络后，除了拉取封面功能外，所有核心功能（扫描、浏览、详情、播放、对账）均可正常使用
+1. **Zero uploads**: The app never transmits any user data — no video lists, no tags, no ratings, no file paths, no filenames — to any server.
+2. **Local-only storage**: All data lives in `%APPDATA%\local-video-manager\data.json`. Back it up or delete it at any time.
+3. **Anonymous network requests**: The app only makes outbound requests after the user explicitly configures a cover image service. Requests carry no identifying headers (anonymous User-Agent, no cookies).
+4. **Works fully offline**: With network disconnected, every core feature — scanning, browsing, details, playback, reconciliation — functions normally. Only the optional cover-fetch feature stops.
 
-## 许可证
+## License
 
 MIT
