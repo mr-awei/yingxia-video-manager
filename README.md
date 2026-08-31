@@ -22,10 +22,12 @@ YingXia is a Windows desktop app that turns a local video folder into a beautifu
 
 - **Excel-sheet-driven catalog**: Your spreadsheet is the single source of truth for categories, ratings, tags, and descriptions. Reconcile it against the folder anytime to spot missing or uncategorized entries.
 - **Poster wall browsing**: Three density levels (immersive / standard / compact), hover cards for quick info, and smooth virtual scrolling for large libraries.
+- **Flat or grouped view**: Choose whether the default library view shows everything flat or grouped by Excel category — persisted in Settings.
 - **Smart metadata fetch**: Auto-identifies video codes and fetches metadata from configurable sources (JavDB, JavBus, JavLibrary, Javapi, Javinfo) with automatic fallback and a draggable progress panel that supports pause / resume / stop.
 - **Series episodes**: Multiple files for the same code (e.g. `SONE-560_1.mp4`, `SONE-560_2.mp4`) show as one card in the grid; the detail page lists episodes and lets you switch between them.
-- **Local-first covers**: Uses source covers when possible; falls back to intelligent ffmpeg frame extraction that avoids black, white, blurry, and duplicate frames.
-- **Bilingual UI**: Full in-app support for Chinese (zh-CN) and English (en-US), including prompts, changelogs, and spec documents.
+- **Random, quality-filtered frame extraction**: When no source cover is available, ffmpeg extracts 12–22 candidate frames and automatically rejects black, white, blurry, or monotonous frames — so "re-screenshot" always produces a fresh, sharp pick.
+- **Bilingual UI from install**: The NSIS installer asks for your language (简体中文 / English) on the very first screen; the app opens in that language on first launch, and the uninstaller follows it too. Switch anytime in Settings.
+- **English notice without PRC laws**: The in-app legal notice renders locale-specific content — Chinese users see PRC law excerpts; English users see a generic disclaimer without references to Chinese laws.
 - **Privacy shield**: One-click blur of all covers, deletion-lock with SHA-256 verification, and zero uploads.
 - **Network proxy**: Configurable HTTP / HTTPS / SOCKS5 proxy that covers both Node.js requests and the Chromium network stack.
 - **Statistics & discovery**: Filter by tag / series / custom field, view totals and top largest files, random picks, and favorites.

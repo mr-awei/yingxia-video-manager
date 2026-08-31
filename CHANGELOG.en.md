@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.0 (2026-09-01)
+
+**Multilingual Installer + Reliable Upgrade Path + Documentation Aligned**
+
+- **Language selection at installer start**: The NSIS installer now shows a language dialog (Chinese Simplified / English) as its first step; the choice is persisted to the registry and applied as the app's initial interface language on first launch.
+- **Uninstaller follows installer language**: The NSIS MUI uninstaller automatically uses the language chosen during installation; the "app is still running" prompt in the installer is also localized.
+- **Upgrade-path fix bundle**: Fixed several P0/P1 issues surfaced during in-place upgrades — old process holding the single-instance lock, `taskkill` self-termination, uncleaned renderer assets, and stale cover after frame re-extraction.
+- **PRD / CHANGELOG / README aligned to v2.6.0**: All project documentation now tracks the product version number.
+
 ## v2.5.1 (2026-09-01)
 
 **Installer Language Selection + English User Notice Without PRC Laws + Uninstaller Language Follows Installer**

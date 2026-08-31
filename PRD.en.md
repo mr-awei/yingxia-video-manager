@@ -2,15 +2,15 @@
 
 | Project | YingXia Local Video Manager & Poster Wall |
 |---|---|
-| Doc version | v2.5.1 |
+| Doc version | v2.6.0 |
 | Written | 2026-09-01 |
-| Current product version | v2.5.1 |
+| Current product version | v2.6.0 |
 | Doc status | Reviewed (single-author spec) |
 | Source | Personal collection management + historical feature iteration |
 | References | `HANDOFF.md` (project handoff), `CHANGELOG.md` (version history), `src/shared/ipc.ts` (capability list) |
 
 > This document follows an enterprise-grade PRD structure: **context → evolution → full feature spec → non-functional requirements → data model → risks & roadmap**.
-> All modules verified against the codebase (as of v2.5.1). Markers like 【Current】indicate features still present in v2.5.1.
+> All modules verified against the codebase (as of v2.6.0). Markers like 【Current】indicate features still present in v2.6.0.
 
 ---
 
@@ -62,7 +62,7 @@ The user owns a large collection of local video files organized into folders nam
 | Experience & networking | v2.3.x | Bilingual UI (zh-CN/en-US), series episodes, batch fetch progress panel (pause/resume/stop), proxy covering both Node.js and Chromium network stacks |
 | Installer & browsing | v2.4.x | Installer UX improvements (detect running app, no forced kill), list view mode toggle (flat/grouped), random frame extraction with quality filtering |
 | Stability release | v2.5.0 | Fix self-killing upgrade detection; feature stabilization and PRD alignment |
-| Internationalization & compliance | v2.5.1 | NSIS installer language selection at first step and registry persistence; main process reads installer language on first launch; English user notice removes PRC legal references; uninstaller follows installer language |
+| Internationalization & compliance | v2.6.0 | NSIS installer language selection at first step and registry persistence; main process reads installer language on first launch; English user notice removes PRC legal references; uninstaller follows installer language |
 
 ### 2.1 Recent Fix Cluster (v2.2.4 – v2.2.10)
 
@@ -400,4 +400,4 @@ Video {
 
 ---
 
-:*End of document. This PRD covers all features present as of v2.5.1. New requirements should be appended to Section 10 Roadmap and reviewed.*
+:*End of document. This PRD covers all features present as of v2.6.0. New requirements should be appended to Section 10 Roadmap and reviewed.*
