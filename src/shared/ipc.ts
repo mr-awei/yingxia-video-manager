@@ -21,6 +21,9 @@ export const IPC = {
   videoFetchJavdbPoster: 'video:fetchJavdbPoster',
   // javdb 补齐所有信息：批量抓封面 + 详情（演员/时长/关键截图等），标签来自 MD
   libraryFetchJavdbAll: 'library:fetchJavdbAll',
+  libraryFetchPause: 'library:fetchPause',
+  libraryFetchResume: 'library:fetchResume',
+  libraryFetchStop: 'library:fetchStop',
   // javdb 详情抓取
   videoFetchJavdbDetail: 'video:fetchJavdbDetail',
   // ffmpeg 兜底截帧：随机截 1 张封面 + 15 张预览图

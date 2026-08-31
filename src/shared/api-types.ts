@@ -124,6 +124,9 @@ export interface AppApi {
   videoFetchJavdbPoster(id: string): Promise<Video | null>
   /** 批量补齐信息（JavDB → JavBus）；force=true 忽略缓存逐部重抓，返回统计 */
   libraryFetchJavdbAll(libraryId: string, force?: boolean): Promise<BatchFetchResult>
+  libraryFetchPause(): Promise<void>
+  libraryFetchResume(): Promise<void>
+  libraryFetchStop(): Promise<void>
   /** 抓取详情页元数据（JavDB → JavBus 多源），返回是否成功及来源 / 失败原因 */
   videoFetchJavdbDetail(id: string): Promise<FetchDetailResult>
   /** 用 ffprobe 读取视频技术参数（分辨率/编码/码率/帧率/时长），并缓存到视频 */

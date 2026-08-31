@@ -63,10 +63,10 @@ function buildDispatcher(mode: ProxyMode, s: Settings): Dispatcher | undefined {
   })
 }
 
-/** 仅用于测试连接：返回当前代理配置下能否连通目标（默认 javdb.com） */
+/** 仅用于测试连接：返回当前代理配置下能否连通目标（默认 httpbin.org） */
 export async function testProxyConnectivity(
   settings: Settings,
-  target = 'https://javdb.com'
+  target = 'https://httpbin.org/get'
 ): Promise<{ ok: boolean; status?: number; error?: string }> {
   const dispatcher = getDispatcher(settings)
   const ctrl = new AbortController()

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.4.1 (2026-08-31)
+
+**Batch Fetch Progress Panel + Proxy Test UX + Drag & Sidebar Polish**
+
+- **Draggable batch-fetch progress panel**: The bottom-right scan/fetch progress is now a persistent floating panel instead of a toast, with a draggable header and auto-reposition on window resize. Added Pause / Resume / Stop buttons to control batch fetching in real time.
+- **Pause/stop support for batch fetching**: Main-process `SmartFetchState` gains `paused` / `stop` flags; the worker loop responds to pause and stop commands. Added `libraryFetchPause / Resume / Stop` IPC channels.
+- **Proxy test connection improved**: Test target switched from `javdb.com` / Google to `httpbin.org/get` to avoid being blocked or rate-limited. The Settings test result is now logged to the renderer console for easier debugging.
+- **Fixed first-drag jump**: Both floating panels now use `getBoundingClientRect()` to obtain the actual rendered position as the drag origin, preventing large jumps caused by Windows display scaling / CSS positioning.
+- **Media library sidebar is scrollable**: The left media-library list can now be scrolled with the mouse wheel when it exceeds the viewport.
+- **Fixed ProgressPanel React internal warning**: Hooks order adjusted so conditional return happens after all hooks.
+
 ## v2.4.0 (2026-08-31)
 
 **Bilingual UI + Series Episodes + Batch Fetch UX Upgrade + JavBus Image Stability**

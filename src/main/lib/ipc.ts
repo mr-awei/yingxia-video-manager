@@ -23,7 +23,10 @@ import { previewRenames, applyRenames } from './rename'
 import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource, type TechInfo } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
-import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart } from './javdb-smart'
+import { fetchDetailSmart, createSmartFetchState, fetchPosterSmart, type SmartFetchState } from './javdb-smart'
+
+// 当前活跃的批量补齐状态（供 pause/resume/stop 控制）
+let activeFetchState: SmartFetchState | null = null
 
 // ---------- v2.2.13 安全加固：openExternal 协议白名单 + 危险 IPC 参数校验 ----------
 // 只允许 http/https（更新链接/官网），杜绝渲染进程被注入后经 shell.openExternal 打开 file:// 或任意程序
@@ -712,6 +715,7 @@ export function registerIpc(): void {
     const bySource: { javapi: number; javinfo: number; javdb: number; javbus: number; javlibrary: number } = { javapi: 0, javinfo: 0, javdb: 0, javbus: 0, javlibrary: 0 }
     const failures: Array<{ id: string; title: string; reason: string }> = []
     const smartState = createSmartFetchState()
+    activeFetchState = smartState
     // 系列去重：同 base code 只抓一次，其余分集复用（HUNTA-468CD1/CD2 → 抓一次）
     const seriesCache = new Map<string, JavdbDetail>()
     let idx = 0
@@ -983,6 +987,7 @@ export function registerIpc(): void {
     } catch {
       /* 统计失败不影响主流程 */
     }
+    activeFetchState = null
     return {
       ok,
       failed,
@@ -992,6 +997,16 @@ export function registerIpc(): void {
       remaining: smartState.stop ? Math.max(0, videos.length - idx) : 0,
       remainingNoPoster
     }
+  })
+
+  ipcMain.handle(IPC.libraryFetchPause, () => {
+    if (activeFetchState) activeFetchState.paused = true
+  })
+  ipcMain.handle(IPC.libraryFetchResume, () => {
+    if (activeFetchState) activeFetchState.paused = false
+  })
+  ipcMain.handle(IPC.libraryFetchStop, () => {
+    if (activeFetchState) activeFetchState.stop = true
   })
 
   // ---------- 设置 ----------

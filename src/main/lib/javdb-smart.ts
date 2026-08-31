@@ -38,6 +38,8 @@ export interface SmartFetchState {
   javbusFails: number
   /** 全部停止 */
   stop: boolean
+  /** 用户暂停 */
+  paused: boolean
 }
 
 const JAVAPI_CONSECUTIVE_LIMIT = 3
@@ -54,7 +56,19 @@ export function createSmartFetchState(): SmartFetchState {
     javdbDisabled: false,
     javdbFails: 0,
     javbusFails: 0,
-    stop: false
+    stop: false,
+    paused: false
+  }
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+/** 如果用户点了暂停，则在此处轮询直到恢复或停止 */
+export async function waitIfPaused(state: SmartFetchState): Promise<void> {
+  while (state.paused && !state.stop) {
+    await wait(200)
   }
 }
 
@@ -203,6 +217,8 @@ export async function fetchDetailSmart(
   const srcResults: Array<{ src: string; status: 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }> = []
   for (const src of order) {
     if (state.stop) break
+    await waitIfPaused(state)
+    if (state.stop) break
     if (src === 'javapi') {
       if (hasJavapiConfig(settings) && !state.javapiDisabled) {
         const errs: string[] = []
@@ -231,7 +247,7 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        const d = '未配置本地 Javapi（设置 → 数据源）'
+        const d = 'javapi-not-configured'
         srcResults.push({ src, status: 'skipped', detail: d })
         ev({ src, status: 'skipped', detail: d })
       }
@@ -263,7 +279,7 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        const d = '未配置 Javinfo key'
+        const d = 'javinfo-not-configured'
         srcResults.push({ src, status: 'skipped', detail: d })
         ev({ src, status: 'skipped', detail: d })
       }
@@ -295,7 +311,7 @@ export async function fetchDetailSmart(
           }
         }
       } else {
-        const d = 'JavDB 已被本轮禁用'
+        const d = 'javdb-disabled'
         srcResults.push({ src, status: 'skipped', detail: d })
         ev({ src, status: 'skipped', detail: d })
       }
@@ -322,7 +338,7 @@ export async function fetchDetailSmart(
         state.javbusFails++
         if (state.javbusFails >= JAVBUS_CONSECUTIVE_LIMIT) {
           state.stop = true
-          srcResults.push({ src, status: 'network-failed', detail: `JavBus 连续网络失败 ${state.javbusFails} 部，已自动停止` })
+          srcResults.push({ src, status: 'network-failed', detail: `javbus-stopped:${state.javbusFails}` })
         }
       }
     } else {

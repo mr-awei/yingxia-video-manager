@@ -29,7 +29,7 @@ import HomeSkeleton from './components/HomeSkeleton'
 import BrowseBar from './components/BrowseBar'
 import ListView from './components/ListView'
 import Icon from './components/Icon'
-import { ToastProvider, toast, updateToast, dismissToast } from './components/Toast'
+import { ToastProvider, toast } from './components/Toast'
 import ConfirmDeleteModal, { type DeletePreview } from './components/ConfirmDeleteModal'
 import UserNoticeModal from './components/UserNoticeModal'
 import OnboardSheetModal from './components/OnboardSheetModal'
@@ -137,6 +137,7 @@ export default function App() {
   // 隐私护盾：一键模糊所有预览图（防截图泄露成人内容），持久化到 localStorage
   const [privacy, setPrivacy] = useState<boolean>(() => localStorage.getItem('vm-privacy') === '1')
   const [progress, setProgress] = useState<{ total: number; done: number; current?: string } | null>(null)
+  const [fetchPaused, setFetchPaused] = useState(false)
   // v2.2.10：实时抓取日志（"javdb 网络失败 → 降级 javbus" 这类过程，右下角浮层滚动展示）
   const [fetchLogs, setFetchLogs] = useState<
     Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
@@ -289,6 +290,7 @@ export default function App() {
   useEffect(() => {
     return api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
+      if (p.total && p.done === 0) setFetchPaused(false)
       // v2.2.10：实时抓取事件 → 追加到右下角抓取日志浮层（保留最近 60 条）
       const fe = (p as { fetchEvent?: { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string } }).fetchEvent
       if (fe) {
@@ -334,6 +336,7 @@ export default function App() {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
       clearTimer.current = window.setTimeout(() => {
         setProgress(null)
+        setFetchPaused(false)
         // v2.2.10：批量补齐结束 → 抓取过程浮层自动收起
         setFetchLogs([])
       }, 2500)
@@ -343,28 +346,7 @@ export default function App() {
     }
   }, [progress])
 
-  // 扫描 / 补齐进度 → 统一 Toast（进度变体常驻，完成后停留 0.9s 再消失）
-  const progressToastId = useRef<string | null>(null)
-  useEffect(() => {
-    if (progress && progress.total > 0) {
-      if (!progressToastId.current) {
-        progressToastId.current = toast({
-          text: t('app.scanningOrFetching'),
-          tone: 'info',
-          progress: { done: progress.done, total: progress.total, current: progress.current },
-          duration: 0
-        })
-      } else {
-        updateToast(progressToastId.current, {
-          progress: { done: progress.done, total: progress.total, current: progress.current }
-        })
-      }
-    } else if (progressToastId.current) {
-      const id = progressToastId.current
-      progressToastId.current = null
-      window.setTimeout(() => dismissToast(id), 900)
-    }
-  }, [progress])
+
 
   // 片单变化触发重新对账（预留：Excel 片单 watcher 可在此接入）
   const libraryIdRef = useRef(libraryId)
@@ -2184,6 +2166,16 @@ export default function App() {
       {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
       <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
 
+      {/* v2.4.1：进度面板（可拖拽、暂停/继续/停止） */}
+      <ProgressPanel
+        progress={progress}
+        scanning={scanning}
+        paused={fetchPaused}
+        onPause={() => { setFetchPaused(true); window.api.libraryFetchPause() }}
+        onResume={() => { setFetchPaused(false); window.api.libraryFetchResume() }}
+        onStop={() => { window.api.libraryFetchStop(); setFetchPaused(false) }}
+      />
+
       {/* v2.2.14：批量抓取失败明细弹窗（居中） */}
       {batchFailures && batchFailuresVisible && batchFailures.length > 0 && (
         <div
@@ -2273,17 +2265,36 @@ interface FetchLogItem {
 function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss: () => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const width = 360
+  const height = 300
+
+  const clampPos = (x: number, y: number) => ({
+    x: Math.max(0, Math.min(window.innerWidth - width, x)),
+    y: Math.max(0, Math.min(window.innerHeight - height, y))
+  })
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current) return
       const dx = e.clientX - dragRef.current.startX
       const dy = e.clientY - dragRef.current.startY
-      setPos({ x: Math.max(0, Math.min(window.innerWidth - 100, dragRef.current.origX + dx)), y: Math.max(0, Math.min(window.innerHeight - 40, dragRef.current.origY + dy)) })
+      setPos(clampPos(dragRef.current.origX + dx, dragRef.current.origY + dy))
     }
     const onUp = () => { dragRef.current = null }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => {
+      setPos(prev => {
+        if (!prev) return null
+        return clampPos(prev.x, prev.y)
+      })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
   if (logs.length === 0) return null
   const SOURCE_LABEL: Record<string, string> = {
@@ -2291,17 +2302,28 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
   }
   const line = (l: FetchLogItem) => {
     const label = SOURCE_LABEL[l.src] ?? l.src
+    const localizedDetail = (() => {
+      if (!l.detail) return ''
+      if (l.detail === 'javapi-not-configured') return t('app.fetchSkippedJavapiNotConfigured')
+      if (l.detail === 'javinfo-not-configured') return t('app.fetchSkippedJavinfoNotConfigured')
+      if (l.detail === 'javdb-disabled') return t('app.fetchSkippedJavdbDisabled')
+      if (l.detail.startsWith('javbus-stopped:')) {
+        const count = l.detail.split(':')[1] ?? '0'
+        return t('app.fetchStoppedJavbusConsecutive').replace('{count}', count)
+      }
+      return l.detail
+    })()
     switch (l.status) {
       case 'trying':
         return { text: `→ ${t('app.fetchTrying')} ${label}…`, cls: 'text-white/55' }
       case 'hit':
         return { text: `✓ ${label} ${t('app.fetchHit')}`, cls: 'text-emerald-400' }
       case 'skipped':
-        return { text: `· ${label} ${t('app.fetchSkipped')}${l.detail ? `（${l.detail}）` : ''}`, cls: 'text-white/35' }
+        return { text: `· ${label} ${t('app.fetchSkipped')}${localizedDetail ? ` (${localizedDetail})` : ''}`, cls: 'text-white/35' }
       case 'no-result':
         return { text: `· ${label} ${t('app.fetchNoResult')}`, cls: 'text-amber-400/80' }
       case 'network-failed':
-        return { text: `✗ ${label} ${t('app.fetchNetworkFail')}${l.detail ? `（${l.detail.slice(0, 40)}）` : ''}`, cls: 'text-red-400/85' }
+        return { text: `✗ ${label} ${t('app.fetchNetworkFail')}${localizedDetail ? ` (${localizedDetail.slice(0, 60)})` : ''}`, cls: 'text-red-400/85' }
     }
   }
 
@@ -2312,12 +2334,18 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
     left: 16
   }
   const customStyle: React.CSSProperties = pos
-    ? { position: 'fixed', left: pos.x, top: pos.y, bottom: 'auto' }
+    ? { position: 'fixed', left: pos.x, top: pos.y, bottom: 'auto', right: 'auto' }
     : defaultStyle
 
   const handleDragStart = (e: React.MouseEvent) => {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos?.x ?? 16, origY: pos?.y ?? window.innerHeight - 300 - 16 }
-    if (!pos) setPos({ x: 16, y: window.innerHeight - 300 - 16 })
+    const el = (e.currentTarget as HTMLElement).parentElement
+    const rect = el?.getBoundingClientRect()
+    const defaultX = 16
+    const defaultY = window.innerHeight - 300 - 16
+    const origX = rect?.left ?? (pos?.x ?? defaultX)
+    const origY = rect?.top ?? (pos?.y ?? defaultY)
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX, origY }
+    if (!pos) setPos({ x: origX, y: origY })
     e.preventDefault()
   }
 
@@ -2353,6 +2381,130 @@ function FetchLogOverlay({ logs, onDismiss }: { logs: FetchLogItem[]; onDismiss:
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/** v2.4.1：右下角进度面板（可拖拽、暂停/继续/停止） */
+interface ProgressPanelProps {
+  progress: { total: number; done: number; current?: string } | null
+  scanning: boolean
+  paused: boolean
+  onPause: () => void
+  onResume: () => void
+  onStop: () => void
+}
+function ProgressPanel({ progress, scanning, paused, onPause, onResume, onStop }: ProgressPanelProps) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const width = 360
+  const height = 128
+
+  const clampPos = (x: number, y: number) => ({
+    x: Math.max(0, Math.min(window.innerWidth - width, x)),
+    y: Math.max(0, Math.min(window.innerHeight - height, y))
+  })
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      const dx = e.clientX - dragRef.current.startX
+      const dy = e.clientY - dragRef.current.startY
+      setPos(clampPos(dragRef.current.origX + dx, dragRef.current.origY + dy))
+    }
+    const onUp = () => { dragRef.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => {
+      setPos((prev) => (prev ? clampPos(prev.x, prev.y) : null))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    const el = (e.currentTarget as HTMLElement).parentElement
+    const rect = el?.getBoundingClientRect()
+    const defaultX = window.innerWidth - width - 16
+    const defaultY = window.innerHeight - height - 16
+    const origX = rect?.left ?? (pos?.x ?? defaultX)
+    const origY = rect?.top ?? (pos?.y ?? defaultY)
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX, origY }
+    if (!pos) setPos({ x: origX, y: origY })
+    e.preventDefault()
+  }
+
+  const style: React.CSSProperties = pos
+    ? { position: 'fixed', left: pos.x, top: pos.y, bottom: 'auto', right: 'auto' }
+    : { position: 'fixed', right: 16, bottom: 16 }
+
+  const percent = progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0
+  const title = scanning ? t('app.scanningLibrary') : t('app.scanningOrFetching')
+  const statusColor = paused ? 'bg-amber-400' : percent >= 100 ? 'bg-emerald-400' : 'bg-brand'
+
+  if (!progress || progress.total <= 0) return null
+
+  return (
+    <div
+      style={style}
+      className="z-[60] w-[360px] rounded-xl bg-ink-900/95 ring-1 ring-white/10 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-sm animate-fadeIn-fast"
+    >
+      <div
+        className="flex items-center justify-between px-3 py-2 border-b border-white/5 cursor-move select-none"
+        onMouseDown={handleDragStart}
+      >
+        <div className="text-xs font-medium text-white/80 flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${paused ? '' : 'animate-pulse'} ${statusColor}`} />
+          {paused ? t('app.progressPaused') : title}
+        </div>
+        <div className="text-[10px] font-mono text-white/40">{percent}%</div>
+      </div>
+      <div className="px-3 py-2.5 space-y-2">
+        <div className="flex items-center justify-between text-xs text-white/60">
+          <span className="truncate max-w-[220px]" title={progress.current || ''}>
+            {progress.current || ''}
+          </span>
+          <span className="font-mono text-white/40">
+            {progress.done}/{progress.total}
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className={`h-full ${statusColor} transition-all duration-300 ${paused ? '' : 'animate-pulse'}`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <div className="flex items-center gap-2 pt-0.5">
+          {paused ? (
+            <button
+              type="button"
+              onClick={onResume}
+              className="flex-1 h-7 rounded-md bg-brand/20 hover:bg-brand/30 text-brand text-xs font-medium transition-colors"
+            >
+              {t('app.progressResume')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onPause}
+              className="flex-1 h-7 rounded-md bg-white/10 hover:bg-white/15 text-white/90 text-xs font-medium transition-colors"
+            >
+              {t('app.progressPause')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onStop}
+            className="flex-1 h-7 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
+          >
+            {t('app.progressStop')}
+          </button>
+        </div>
       </div>
     </div>
   )
