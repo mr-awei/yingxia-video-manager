@@ -50,6 +50,26 @@ if (lastVersion && lastVersion !== app.getVersion()) {
   killOldProcess()
 }
 
+/** v2.5.1：读取 NSIS 安装器写入注册表的语言选择，仅首次安装时使用一次。 */
+function readInstallerLanguage(): Locale | null {
+  try {
+    const out = execSync('reg query HKCU\\Software\\YingXia /v InstallerLanguage', { encoding: 'utf8' })
+    const match = out.match(/InstallerLanguage\s+REG_SZ\s+(\S+)/)
+    if (match && (match[1] === 'zh-CN' || match[1] === 'en-US')) return match[1] as Locale
+  } catch {
+    // 注册表不存在或读取失败，正常
+  }
+  return null
+}
+
+function clearInstallerLanguage(): void {
+  try {
+    execSync('reg delete HKCU\\Software\\YingXia /v InstallerLanguage /f', { stdio: 'ignore' })
+  } catch {
+    // 忽略删除失败
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -272,12 +292,19 @@ app.whenReady().then(() => {
   registerLocalMedia()
   registerIpc()
 
-  // 启动时应用用户设置的界面语言
+  // 启动时应用界面语言：安装器首次安装的语言选择 > settings.language > 默认中文
   void (async () => {
     try {
-      const { getSettings } = await import('./lib/repo')
+      const installerLang = readInstallerLanguage()
+      const { getSettings, saveSettings } = await import('./lib/repo')
       const s = await getSettings()
-      setMainLocale((s.language ?? 'zh-CN') as Locale)
+      const lang = installerLang ?? s.language ?? 'zh-CN'
+      setMainLocale(lang as Locale)
+      // 把安装器选择的语言持久化到 settings，并清理一次性注册表标记
+      if (installerLang) {
+        await saveSettings({ language: installerLang })
+        clearInstallerLanguage()
+      }
     } catch {
       /* 静默：保持默认中文 */
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.5.1 (2026-09-01)
+
+**Installer Language Selection + English User Notice Without PRC Laws + Uninstaller Language Follows Installer**
+
+- **Language selection on installer start**: The NSIS installer now shows a language-selection dialog at the first step (Chinese / English) and writes the choice to `HKCU\Software\YingXia\InstallerLanguage`.
+- **First launch uses installer language**: On first startup the main process reads the installer language from the registry and writes it to `settings.language`, so the app opens in the language chosen during installation.
+- **Language can still be changed in Settings**: The installer language is only applied once; users can switch between Chinese and English at any time in the app settings.
+- **English user notice no longer cites PRC laws**: `UserNoticeModal` now renders different content by locale. Chinese users still see the PRC legal excerpts; English users see a generic disclaimer without references to Chinese laws such as the Criminal Law, Public Security Administration Punishments Law, Cybersecurity Law, Minor Protection Law, or Civil Code.
+- **Uninstaller follows installer language**: The NSIS MUI uninstaller automatically uses the language selected during installation. The installer warning message is also localized based on the selected language.
+
 ## v2.5.0 (2026-09-01)
 
 **Documentation & Project Showcase Overhaul (README / PRD Bilingual Rewrite)**
