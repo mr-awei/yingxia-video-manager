@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   main: {
     build: {
-      // 关闭 vite 自动清空 out（清空动作在沙箱下触发 safe-delete 拦截），由 pack 脚本显式清理
-      emptyOutDir: false,
+      // 每次 build 清空 out/main，避免旧版文件残留导致打包时混入历史 chunk
+      emptyOutDir: true,
       rollupOptions: {
         // 主进程依赖 Node 内置模块与 electron，保持外部化（electron-vite 默认已处理）
         external: ['electron']
@@ -14,7 +14,7 @@ export default defineConfig({
   },
   preload: {
     build: {
-      emptyOutDir: false,
+      emptyOutDir: true,
       rollupOptions: {
         external: ['electron'],
         // 强制 CJS 输出为 .js（避免 ESM preload + contextBridge 的兼容性问题，
@@ -26,7 +26,9 @@ export default defineConfig({
   renderer: {
     root: 'src/renderer',
     build: {
-      emptyOutDir: false,
+      // vite 用 content-hash 命名 chunk，每次构建旧 chunk 名字都会变，
+      // 不清空 out 就会堆满历史 chunk（之前 8/30 ~ 9/1 塞了 30+ 个）
+      emptyOutDir: true,
       rollupOptions: {
         // 渲染进程打包进浏览器环境，不外部化 react
       }

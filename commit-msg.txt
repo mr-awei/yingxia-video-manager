@@ -1,1 +1,1 @@
-﻿chore: bump v2.4.2 + CHANGELOG 更新
+﻿fix(main): 升级安装后绕过单实例锁让新版 UI 生效（P0 根因修复）

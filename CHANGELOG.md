@@ -1,5 +1,13 @@
 # 更新日志（Changelog）
 
+## v2.4.3（2026-09-01）
+
+**升级安装后看不到新版本（P0 根因修复） + 杜绝 out/ 历史 chunk 堆积**
+
+- **修复升级后旧版本 UI/功能残留**：用户不关闭影匣直接覆盖安装时，旧进程仍持有 `requestSingleInstanceLock`，新 exe 启动因拿不到锁直接 `app.quit()`，用户始终看到旧进程的界面和功能。修复：AppData 写入 `.last-version` 标记记录上次启动版本；启动时对比当前版本——不一致则视为升级安装，**绕过单实例锁让新版正常启动**。旧进程继续跑没关系，窗口被新版 BrowserWindow 盖住，用户重启后自动清除。
+- **杜绝 out/ 历史 chunk 堆积**：之前 `electron.vite.config.ts` 三处 `emptyOutDir: false`，渲染进程每次 build 旧 chunk（content-hash 命名）不会被清理，out/renderer/assets/ 里塞了 30+ 个历史文件，全部被 electron-builder 打进 app.asar。现在全改 `emptyOutDir: true`，打包产物干净无冗余。
+- **顺带：AppData 标记文件**：新增 `%APPDATA%\local-video-manager\.last-version`（一行版本号文本），仅用于升级检测，不涉及任何用户数据迁移。
+
 ## v2.4.2（2026-09-01）
 
 **扫描库进度条只触发一次 + GitHub 默认英文版 README**

@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## v2.4.3 (2026-09-01)
+
+**Upgrade shows old UI / stale app (P0 root-cause fix) + eliminate out/ chunk clutter**
+
+- **Fixed upgrade-after-overwrite showing old UI**: If the user overwrites-installs a new version while the old one is still running, the old process still holds equestSingleInstanceLock. The new exe then immediately pp.quit()s because it cannot acquire the lock — the user is stuck on the old window. Fix: write a .last-version marker into %APPDATA%\local-video-manager\.last-version after a successful start. On the next launch, compare pp.getVersion() to the marker; a mismatch means "this is an upgrade run" and we skip the single-instance lock so the new process can start normally. The old process keeps running briefly (its window is buried under the new BrowserWindow) and is cleared on next reboot.
+- **Out-renderer/assets no longer accumulates stale chunks**: electron.vite.config.ts had emptyOutDir: false on all three builds. Since Vite uses content-hashed renderer chunks, every build left old hashed files behind — out/renderer/assets/ had 30+ leftover files from 8/30 ~ 9/1, all of which got bundled into pp.asar by electron-builder. Switched all three to emptyOutDir: true so each build produces clean output.
+- **New AppData marker file**: %APPDATA%\local-video-manager\.last-version (one-line version text), used purely for upgrade detection — no user data migration touches.
+# Changelog
+
 ## v2.4.2 (2026-09-01)
 
 **Scan library progress fires only once + GitHub README defaults to English**
@@ -526,4 +535,5 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 

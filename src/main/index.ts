@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, protocol, Tray, nativeImage, type NativeImage } from 'electron'
 import path from 'node:path'
-import { promises as fs, appendFileSync, mkdirSync } from 'node:fs'
+import { promises as fs, appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
 import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from '../shared/i18n'
@@ -9,10 +9,35 @@ import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from 
 // 造成的中文目录名；必须在任何 app.getPath('userData') 调用之前设置）
 app.setPath('userData', path.join(app.getPath('appData'), 'local-video-manager'))
 
-// v2.2.14-fix：单实例锁。多实例同时跑会各自持有整份内存缓存，先后把「自己的快照」
-// 覆盖写进同一个 data.json（尤其托盘常驻的旧进程退出时会把旧数据盖回去），造成
-// 「设置改了不保存 / 数据回退到旧时间点」。第二实例启动时直接退出并唤起已有窗口。
-if (!app.requestSingleInstanceLock()) {
+// ------------------------------------------------------------------
+// 单实例锁 + 升级绕过（P0 重要修复）
+//
+// 旧问题：用户不退出影匣直接覆盖安装 → 旧进程仍持有 requestSingleInstanceLock
+// → 新 exe 启动时 !app.requestSingleInstanceLock() === true → 直接 app.quit()
+// → 用户始终看到旧进程的 UI、功能、文案；只有手动关进程 + 删 AppData 才"看起来好"
+// （删 AppData 本身没用，有用的是卸载时旧进程被杀）。
+//
+// 修复：在 AppData 里写一个 .last-version 标记记录上次启动版本。
+//       当前版本 ≠ 上次版本 → 说明是升级安装 → 绕过单实例锁让新版直接启动。
+//       旧实例还在跑没关系：它的窗口会被新 BrowserWindow 覆盖，用户看到的是新版 UI；
+//       旧进程下次用户关掉或重启系统就清掉。
+// ------------------------------------------------------------------
+const VERSION_MARKER = path.join(app.getPath('userData'), '.last-version')
+
+function isUpgradeFromOldVersion(): boolean {
+  try {
+    if (!existsSync(VERSION_MARKER)) return false
+    const last = readFileSync(VERSION_MARKER, 'utf8').trim()
+    return last !== '' && last !== app.getVersion()
+  } catch {
+    return false
+  }
+}
+
+if (isUpgradeFromOldVersion()) {
+  console.log(`[main] 检测到版本升级：上次启动 != 当前 ${app.getVersion()} → 绕过单实例锁让新版启动`)
+  // 不调 requestSingleInstanceLock → 新版进程照常走完整启动流程；旧进程继续跑但被新版窗口盖住
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -246,6 +271,15 @@ app.whenReady().then(() => {
   })()
 
   createWindow()
+
+  // 成功启动后写版本标记 → 下次启动时用于判断"是不是升级安装"
+  // （升级安装时旧进程还活着持有单实例锁，新实例会因此被提前 app.quit()，
+  //  这个标记让新版在启动早期就能检测到升级并绕过锁）
+  try {
+    writeFileSync(VERSION_MARKER, app.getVersion())
+  } catch {
+    /* 首次启动 AppData 目录不存在会抛 ENOENT，正常，下次启动时再写 */
+  }
 
   // 自动检查更新：按设置里的「频率」在启动时检测一次，之后每 30 分钟复查（仅当距上次检测超过设定间隔才真正联网）
   void (async () => {
