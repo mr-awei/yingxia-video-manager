@@ -1085,6 +1085,18 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     onChange={(v) => setDraft({ ...draft, defaultSort: v as SortKey })}
                   />
                 </Card>
+                <Card>
+                  <div className="text-white/90 text-sm font-medium mb-1">{t("settings.listViewModeLabel")}</div>
+                  <div className="text-white/40 text-xs mb-3">{t("settings.listViewModeDesc")}</div>
+                  <SegmentedControl
+                    value={draft.listViewMode ?? 'flat'}
+                    options={[
+                      { value: 'flat', label: t('settings.listViewModeFlat') },
+                      { value: 'grouped', label: t('settings.listViewModeGrouped') }
+                    ]}
+                    onChange={(v) => setDraft({ ...draft, listViewMode: v as 'flat' | 'grouped' })}
+                  />
+                </Card>
               </section>
             )}
             {/* ===== 隐私与安全 ===== */}

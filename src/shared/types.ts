@@ -221,6 +221,8 @@ export interface Settings {
   suppressIntroExcelNotice?: boolean
   /** v2.3.12：界面语言，zh-CN 中文 / en-US 英文 */
   language?: 'zh-CN' | 'en-US'
+  /** v2.4.4：列表页默认展示模式，flat 全库平铺 / grouped 按 Excel 分类分组 */
+  listViewMode?: 'flat' | 'grouped'
 }
 
 export interface VideoFilter {
@@ -284,7 +286,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoredUnlistedPaths: [],
   noticeDismissed: false,
   suppressIntroExcelNotice: false,
-  language: 'zh-CN'
+  language: 'zh-CN',
+  listViewMode: 'flat'
 }
 
 /** 默认海报来源优先级：手动 > 同名图 > javapi（本地免费）> javinfo > javdb > javbus > 截帧 > 占位 */

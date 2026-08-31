@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## v2.4.5 (2026-09-01)
+
+**Re-frame randomization + quality filtering + library display mode setting**
+
+- **Detail-page "Re-frame" now uses random multi-point sampling**: Replaced the fixed thumbnail algorithm and evenly-spaced preview frames with random candidate timestamps across the 5% ~ 95% range of the video.
+- **Auto-filters low-quality frames**: Each candidate frame is scaled to 8x8 grayscale via ffmpeg, and its mean brightness / variance are computed. Frames that are too dark (mean<25), too bright (mean>230), or blurry/monotonic (variance<400) are discarded, reducing black/white/blurry frames.
+- **Every re-frame yields different results**: Random timestamps + quality ranking means repeated clicks produce different frames instead of clustering in one spot.
+- **Persistent library display mode**: Added "Library display mode" in Settings > Appearance, choosing between "Flat" (default) or "Grouped by category". Toggling the top "Group" button also auto-saves the preference.
+# Changelog
+
 ## v2.4.4 (2026-09-01)
 
 **Thoroughly prevent stale UI after upgrade (two-layer safety)**
@@ -543,6 +553,7 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 
 

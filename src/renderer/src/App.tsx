@@ -225,6 +225,10 @@ export default function App() {
       if (s.defaultSort && s.defaultSort !== 'title') {
         setFilter((f) => (f.sort === 'title' ? { ...f, sort: s.defaultSort } : f))
       }
+      // 默认列表展示模式（设置页可切换；默认全库平铺）
+      if (s.listViewMode) {
+        setFilter((f) => ({ ...f, groupMode: s.listViewMode as 'flat' | 'grouped' }))
+      }
       // 启动时自动对账开关：{t('common.close')}则跳过首次自动对账
       if (s.scanOnStartup === false) skipFirstAutoScanRef.current = true
       if (libs.length > 0) setLibraryId(libs[0].id)
@@ -240,6 +244,16 @@ export default function App() {
   useEffect(() => {
     if (settings.language) setLocale(settings.language as 'zh-CN' | 'en-US')
   }, [settings.language])
+
+  // 用户切换分组模式时持久化到设置（设置页与顶部「分组」按钮同步）
+  useEffect(() => {
+    if (!loaded) return
+    if (settings.listViewMode !== filter.groupMode) {
+      void api.settingsSet({ listViewMode: filter.groupMode })
+        .then(() => setSettings((prev) => ({ ...prev, listViewMode: filter.groupMode })))
+        .catch(() => {})
+    }
+  }, [filter.groupMode, loaded, settings.listViewMode])
 
   // 后台轻量刷新设置：让「自动检查更新」写入的 pendingUpdate / lastUpdateCheck 自动回流到 UI（徽标、设置页横幅）
   useEffect(() => {

@@ -183,7 +183,6 @@ function previewPathFor(video: Video, i: number): string {
 //   子进程阻塞在 write 上永远退不出来（原封面截帧没消费 stderr，这是"补齐卡死不动"的直接原因之一）。
 // 关键点 2：**必须有超时**——原封面截帧（thumbnail 滤镜要解码全片）既没超时也没消费 stderr，
 //   遇到损坏的 wmv 能挂几小时，整个 generatePreviewSet 不返回 → 批量补齐 worker 永久卡住。
-const COVER_TIMEOUT_MS = 60_000 // 封面：thumbnail 滤镜需解码全片，给足 60s
 const FRAME_TIMEOUT_MS = 30_000 // 单帧截帧
 
 function spawnWithTimeout(
@@ -260,9 +259,111 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
   return results
 }
 
+/** 在 [headSkip, 1-tailSkip] 范围内生成 count 个不重复的随机秒数 */
+function generateRandomSeconds(dur: number, count: number, headSkip = 0.05, tailSkip = 0.05): number[] {
+  const start = Math.max(5, Math.floor(dur * headSkip))
+  const end = Math.max(start + count * 2, Math.floor(dur * (1 - tailSkip)))
+  const set = new Set<number>()
+  let guard = 0
+  while (set.size < count && guard < count * 200) {
+    const sec = start + Math.floor(Math.random() * (end - start))
+    set.add(sec)
+    guard++
+  }
+  return Array.from(set).sort((a, b) => a - b)
+}
+
+/**
+ * 用 ffmpeg 把单张图片缩放到 8x8 灰度，计算亮度均值与方差。
+ * 均值过低/过高 ≈ 黑屏/白屏；方差过低 ≈ 模糊/画面单调。
+ * 这个分析非常轻量（只输出 64 字节 raw），不依赖额外库。
+ */
+async function analyzeFrameQuality(
+  exe: string,
+  p: string
+): Promise<{ mean: number; variance: number; ok: boolean } | null> {
+  const args = ['-y', '-i', p, '-vf', 'scale=8:8,format=gray', '-f', 'rawvideo', '-pix_fmt', 'gray', '-']
+  return new Promise((resolve) => {
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = (v: { mean: number; variance: number; ok: boolean } | null): void => {
+      if (done) return
+      done = true
+      if (timer) clearTimeout(timer)
+      resolve(v)
+    }
+    let pchild: import('node:child_process').ChildProcessWithoutNullStreams
+    try {
+      pchild = spawn(exe, args, { windowsHide: true })
+    } catch {
+      finish(null)
+      return
+    }
+    const chunks: Buffer[] = []
+    pchild.stdout?.on('data', (c) => chunks.push(c))
+    pchild.stderr?.on('data', () => {}) // 消费 stderr，避免管道阻塞
+    timer = setTimeout(() => {
+      try {
+        pchild.kill('SIGKILL')
+      } catch {}
+      finish(null)
+    }, FRAME_TIMEOUT_MS)
+    pchild.on('error', () => finish(null))
+    pchild.on('close', (code) => {
+      if (code !== 0) {
+        finish(null)
+        return
+      }
+      const buf = Buffer.concat(chunks)
+      if (buf.length < 64) {
+        finish(null)
+        return
+      }
+      const pixels = Array.from(buf.slice(0, 64))
+      const mean = pixels.reduce((a, b) => a + b, 0) / 64
+      const variance = pixels.reduce((a, b) => a + (b - mean) ** 2, 0) / 64
+      // 阈值：mean 25~230 避开纯黑/纯白；variance >= 400 避开模糊/画面单调
+      const ok = mean >= 25 && mean <= 230 && variance >= 400
+      finish({ mean, variance, ok })
+    })
+  })
+}
+
+/** 截一组候选帧并分析质量，返回按质量排序的候选路径 */
+async function captureAndRankCandidates(
+  exe: string,
+  video: Video,
+  count: number,
+  tmpPrefix: string
+): Promise<{ path: string; mean: number; variance: number }[]> {
+  const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
+  const seconds = generateRandomSeconds(dur, count)
+  const tmpPaths = seconds.map((_, i) => path.join(postersCacheDir(), `${video.id}_${tmpPrefix}_${i}.jpg`))
+  const captured = await mapLimit(
+    seconds.map((sec, i) => ({ sec, out: tmpPaths[i] })),
+    4,
+    async (it) => ({ ...it, ok: await spawnFrameAt(exe, video.path, it.sec, it.out) })
+  )
+  const analyzed = await mapLimit(
+    captured.filter((c) => c.ok).map((c) => c.out),
+    4,
+    async (p) => {
+      const q = await analyzeFrameQuality(exe, p)
+      return { p, q }
+    }
+  )
+  return analyzed
+    .filter((x): x is { p: string; q: { mean: number; variance: number; ok: boolean } } => x.q !== null && x.q.ok)
+    .map((x) => ({ path: x.p, mean: x.q.mean, variance: x.q.variance }))
+    .sort((a, b) => b.variance - a.variance)
+}
+
 /**
  * ffmpeg 兜底截帧：随机时间点截 1 张封面 + PREVIEW_COUNT 张预览图。
- * 用于实在获取不到封面/截图时（无 JavDB 海报、无侧车图），保证每部视频都有真实画面。
+ * v2.4.4+：封面与预览图均改为"随机多点采样 + 质量评估"策略：
+ *   - 避免所有截图挤在固定位置（原 preview 是等分、封面是 thumbnail 固定算法）
+ *   - 自动过滤过黑/过白/模糊/画面单调的帧
+ *   - 每次重新截图时间点不同，用户点"重新截图"会拿到不同画面
  * 返回的 coverPath 复用 <id>.jpg（与 generateFrame 一致），previewPaths 为 <id>_preview_<n>.jpg。
  */
 export async function generatePreviewSet(
@@ -276,39 +377,49 @@ export async function generatePreviewSet(
     return null
   }
   await fs.mkdir(postersCacheDir(), { recursive: true })
-  const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
   const coverPath = frameCachePath(video)
-  // 封面：用 thumbnail 滤镜（官方推荐，自动选最具代表性帧）避免黑场/静帧
-  const n = Math.min(200, Math.max(100, Math.floor(dur / 30)))
-  const previewItems = Array.from({ length: PREVIEW_COUNT }, (_, i) => {
-    const frac = 0.06 + ((i + 0.5) / PREVIEW_COUNT) * 0.88
-    return { i, sec: Math.max(5, Math.floor(dur * frac)) }
-  })
-  // v2.3.11：封面先跑（thumbnail 滤镜解码全片，最能暴露损坏文件），带超时 + 消费 stderr
-  const coverRes = await spawnWithTimeout(
-    exe,
-    ['-y', '-i', video.path, '-vf', `thumbnail=n=${n},scale=480:-1`, '-frames:v', '1', '-q:v', '2', coverPath],
-    COVER_TIMEOUT_MS,
-    'coverThumbnail'
-  )
-  void frameLog(
-    `[coverThumbnail] ${coverRes.ok ? 'ok' : 'failed'} id=${video.id} code=${coverRes.code} err=${coverRes.err}`
-  )
-  // 封面截帧**超时**（不是普通失败）= 文件损坏/结构异常的强信号，
-  // 不再对其发起十余个预览帧 ffmpeg（原逻辑会继续跑，损坏文件下每个都吃满 30s 超时）
-  if (!coverRes.ok && coverRes.err.startsWith('timeout')) {
-    void frameLog(`[generatePreviewSet] 封面截帧超时，判定文件异常，跳过预览帧 id=${video.id}`)
-    return { coverPath: undefined, previewPaths: [], timedOut: true }
+
+  // 封面：截 12 张随机候选，评估后选质量最高的一张
+  const coverRanked = await captureAndRankCandidates(exe, video, 12, 'cover_cand')
+  let finalCover: string | undefined
+  if (coverRanked.length > 0) {
+    try {
+      await fs.copyFile(coverRanked[0].path, coverPath)
+      finalCover = coverPath
+      void frameLog(`[generatePreviewSet] cover picked variance=${coverRanked[0].variance.toFixed(0)} mean=${coverRanked[0].mean.toFixed(0)}`)
+    } catch {
+      finalCover = undefined
+    }
   }
-  const coverOk = coverRes.ok
-  const previewsOk = await mapLimit(previewItems, 4, (it) =>
-    spawnFrameAt(exe, video.path, it.sec, previewPathFor(video, it.i))
-  )
-  const previewPaths = previewsOk
-    .map((ok, i) => (ok ? previewPathFor(video, i) : null))
-    .filter((p): p is string => p !== null)
-  const finalCover = coverOk ? coverPath : previewPaths.length > 0 ? previewPaths[0] : undefined
-  void frameLog(`[generatePreviewSet] result id=${video.id} coverOk=${coverOk} previewCount=${previewPaths.length} finalCover=${finalCover ?? 'none'}`)
+
+  // 预览图：截 22 张随机候选，评估后取前 PREVIEW_COUNT 张
+  const previewRanked = await captureAndRankCandidates(exe, video, 22, 'preview_cand')
+  const previewPaths: string[] = []
+  const take = Math.min(PREVIEW_COUNT, previewRanked.length)
+  for (let i = 0; i < take; i++) {
+    const target = previewPathFor(video, i)
+    try {
+      await fs.copyFile(previewRanked[i].path, target)
+      previewPaths.push(target)
+    } catch {}
+  }
+
+  // 兜底：如果封面没选出来但预览图有，用最好的预览图当封面
+  if (!finalCover && previewPaths.length > 0) {
+    try {
+      await fs.copyFile(previewPaths[0], coverPath)
+      finalCover = coverPath
+    } catch {}
+  }
+
+  // 清理临时候选文件
+  const allTmp = [
+    ...Array.from({ length: 12 }, (_, i) => path.join(postersCacheDir(), `${video.id}_cover_cand_${i}.jpg`)),
+    ...Array.from({ length: 22 }, (_, i) => path.join(postersCacheDir(), `${video.id}_preview_cand_${i}.jpg`))
+  ]
+  await Promise.all(allTmp.map((p) => fs.unlink(p).catch(() => {})))
+
+  void frameLog(`[generatePreviewSet] result id=${video.id} cover=${finalCover ?? 'none'} previews=${previewPaths.length}`)
   return { coverPath: finalCover, previewPaths, timedOut: false }
 }
 
