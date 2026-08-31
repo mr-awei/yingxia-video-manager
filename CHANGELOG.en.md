@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## v2.4.9 (2026-09-01)
+
+**Fixed installed app not launching after double-clicking the desktop icon (P0 critical bug)**
+
+- Root cause: The upgrade-detection kill-old-process logic added in v2.4.4 used 	askkill /F /IM \"影匣.exe\" /T, which kills **all** processes with that image name — including the newly started upgrade instance itself. This caused the fresh process to be killed immediately on launch, so the desktop icon appeared to do nothing.
+- Fix: Use 	askkill /F /FI \"PID ne <currentPID>\" /IM \"影匣.exe\" to exclude the current process before terminating other old instances.
+- Why 
+pm run dev made it work afterwards: the dev process is named electron.exe, not 影匣.exe, so taskkill did not kill it. Running dev also wrote .last-version to the current version, so subsequent production launches skipped the upgrade branch and no longer triggered the suicide.
+# Changelog
+
 ## v2.4.8 (2026-09-01)
 
 **Installer friendly prompt + fix NSIS Chinese encoding**
@@ -579,6 +589,7 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 
 

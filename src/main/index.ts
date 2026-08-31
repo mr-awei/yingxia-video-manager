@@ -35,9 +35,10 @@ function readLastVersion(): string | null {
 
 function killOldProcess(): void {
   try {
-    // productName 是中文「影匣」，安装后的 exe 文件名为 "影匣.exe"
-    execSync('taskkill /F /IM "影匣.exe" /T', { stdio: 'ignore' })
-    console.log('[main] 升级检测到旧进程，已强制结束')
+    // productName 是中文「影匣」，安装后的 exe 文件名为 "影匣.exe"。
+    // 用 /FI "PID ne <current>" 排除当前进程自己，避免新版启动时被 taskkill 自杀。
+    execSync(`taskkill /F /FI "PID ne ${process.pid}" /IM "影匣.exe"`, { stdio: 'ignore' })
+    console.log('[main] 升级检测到旧进程，已强制结束（排除当前进程）')
   } catch {
     // 旧进程没运行或已经被杀，忽略错误
   }
