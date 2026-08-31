@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## v2.4.4 (2026-09-01)
+
+**Thoroughly prevent stale UI after upgrade (two-layer safety)**
+
+- **Main process kills old process on upgrade**: On startup compare .last-version to pp.getVersion(). If they differ, run 	askkill /F /IM "影匣.exe" /T before acquiring equestSingleInstanceLock, so no stale process survives and the AppData folder no longer needs to be cleared.
+- **NSIS installer kills old process before overwrite**: Added uild/installer.nsh and referenced it from electron-builder.yml. The installer calls 	askkill + FindWindow before replacing files, providing a second layer of protection.
+# Changelog
+
 ## v2.4.3 (2026-09-01)
 
 **Upgrade shows old UI / stale app (P0 root-cause fix) + eliminate out/ chunk clutter**
@@ -535,5 +543,6 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 **Fixes**
 - **Batch completion no longer false-stops**: `fetchDetailSmart` previously treated "search no results" (source really doesn't have this code, normal case) as consecutive failure, causing auto-stop / source switch even when user's IP wasn't blocked. Now only real network / session exceptions (request failed, timeout, age-gate fail) count toward failure; "no results / unrecognizable code" is silently ignored. javbus's "search no results" message also changed to silent.
 - Batch completion executes at the interval set by user (`fetchIntervalMs`), no extra fixed delay stacking.
+
 
 

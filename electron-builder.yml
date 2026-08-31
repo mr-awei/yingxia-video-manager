@@ -37,3 +37,5 @@ nsis:
   shortcutName: 影匣
   deleteAppDataOnUninstall: false
   differentialPackage: false
+  # 安装前执行 build/installer.nsh，强制结束旧进程
+  include: build/installer.nsh

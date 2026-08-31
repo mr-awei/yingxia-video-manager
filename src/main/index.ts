@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, protocol, Tray, nativeImage, type NativeImage } from 'electron'
 import path from 'node:path'
 import { promises as fs, appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
 import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from '../shared/i18n'
@@ -10,34 +11,45 @@ import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from 
 app.setPath('userData', path.join(app.getPath('appData'), 'local-video-manager'))
 
 // ------------------------------------------------------------------
-// 单实例锁 + 升级绕过（P0 重要修复）
+// 单实例锁 + 升级时强制杀掉旧进程（P0 重要修复）
 //
 // 旧问题：用户不退出影匣直接覆盖安装 → 旧进程仍持有 requestSingleInstanceLock
 // → 新 exe 启动时 !app.requestSingleInstanceLock() === true → 直接 app.quit()
 // → 用户始终看到旧进程的 UI、功能、文案；只有手动关进程 + 删 AppData 才"看起来好"
 // （删 AppData 本身没用，有用的是卸载时旧进程被杀）。
 //
-// 修复：在 AppData 里写一个 .last-version 标记记录上次启动版本。
-//       当前版本 ≠ 上次版本 → 说明是升级安装 → 绕过单实例锁让新版直接启动。
-//       旧实例还在跑没关系：它的窗口会被新 BrowserWindow 覆盖，用户看到的是新版 UI；
-//       旧进程下次用户关掉或重启系统就清掉。
+// 修复：AppData 写入 .last-version 标记记录上次启动版本；启动时对比当前版本。
+//       若检测到升级 → 先用 taskkill /F /IM 强制杀掉旧影匣进程 → 再正常获取单实例锁。
+//       这样新版完全接管，没有旧进程残留，数据目录也不需要清。
 // ------------------------------------------------------------------
 const VERSION_MARKER = path.join(app.getPath('userData'), '.last-version')
 
-function isUpgradeFromOldVersion(): boolean {
+function readLastVersion(): string | null {
   try {
-    if (!existsSync(VERSION_MARKER)) return false
-    const last = readFileSync(VERSION_MARKER, 'utf8').trim()
-    return last !== '' && last !== app.getVersion()
+    if (!existsSync(VERSION_MARKER)) return null
+    return readFileSync(VERSION_MARKER, 'utf8').trim()
   } catch {
-    return false
+    return null
   }
 }
 
-if (isUpgradeFromOldVersion()) {
-  console.log(`[main] 检测到版本升级：上次启动 != 当前 ${app.getVersion()} → 绕过单实例锁让新版启动`)
-  // 不调 requestSingleInstanceLock → 新版进程照常走完整启动流程；旧进程继续跑但被新版窗口盖住
-} else if (!app.requestSingleInstanceLock()) {
+function killOldProcess(): void {
+  try {
+    // productName 是中文「影匣」，安装后的 exe 文件名为 "影匣.exe"
+    execSync('taskkill /F /IM "影匣.exe" /T', { stdio: 'ignore' })
+    console.log('[main] 升级检测到旧进程，已强制结束')
+  } catch {
+    // 旧进程没运行或已经被杀，忽略错误
+  }
+}
+
+const lastVersion = readLastVersion()
+if (lastVersion && lastVersion !== app.getVersion()) {
+  console.log(`[main] 检测到版本升级 ${lastVersion} -> ${app.getVersion()} → 强制结束旧进程后再启动`)
+  killOldProcess()
+}
+
+if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {

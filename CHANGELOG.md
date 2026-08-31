@@ -1,5 +1,12 @@
 # 更新日志（Changelog）
 
+## v2.4.4（2026-09-01）
+
+**彻底杜绝升级后旧版本 UI 残留（双重保险）**
+
+- **主进程升级时强杀旧进程**：启动时对比 `.last-version` 与 `app.getVersion()`，若版本不一致 → 先 `taskkill /F /IM "影匣.exe" /T` 强制结束旧进程，再正常获取 `requestSingleInstanceLock`。旧进程不会再残留，数据目录无需清理。
+- **NSIS 安装前强杀旧进程**：新增 `build/installer.nsh` 并在 `electron-builder.yml` 里 `include`，安装器在覆盖文件前先用 `taskkill` + `FindWindow` 关闭已运行的影匣，双重保险。
+
 ## v2.4.3（2026-09-01）
 
 **升级安装后看不到新版本（P0 根因修复） + 杜绝 out/ 历史 chunk 堆积**
