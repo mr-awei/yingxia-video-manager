@@ -243,6 +243,8 @@ export interface ScanProgress {
     status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'
     detail?: string
   }
+  /** reconcileLibrary 特有：片单加载错误（找不到/解析失败），renderer 收到后弹 toast 或引导向导 */
+  introError?: { kind: string; message: string; triedPaths: string[] }
 }
 
 export interface OpenResult {

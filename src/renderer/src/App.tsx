@@ -972,20 +972,24 @@ export default function App() {
 
   const handleScan = useCallback(() => {
     if (!libraryId) return
-    // v2.3.8：扫描库先调 videoScan（scanLibrary 批量写盘建记录，fix7 秒级补全磁盘视频），
-    // 再 reconcile 刷新列表。原来只跑 reconcile，无片单时临时生成 entry 不落盘记录，
-    // 导致 G 库 3701 部视频无 data.json 记录（补不到时长、点不开详情）。
+    // v2.4.1：扫描库合并为单次 IPC 调用 libraryScanAndReconcile，内部先 scanLibrary 建记录
+    // 再 reconcileLibrary 对账并写缓存；主进程只推一轮连续进度，UI 上只看到一次进度条
+    // （之前先 videoScan 再 runReconcile，两次 IPC 各发自己的 emitProgress，进度条弹两轮）
     setScanning(true)
     setProgress(null)
     api
-      .videoScan(libraryId)
+      .libraryScanAndReconcile(libraryId)
+      .then((res) => {
+        setReconcile(res)
+        setAllReconciles((prev) => ({ ...prev, [libraryId]: res }))
+        if (res.stats.missing > 0 || res.stats.unlisted > 0) setReconcileOpen(true)
+      })
       .catch(() => {})
       .finally(() => {
-        void runReconcile(libraryId)
         setTimeout(() => setProgress(null), 800)
         setScanning(false)
       })
-  }, [libraryId, runReconcile])
+  }, [libraryId])
 
   const handleOpenEntry = useCallback((entry: DisplayEntry) => {
     if (entry.video) setDetail(entry.video)

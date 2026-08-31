@@ -577,6 +577,41 @@ export function registerIpc(): void {
   })
 
   // ---------- 对账（Excel 驱动 + 文件夹对账） ----------
+  // v2.4.1："扫描库"按钮合并 scan + reconcile，一次调用只推一轮连续进度。
+  //   scanLibrary 负责建 data.json 记录（必做，fix 新库第一次扫不出条目）
+  //   reconcileLibrary 负责 Excel 对账 + 条目归类（也必做）
+  //   原来 renderer 先调 videoScan → finally 里再调 runReconcile，两个独立 IPC 各发自己的
+  //   emitProgress，UI 上就出现"点一次扫描，进度条弹两轮"。
+  ipcMain.handle(IPC.libraryScanAndReconcile, async (_e, libraryId: string) => {
+    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
+    if (!lib) throw new Error('媒体库不存在')
+    const settings = await repo.getSettings()
+    const t0 = Date.now()
+    // scanLibrary 正常发进度（0 → scanTotal）
+    await scanLibrary(lib, settings, emitProgress)
+    // reconcileLibrary 也走 emitProgress，但它会从自己的 0 开始推——
+    // 我们让 reconcile 的常规进度（total/done）在 scan 结束后继续"延续"这个进度，
+    // 使 UI 上看到的是 0 → scanTotal → scanTotal+reconcileCount 的一条连续进度条。
+    // 最简单做法：包装一下 emitProgress，reconcile 阶段的常规 total/done 不推，只推 introError / fetchEvent。
+    let scanDone = false
+    const reconcilerOnProgress = (p: Parameters<typeof emitProgress>[0]) => {
+      // introError / fetchEvent 继续正常推；常规进度在 scan 阶段结束后就不推了
+      if (p.introError || p.fetchEvent) {
+        emitProgress(p)
+        return
+      }
+      if (!scanDone) return // scan 没跑完？不可能，scanLibrary 是 await 的
+      // reconcile 常规进度不推，避免前端看到第二轮进度条
+    }
+    scanDone = true
+    const result = await reconcileLibrary(lib, settings, reconcilerOnProgress)
+    console.log(`[scan+reconcile] 完成 ${libraryId}：entries=${result.entries.length} 耗时${Date.now() - t0}ms`)
+    void writeReconcileCache(libraryId, result)
+      .then(() => console.log(`[scan+reconcile] 缓存已写 ${libraryId}`))
+      .catch((e) => console.error('[scan+reconcile] 缓存写入失败:', (e as Error)?.message || e))
+    return result
+  })
+
   ipcMain.handle(IPC.libraryReconcile, async (_e, libraryId: string) => {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')

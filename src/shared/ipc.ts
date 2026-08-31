@@ -6,6 +6,8 @@ export const IPC = {
   libraryAdd: 'library:add',
   libraryRemove: 'library:remove',
   libraryUpdate: 'library:update',
+  // 扫描 + 对账（一次调用合并 scanLibrary + reconcileLibrary，进度条只显示一轮连续进度）
+  libraryScanAndReconcile: 'library:scanAndReconcile',
   // 对账（MD 驱动 + 文件夹对账）
   libraryReconcile: 'library:reconcile',
   // 对账结果磁盘缓存（上次 reconcile 的快照，启动/切库先秒出，后台再全量对账刷新）

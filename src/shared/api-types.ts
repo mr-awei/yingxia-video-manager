@@ -110,6 +110,8 @@ export interface AppApi {
   libraryAdd(input: Omit<Library, 'id' | 'createdAt'>): Promise<Library>
   libraryRemove(id: string): Promise<void>
   libraryUpdate(id: string, patch: Partial<Library>): Promise<Library | null>
+  /** 扫描库（videoScan + libraryReconcile 合并调用，只推一轮连续进度） */
+  libraryScanAndReconcile(libraryId: string): Promise<ReconcileResult>
   /** 按 Excel 片单对账文件夹，返回分类展示数据 */
   libraryReconcile(libraryId: string): Promise<ReconcileResult>
   /** 读上次对账结果的磁盘缓存（秒出，无缓存返回 null） */

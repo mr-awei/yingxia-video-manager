@@ -10,6 +10,7 @@ const api: AppApi = {
   libraryAdd: (input) => ipcRenderer.invoke(IPC.libraryAdd, input),
   libraryRemove: (id) => ipcRenderer.invoke(IPC.libraryRemove, id),
   libraryUpdate: (id, patch) => ipcRenderer.invoke(IPC.libraryUpdate, id, patch),
+  libraryScanAndReconcile: (libraryId) => ipcRenderer.invoke(IPC.libraryScanAndReconcile, libraryId),
   libraryReconcile: (libraryId) => ipcRenderer.invoke(IPC.libraryReconcile, libraryId),
   libraryReconcileCache: (libraryId) => ipcRenderer.invoke(IPC.libraryReconcileCache, libraryId),
   videoList: (filter) => ipcRenderer.invoke(IPC.videoList, filter),
