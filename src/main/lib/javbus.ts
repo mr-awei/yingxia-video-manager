@@ -1,12 +1,7 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
-<<<<<<< HEAD
 import { extractBaseCode, normalizeManualCode } from '../../shared/code'
-import { extractCode, cacheRemoteImage } from './javdb'
-=======
-import { extractBaseCode } from '../../shared/code'
 import { extractCode, cacheRemoteImage, cleanGenreName } from './javdb'
->>>>>>> e349fd2 (feat: v2.6.6 标签分层修复 + 截图失败详情 + Excel 向导对齐 + 元数据清洗)
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -239,7 +234,6 @@ export async function fetchJavBusDetail(
     cover: coverLocal || undefined,
     // v2.2.14：保留解析出的原始总数，供前端区分「本来就没图」与「下载失败」
     samplesTotal,
-    // 失败原因（去重），供前端提示
     sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((p): p is string => !!p)
   }
