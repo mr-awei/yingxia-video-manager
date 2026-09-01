@@ -20,18 +20,42 @@ YingXia is a Windows desktop app that turns a local video folder into a beautifu
 
 ## Highlights
 
-- **Excel-sheet-driven catalog**: Your spreadsheet is the single source of truth for categories, ratings, tags, and descriptions. Reconcile it against the folder anytime to spot missing or uncategorized entries.
-- **Poster wall browsing**: Three density levels (immersive / standard / compact), hover cards for quick info, and smooth virtual scrolling for large libraries.
-- **Flat or grouped view**: Choose whether the default library view shows everything flat or grouped by Excel category — persisted in Settings.
-- **Smart metadata fetch**: Auto-identifies video codes and fetches metadata from configurable sources (JavDB, JavBus, JavLibrary, Javapi, Javinfo) with automatic fallback and a draggable progress panel that supports pause / resume / stop.
-- **Series episodes**: Multiple files for the same code (e.g. `SONE-560_1.mp4`, `SONE-560_2.mp4`) show as one card in the grid; the detail page lists episodes and lets you switch between them.
-- **Random, quality-filtered frame extraction**: When no source cover is available, ffmpeg extracts 12–22 candidate frames and automatically rejects black, white, blurry, or monotonous frames — so "re-screenshot" always produces a fresh, sharp pick.
-- **Bilingual UI from install**: The NSIS installer asks for your language (简体中文 / English) on the very first screen; the app opens in that language on first launch, and the uninstaller follows it too. Switch anytime in Settings.
-- **English notice without PRC laws**: The in-app legal notice renders locale-specific content — Chinese users see PRC law excerpts; English users see a generic disclaimer without references to Chinese laws.
+- **Excel-sheet-driven catalog**: Your spreadsheet is the single source of truth for `分类 / 推荐评分 / 简介 / 主题 / 角色 / 服装 / 体型 / 行为 / 玩法 / 场景 / 剧情 / 其他`. Reconcile it against the folder anytime — the detail page renders every non-empty tag group from your sheet as-is.
+- **Three-layer tag model**: Sheet tags → structured `tagCategories` (grouped) → flat `tags` (all) → source `backupTags` (JavDB/JavBus/etc). Clean separators, trailing numbers, and bracket noise out of the box.
+- **Poster wall browsing**: Three density levels (immersive / standard / compact), 1 s hover-to-zoom delay, and smooth virtual scrolling for large libraries.
+- **Flat or grouped view**: Choose whether the default library view shows everything flat or grouped by the Excel `分类` column — persisted in Settings.
+- **Smart metadata fetch**: Auto-identifies video codes and fetches metadata from configurable sources (JavDB, JavBus, JavLibrary, Javapi, Javinfo) with automatic fallback. Drag-to-reorder sources, pause/resume/stop the batch, and get per-video failure reasons shown both as a toast and inline in the detail page.
+- **Series episodes**: Multiple files for the same code (e.g. `SONE-560_1.mp4`, `SONE-560_2.mp4`) show as one card; the detail page lists episodes and lets you switch.
+- **Random, quality-filtered frame extraction**: When no source cover is available, ffmpeg extracts 12–22 candidate frames and automatically rejects black, white, blurry, or monotonous frames — so "Re-frame" always produces a fresh, sharp pick. Auto-framing on the detail page uses the same pipeline as manual framing.
+- **Bilingual from install**: The NSIS installer asks for your language (简体中文 / English) on the first screen; the app opens in that language, the uninstaller follows it, and you can switch anytime in Settings.
+- **English notice without PRC laws**: The in-app legal notice renders locale-specific content — Chinese users see PRC law excerpts; English users see a generic disclaimer.
 - **Privacy shield**: One-click blur of all covers, deletion-lock with SHA-256 verification, and zero uploads.
-- **Network proxy**: Configurable HTTP / HTTPS / SOCKS5 proxy that covers both Node.js requests and the Chromium network stack.
+- **Network proxy**: Configurable HTTP / HTTPS / SOCKS5 proxy covering both Node.js requests and the Chromium network stack.
 - **Statistics & discovery**: Filter by tag / series / custom field, view totals and top largest files, random picks, and favorites.
 - **System integration**: Windows NSIS installer, auto-start on boot, tray minimization, update checker, and GitHub / Gitee dual release.
+
+---
+
+## Excel Sheet Schema
+
+The app expects an **English-header** sheet with columns in this order:
+
+| Column | Purpose |
+| --- | --- |
+| Code | 番号 / Video code (e.g. `SONE-560`) — **required** |
+| Rating | 用户评分 / Your personal rating (optional) |
+| Category | 分类 / Single-value category, shown as a MetaRow in the detail page |
+| Theme | 主题 / Theme tags |
+| Role | 角色 / Role tags |
+| Costume | 服装 / Costume tags |
+| BodyType | 体型 / Body type tags |
+| Behavior | 行为 / Behavior tags |
+| Play | 玩法 / Play tags |
+| Scene | 场景 / Scene tags |
+| Plot | 剧情 / Plot tags |
+| Other | 其他 / Other tags |
+
+AI-generated sheets usually produce **中文 headers**. The onboard wizard auto-maps common Chinese header names to the English schema above before writing to disk.
 
 ---
 
