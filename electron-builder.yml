@@ -19,6 +19,8 @@ extraResources:
     to: AV_Scoring_and_Synopsis_Guide_EN.md
   - from: build/icon.png
     to: icon.png
+  - from: build/yingxia-uninstall-guard.ps1
+    to: yingxia-uninstall-guard.ps1
 
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

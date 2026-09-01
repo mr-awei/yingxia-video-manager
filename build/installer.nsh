@@ -1,66 +1,173 @@
+﻿# 影匣自定义 NSIS 逻辑
+# 安装器侧：把安装语言写入注册表，供卸载器与应用首次启动读取。
+# 卸载器侧：卸载欢迎页之后新增「保留用户数据」复选框页面（默认勾选 = 保留）：
+#           取消勾选并二次确认后，卸载流程尝试删除 %APPDATA%\local-video-manager。
+# 安全红线：删除前必须通过 yingxia-uninstall-guard.ps1 校验 —— 检测到媒体库路径
+#           与用户数据目录重叠时拒绝删除，绝不触碰用户设定的媒体库里的任何文件。
+
 !macro customInit
-  # 安装器初始化。
-  # 此宏在「安装」和「卸载」时都会被 electron-builder 调用。
-  # 用 IsUninst 区分场景 —— 卸载流程跳过运行检测。
-  !ifdef IsUninst
+  !ifdef BUILD_UNINSTALLER
     Goto InitEnd
   !endif
 
-  # ====================
-  # 把 MUI 语言选择器的结果写入注册表，供应用首次启动读取。
-  # $LANGUAGE 由 electron-builder 的 displayLanguageSelector 在 .onInit 更早阶段设置。
-  #   2052 = 简体中文 → zh-CN
-  #   1033 = 英文     → en-US
-  # ====================
-  ${If} $LANGUAGE == "2052"
-    StrCpy $R0 "zh-CN"
-  ${Else}
-    StrCpy $R0 "en-US"
-  ${EndIf}
+  # 把安装器语言写入注册表，供应用首次启动与卸载器读取
+  StrCmp $LANGUAGE "2052" 0 +3
+  StrCpy $R0 "zh-CN"
+  Goto +2
+  StrCpy $R0 "en-US"
   WriteRegStr HKCU "Software\YingXia" "InstallerLanguage" $R0
 
-  # ====================
   # 检测旧版本是否仍在运行
-  # ====================
   FindWindow $0 "" "影匣"
   IntCmp $0 0 InitEnd
-  ${If} $LANGUAGE == "2052"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "检测到 影匣 正在运行。请先彻底关闭应用（包括右下角的托盘图标），然后重新运行安装器。"
-  ${Else}
-    MessageBox MB_OK|MB_ICONEXCLAMATION "YingXia is currently running. Please close the application completely (including the tray icon), then run the installer again."
-  ${EndIf}
+  StrCmp $LANGUAGE "2052" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "检测到 影匣 正在运行。请先彻底关闭应用（包括右下角的托盘图标），然后重新运行安装器。"
+  Goto +2
+  MessageBox MB_OK|MB_ICONEXCLAMATION "YingXia is currently running. Please close the application completely (including the tray icon), then run the installer again."
   Abort
 InitEnd:
 !macroend
 
+!macro customUnInit
+  # 保护脚本随安装目录分发（resources\yingxia-uninstall-guard.ps1）。
+  # 卸载 Section 会删除整个安装目录，因此提前把脚本复制到 $PLUGINSDIR 备用；
+  # 删除确认页 leave 回调里还有一次兜底复制。
+  InitPluginsDir
+  CopyFiles /SILENT "$INSTDIR\resources\yingxia-uninstall-guard.ps1" "$PLUGINSDIR\yingxia-uninstall-guard.ps1"
+!macroend
+
+# electron-builder 卸载欢迎页钩子：保留标准卸载欢迎页，紧接其后
+# 声明「保留用户数据」复选框页面。
+!macro customUnWelcomePage
+
+  Var /GLOBAL yxKeepChk
+  Var /GLOBAL yxDelConfirmed
+  Var /GLOBAL yxLang
+
+  !insertmacro MUI_UNPAGE_WELCOME
+
+  PageEx un.custom
+    PageCallbacks un.yxDataPageCreate un.yxDataPageLeave
+  PageExEnd
+
+  Function un.yxDataPageCreate
+    # 语言：优先安装时写入的注册表；缺省按 MUI 语言 ID 回退
+    ReadRegStr $R9 HKCU "Software\YingXia" "InstallerLanguage"
+    StrCmp $R9 "" 0 langReady
+    StrCmp $LANGUAGE "2052" 0 +3
+    StrCpy $R9 "zh-CN"
+    Goto langReady
+    StrCpy $R9 "en-US"
+    langReady:
+    StrCpy $yxLang $R9
+
+    nsDialogs::Create 1018
+    Pop $0
+
+    StrCmp $R9 "zh-CN" 0 langEn
+    StrCpy $R1 "是否保留 影匣 的应用数据？"
+    StrCpy $R2 "应用数据包括：媒体库配置、海报封面、缓存与日志等。取消勾选将在卸载完成后删除这些数据。"
+    StrCpy $R3 "你的媒体文件与媒体库永远不会被删除。"
+    StrCpy $R4 "保留用户数据"
+    StrCpy $R5 "保留用户数据（媒体文件不受影响）"
+    Goto langOk
+    langEn:
+    StrCpy $R1 "Keep YingXia app data?"
+    StrCpy $R2 "App data includes library configuration, posters, cache and logs. If unchecked, this data is removed after uninstalling."
+    StrCpy $R3 "Your media files and media libraries will never be deleted."
+    StrCpy $R4 "Keep user data"
+    StrCpy $R5 "Keep user data (media files unaffected)"
+    langOk:
+
+    # 页头标题/副标题按运行时语言设置（MUI_HEADER_TEXT 只能接受编译期文本，故直接用 SendMessage）
+    SendMessage $mui.Header.Text ${WM_SETTEXT} 0 "STR:$R4"
+    SendMessage $mui.Header.SubText ${WM_SETTEXT} 0 "STR:$R1"
+
+    ${NSD_CreateLabel} 0 0 100% 14u "$R1"
+    Pop $0
+    ${NSD_CreateLabel} 0 20u 100% 28u "$R2"
+    Pop $0
+    ${NSD_CreateLabel} 0 52u 100% 14u "$R3"
+    Pop $0
+    ${NSD_CreateCheckbox} 0 72u 100% 14u "$R5"
+    Pop $yxKeepChk
+
+    # 默认勾选 = 保留用户数据
+    ${NSD_SetState} $yxKeepChk ${BST_CHECKED}
+    StrCpy $yxDelConfirmed "0"
+    nsDialogs::Show
+  FunctionEnd
+
+  Function un.yxDataPageLeave
+    ${NSD_GetState} $yxKeepChk $0
+    StrCmp $0 ${BST_CHECKED} keep
+
+    # 用户取消勾选 → 二次确认；选择「否」则留在本页
+    StrCmp $yxLang "zh-CN" 0 +3
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "确定删除应用数据吗？媒体库中的视频文件不会被删除。" IDYES doDelete
+    Goto recheck
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "Delete app data? Videos in your media libraries will never be deleted." IDYES doDelete
+
+    recheck:
+    Abort
+
+    keep:
+    StrCpy $yxDelConfirmed "0"
+    Goto done
+
+    doDelete:
+    # 仅记录意愿；真正的校验与删除在 un.install Section 末尾执行，
+    # 确保卸载先完成「应用是否在运行」检查与安装文件清理。
+    StrCpy $yxDelConfirmed "1"
+
+    done:
+  FunctionEnd
+!macroend
+
+# 卸载 Section（un.install）内联执行：用户确认删除后，先由保护脚本校验
+# 媒体库路径与用户数据目录是否重叠，安全时才删除 %APPDATA%\local-video-manager。
+# 注意：此宏被 electron-builder 插入在 Section "un.install" 内部，不能声明新的 Section。
 !macro customUnInstall
-  # 卸载阶段：用 nsDialogs 复选框询问是否删除用户数据，文案跟随安装时选定的 $LANGUAGE。
-  # 默认不勾选 = 保留数据。
-  !ifdef IsUninst
-    ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" "AppData"
-    StrCpy $R1 "$R0\local-video-manager"
-    IfFileExists "$R1\data.json" AskRemoveData SkipAskData
-    AskRemoveData:
-      nsDialogs::Create 1018
-      Pop $0
-      ${If} $LANGUAGE == "2052"
-        ${NSD_CreateLabel} 10 12 100% 14u "卸载影匣 — 是否删除用户数据？"
-        Pop $0
-        ${NSD_CreateCheckbox} 18 40 100% 12u "删除所有本地数据（%APPDATA%\local-video-manager）—— 包含库配置、Excel 片单、元数据、封面缓存"
-        Pop $2
-      ${Else}
-        ${NSD_CreateLabel} 10 12 100% 14u "Uninstall YingXia — Remove user data?"
-        Pop $0
-        ${NSD_CreateCheckbox} 18 40 100% 12u "Delete all local data (%APPDATA%\local-video-manager) — library configs, Excel sheets, metadata, cover cache"
-        Pop $2
-      ${EndIf}
-      ${NSD_SetState} $2 0   # 默认不勾选
-      nsDialogs::Show
-      Pop $5
-      ${NSD_GetState} $2 $6
-      ${If} $6 == 1
-        RMDir /r "$R1"
-      ${EndIf}
-    SkipAskData:
-  !endif
+  StrCmp $yxDelConfirmed "1" 0 yxDataDone
+
+  # 保护脚本在 unInit 阶段已复制到 $PLUGINSDIR（$INSTDIR 此时已删除）
+  IfFileExists "$PLUGINSDIR\yingxia-uninstall-guard.ps1" yxRunGuard
+
+  StrCmp $yxLang "zh-CN" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "未找到用户数据保护脚本，为安全起见已保留用户数据。"
+  Goto yxDataDone
+  MessageBox MB_OK|MB_ICONEXCLAMATION "User data protection script not found. User data has been kept for safety."
+  Goto yxDataDone
+
+  yxRunGuard:
+  # 保护脚本：校验媒体库路径与用户数据目录是否重叠，安全时删除用户数据目录
+  #   exit 0 → 已安全删除；exit 9 → 路径重叠（拒删）；exit 8 → 解析失败（保守不删）
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PLUGINSDIR\yingxia-uninstall-guard.ps1" -DataDirOverride "$APPDATA\local-video-manager"'
+  Pop $0
+
+  StrCmp $0 0 yxDataDone
+  StrCmp $0 9 yxDataOverlap
+  StrCmp $0 8 yxDataParseFailed
+
+  StrCmp $yxLang "zh-CN" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "无法完成用户数据清理，用户数据已保留。"
+  Goto yxDataDone
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to clean up user data. Your user data has been kept."
+  Goto yxDataDone
+
+  yxDataOverlap:
+  StrCmp $yxLang "zh-CN" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "检测到媒体库路径与用户数据目录重叠，为保护媒体文件已跳过删除。"
+  Goto yxDataDone
+  MessageBox MB_OK|MB_ICONEXCLAMATION "A media library path overlaps the app data folder. Deletion skipped to protect your media files."
+  Goto yxDataDone
+
+  yxDataParseFailed:
+  StrCmp $yxLang "zh-CN" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "无法解析用户数据文件，为保证安全已跳过删除。"
+  Goto yxDataDone
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to parse the user data file. Deletion skipped for safety."
+  Goto yxDataDone
+
+  yxDataDone:
 !macroend
