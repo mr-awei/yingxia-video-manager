@@ -6,6 +6,12 @@
   <a href="README.zh-CN.md">中文</a>
 </div>
 
+<div align="center">
+  <strong>v2.6.6</strong> ·
+  <span>2026-09-02</span> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</div>
+
 <br />
 
 ## Local Video Poster Wall Manager · Excel-Sheet-Driven Private Library
@@ -78,6 +84,21 @@ npm run build      # build renderer + main + preload
 npm run typecheck  # TypeScript type checking
 npm run pack       # clean + build + electron-builder installer
 ```
+
+---
+
+## Version History
+
+**v2.6.6** (2026-09-02) — Tag-layer fix · screenshot-failure details · Excel sheet wizard alignment · metadata cleanup
+
+- **Fixed inconsistent `Source tags` display**: all source-side genres now unconditionally land in `backupTags`, so the detail page shows the full category set.
+- **Fixed the Excel `分类` column leaking into tag groups**: the column now flows through a dedicated `Video.introCategory` field and renders as a standalone MetaRow.
+- **Fixed JavDB genres parser pulling actor groups** (`【多人】5`): corrected to `/tags` structure and added a shared `cleanGenreName()` sanitizer used by all five sources.
+- **Screenshot-failure details in two places**: failed count, de-duplicated reasons, and hints shown both in the toast and inline in the detail page.
+- **Unified hover-to-zoom delay to 1 s**; **auto framing now uses the same multi-frame pipeline** as manual "Re-frame".
+- **Excel sheet wizard prompt aligned to the real schema**; **store schema bumped to `2026090204`** with dirty-tag cleanup.
+
+Older releases: see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

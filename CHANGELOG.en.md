@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.6.6 (2026-09-02)
+
+**Tag-layer fix + screenshot-failure details + Excel sheet wizard alignment + metadata cleanup**
+
+- **Fix inconsistent `Source tags` display**: v2.6.5 merged `backupTags` conditionally — when genres overlapped with sheet tags, they were skipped; now all genres unconditionally land in `backupTags` so the detail page shows the full source-side category set.
+- **Fix Excel Category column leaking into tag groups**: `excel.ts` didn't skip the `分类` column, so AI-generated values like `【多人】2 / Drama` were split into tags and written into `tagCategories['分类']`. The Category column now flows through a dedicated `Video.introCategory` field and renders as a standalone MetaRow in the detail page.
+- **Fix JavDB genres parser pulling actor groups**: The old regex `/href="\/actors\/xxx"/` matched actor groupings (`【多人】5`) instead of real categories. Corrected to `/tags/xxx`, and added a shared `cleanGenreName()` sanitizer (strips numeric suffixes, brackets, pure separators) used by all five sources: JavDB / JavBus / JavLibrary / Javinfo / Javapi.
+- **Screenshot-failure details shown in two places**: After "Fetch info", both the corner toast and the in-page sample-image block display the failed count, a de-duplicated reason list, and actionable hints. The front-end translates reason codes (`http-403`, `timeout`, `network`, …) — toast and UI share the same mapping.
+- **Unified hover-to-zoom delay to 1 s**: `VideoDetail` sample cards and `EntryCard` preview cards now wait 1 s before opening the zoom overlay (up from 350 ms).
+- **Align auto framing with manual framing**: When a detail page opens with no previews, the app now calls `videoGeneratePreviews` — the same full multi-frame pipeline as the manual "Re-framing" button — instead of the old single-frame fallback.
+- **Excel sheet wizard prompt aligned to the real schema**: Wizard prompt headers corrected from `Synopsis/Rating/Tags/Notes/CoverPath` to the real `Category/Rating/Synopsis/Theme/Role/Costume/BodyType/Behavior/Play/Scene/Plot/Other`, plus a "Category system" paragraph so AI picks the right single category value.
+- **Store schema bump to `2026090204`**: On startup the migration peels `tagCategories['分类']` out into `Video.introCategory`, sanitizes dirty tags on both the doc and source sides, and logs counts for touched / peeled / cleaned entries.
+
+## v2.6.5 (2026-09-01)
+
+**Metadata backfill enhancement + code recognition improvements + title-to-filename sync + write-conflict fix**
+
+- **Manual code input after failed backfill**: When "Backfill info" fails (typically "Cannot recognize a code from the filename/title"), a `ManualCodeModal` appears so you can type the code and retry. A persistent "Manual code" button in the toolbar lets you correct mis-attributed metadata anytime. Added `normalizeManualCode()` (strips extension/Chinese/【】, maps `.`/`_` to `-`, inserts `-` into `SSIS376`); all five sources plus `fetchDetailSmart`/`fetchMovieDetail` accept a `manual` passthrough flag, with `manual=false` behaviour fully unchanged.
+- **Digit-prefixed codes now recognized**: Codes like `261ARA-394` / `476MLA-203` / `200GANA-1459` used to fail (the old logic required ≥2 letters before the dash). Added a 7th fallback regex `CODE_RE_DIGIT_PREFIX` (suffix limited to 2–5 digits to avoid phone timestamps, prefix must contain a letter, blacklist for `VOL-01`/`No.007`), used only when the first six steps all fail. Verified on 4665 titles with zero regressions and 31 newly recognized.
+- **Filter pseudo-codes (`isPlausibleCode` guard)**: `IMG-8873` (camera file), `VID-…` (recording timestamp), `…-2160p` (resolution), `guochan2048.com@…` (ad domain), `[HEVC-1080p]` (codec tag) are no longer treated as codes and sent off as requests or attached to the wrong metadata. Hit entries are skipped to try the next candidate; also rescued `hhd800.com@FC2-PPV-1851398` → FC2-PPV-1851398 and `HD_sdnm-256` → SDNM-256, cutting pending fetches from 551 → 183 (67% fewer wasted requests).
+- **Full FC2 code extraction**: `FC2-PPV-1510788` / `fc2ppv_1523314` / `FC2PPV-1123249-1` previously only extracted `PPV-1510788`, which sources could not find. A new highest-priority FC2 step returns `FC2-PPV-<id>` and allows episode suffixes (`_1`/`-2`); 84 of 86 titles corrected.
+- **Editing a title can rename the file**: `EditMetaModal` now offers a "Rename file on save" toggle (default on) when the title changes, via new IPC `videoRenameFile` + `safeFileBaseName()` (strips illegal chars/trailing dots, prefixes reserved names like `CON`, truncates to 120 chars). A failed rename never loses metadata and keeps the dialog open with the reason. The video id is deliberately kept unchanged so covers/previews stay linked.
+- **Fix "data.json modified externally" log spam (self-write misdetection)**: During heavy batch backfills, Windows high-concurrency renames made `fs.stat` mtime briefly differ from the recorded baseline, so the app flagged its own writes as external edits. The detection now skips while a write is in flight (`writeInFlight`) and refreshes the mtime baseline after reload.
+
 ## v2.6.4 (2026-09-01)
 
 **Fix installer startup crash + switch to MUI native language selector**
@@ -657,16 +681,3 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 
 
 
-## v2.6.6 (2026-09-02)
-
-**Tag-layer fix + screenshot-failure details + Excel sheet wizard alignment + metadata cleanup**
-
-- **Fix inconsistent Source tags display**: v2.6.5 merged ackupTags conditionally — when genres overlapped with sheet tags, they were skipped; now all genres unconditionally land in ackupTags so the detail page shows the full source-side category set.
-- **Fix Excel Category column leaking into tag groups**: excel.ts didn't skip the 分类 column, so AI-generated values like 【多人】2 / Drama were split into tags and written into 	agCategories['分类']. The Category column now flows through a dedicated Video.introCategory field and renders as a standalone MetaRow in the detail page.
-- **Fix JavDB genres parser pulling actor groups**: The old regex /href=\"\/actors\/xxx\"/ matched actor groupings (【多人】5) instead of real categories. Corrected to /tags/xxx, and added a shared cleanGenreName() sanitizer (strips numeric suffixes, brackets, pure separators) used by all five sources: JavDB / JavBus / JavLibrary / Javinfo / Javapi.
-- **Screenshot-failure details shown in two places**: After "Fetch info", both the corner toast and the in-page sample-image block display the failed count, a de-duplicated reason list, and actionable hints. The front-end translates reason codes (http-403, 	imeout, 
-etwork, …) — toast and UI share the same mapping.
-- **Unified hover-to-zoom delay to 1 s**: VideoDetail sample cards and EntryCard preview cards now wait 1 s before opening the zoom overlay (up from 350 ms).
-- **Align auto framing with manual framing**: When a detail page opens with no previews, the app now calls ideoGeneratePreviews — the same full multi-frame pipeline as the manual "Re-framing" button — instead of the old single-frame fallback.
-- **Excel sheet wizard prompt aligned to the real schema**: Wizard prompt headers corrected from Synopsis/Rating/Tags/Notes/CoverPath to the real Category/Rating/Synopsis/Theme/Role/Costume/BodyType/Behavior/Play/Scene/Plot/Other, plus a "Category system" paragraph so AI picks the right single category value.
-- **Store schema bump to 2026090204**: On startup the migration peels 	agCategories['分类'] out into Video.introCategory, sanitizes dirty tags on both the doc and source sides, and logs counts for touched / peeled / cleaned entries.

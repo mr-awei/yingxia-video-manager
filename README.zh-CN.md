@@ -6,6 +6,12 @@
   <strong><a href="README.zh-CN.md">中文</a></strong>
 </div>
 
+<div align="center">
+  <strong>v2.6.6</strong> ·
+  <span>2026-09-02</span> ·
+  <a href="CHANGELOG.md">更新日志</a>
+</div>
+
 <br />
 
 ## 本地视频海报墙管理工具 · Excel 片单驱动的私人影库
@@ -78,6 +84,21 @@ npm run build      # 构建渲染进程 + 主进程 + preload
 npm run typecheck  # TypeScript 类型检查
 npm run pack       # 清理 + 构建 + electron-builder 打安装包
 ```
+
+---
+
+## 版本历史
+
+**v2.6.6**（2026-09-02）— 标签分层修复 · 截图失败详情 · Excel 片单向导对齐 · 元数据清洗
+
+- **修复「数据源标签」显示不一致**：数据源 genres 现在无条件合并进 `backupTags`，详情页展示完整的数据源类别集合。
+- **修复 Excel「分类」列混入标签分组**：分类列独立走 `Video.introCategory` 字段，详情页 MetaRow 单独一行展示。
+- **修复 JavDB genres 解析误拉演员分组**（`【多人】5`）：正则修正为 `/tags` 结构，并新增 `cleanGenreName()` 通用清洗器，覆盖五个数据源。
+- **截图失败详情双处展示**：失败张数、去重原因列表、解决建议同时在右下角弹窗与详情页内联展示。
+- **悬停大图延迟统一为 1 秒**；**详情页自动截帧与手动「重新截帧」走同一套多帧管线**。
+- **Excel 片单向导表头与实际结构对齐**；**store schema 升级到 `2026090204`**，启动时清洗脏标签。
+
+更早版本见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
