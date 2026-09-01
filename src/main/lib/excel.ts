@@ -3,6 +3,7 @@ import { normalizeCode } from '../../shared/code'
 // SheetJS：读取 xlsx。xlsx 解析是主进程侧依赖（electron-builder 打进 app.asar）。
 import * as XLSX from 'xlsx'
 import { promises as fs, readFileSync } from 'node:fs'
+import { cleanGenreName } from './javdb'
 
 /**
  * 解析「收藏整理」Excel 片单（唯一片单权威来源）。
@@ -23,7 +24,8 @@ function splitTags(v: unknown): string[] {
   return s
     .split(/[,，、;；\n\r\t ]+/)
     .map((x) => x.trim())
-    .filter(Boolean)
+    .map((x) => cleanGenreName(x)) // 清洗 AI 生成的脏标签（【多人】2、纯 / 等）
+    .filter((x): x is string => !!x)
 }
 
 function toScore(v: unknown): number | undefined {
@@ -95,11 +97,12 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
     score: colIndex('推荐评分'),
     desc: colIndex('简介')
   }
-  // 结构化标签列：品番之后的所有列（编号/品番之间也可能有编号列）
+  // 结构化标签列：品番之后的列，跳过已知的"非标签"列
+  const NON_TAG_COLS = new Set(['分类', '推荐评分', '简介'])
   const tagCols: { name: string; idx: number }[] = []
   for (let i = Math.max(1, ci.code + 1); i < header.length; i++) {
     const name = String(header[i] ?? '').trim()
-    if (!name || name === '编号') continue
+    if (!name || name === '编号' || NON_TAG_COLS.has(name)) continue
     tagCols.push({ name, idx: i })
   }
 
@@ -144,6 +147,7 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
         tags: [...new Set(allTags)], // 平铺去重
         tagCategories,
         score,
+        category: category === '未分类' ? undefined : category,
         raw
       }
     })

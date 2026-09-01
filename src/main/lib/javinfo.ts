@@ -1,6 +1,6 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
-import { extractCode, cacheRemoteImage } from './javdb'
+import { extractCode, cacheRemoteImage, cleanGenreName } from './javdb'
 import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 
 /**
@@ -147,7 +147,10 @@ export async function fetchJavinfoDetail(
 
   const dvdId = (r.dvdId || codeNorm).toUpperCase()
   const title = r.titleEn || r.titleJa || dvdId
-  const genres = (r.categories || []).filter(Boolean)
+  const genres = (r.categories || [])
+    .filter(Boolean)
+    .map((c) => cleanGenreName(String(c)))
+    .filter((g): g is string => !!g)
   const actresses = r.actresses || []
   // javinfo 不区分男女优（actresses 即演员表），全部归入 actresses，actors 保持同名列表兼容
   const actors = r.actors || [...actresses]
@@ -178,6 +181,8 @@ export async function fetchJavinfoDetail(
   }
 
   // 本地化封面 + 预览图（并行，失败的跳过，绝不把远程 URL 写回）
+  const samplesTotal = detail.samples.length
+  const sampleErrors: string[] = []
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     tasks.push(cacheRemoteImage(detail.cover, `javinfo-cover-${dvdId}`, settings, BASE))
@@ -185,13 +190,16 @@ export async function fetchJavinfoDetail(
     tasks.push(Promise.resolve(null))
   }
   detail.samples.forEach((u, i) => {
-    tasks.push(cacheRemoteImage(u, `javinfo-sample-${dvdId}-${i}`, settings, BASE))
+    tasks.push(cacheRemoteImage(u, `javinfo-sample-${dvdId}-${i}`, settings, BASE, (reason) => sampleErrors.push(reason)))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
   return {
     ...detail,
     cover: coverLocal || undefined,
+    // 保留解析出的原始总数，与失败原因（去重）一起供前端提示
+    samplesTotal,
+    sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

@@ -86,7 +86,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
   const isFavorite = !!entry.video?.favorite
   const vid = entry.video?.id
 
-  // ---------- 悬浮预览（Netflix 式：350ms dwell 延迟打开，移出 200ms 延迟关） ----------
+  // ---------- 悬浮预览（Netflix 式：1s dwell 延迟打开，移出 200ms 延迟关） ----------
   const clearOpenTimer = useCallback(() => {
     if (openTimer.current) {
       clearTimeout(openTimer.current)
@@ -108,7 +108,7 @@ function EntryCardInner({ entry, onOpen, onEdit, onOpenMissing, onToggleFlag, on
       x = Math.max(8, Math.min(x, vw - PANEL_W - 8))
       const y = Math.min(Math.max(r.top, 8), vh - 220 - 8)
       setPreview({ x, y })
-    }, 350)
+    }, 1000)
   }, [clearOpenTimer])
   const scheduleClose = useCallback(() => {
     clearOpenTimer()

@@ -3,6 +3,7 @@ import { promises as fs, mkdirSync, writeFileSync, existsSync, unlinkSync, renam
 import path from 'node:path'
 import { DEFAULT_SETTINGS, type Library, type Settings, type Video } from '../../shared/types'
 import type { JavdbDetail } from '../../shared/types'
+import { cleanGenreName } from './javdb'
 
 export interface DBShape {
   libraries: Library[]
@@ -19,7 +20,7 @@ const DEFAULT_DB: DBShape = {
 }
 
 /** v2.2.13 schemaVersion：标签分层（tagCategories / backupTags）已完成迁移 */
-export const SCHEMA_VERSION = 2026083001
+export const SCHEMA_VERSION = 2026090204
 
 let cache: DBShape | null = null
 let dbPath = ''
@@ -110,45 +111,121 @@ async function ensureLoaded(): Promise<DBShape> {
 
 /** v2.2.13 标签分层迁移（一次性）：
  *  - 保证每个 Video 至少 tags=[], tagCategories 字段存在或为 undefined（正确类型）
- *  - 若视频同时有「文档来源」(descriptionSource==='manual' 或 reconciliation 写过 tags) + javdbDetail.genres：
- *    原来 mergedTags 已经把 genres 合并进 tags，迁移把「genres 里不是文档平铺 tags 子集的部分」移到 backupTags，
- *    避免数据源标签与文档标签混在一起（等价于把 backfillFromDetail 的旧合并行为 undo 一部分）。
+ *  - 若视频有 javdbDetail.genres：**无条件**把全部 genres 写入 backupTags（去重合并已有值），
+ *    不管 genres 是否与 Excel 文档标签重叠——backupTags 的语义是"数据源报告了这些类别"，
+ *    用户需要看到它（蓝色）作为参考，即使它恰好与 Excel 片单（品牌色）相同。
+ *  - 同时从 tags 中移除那些"原来被旧版合并进来、现在又已经有 backupTags 承载"的 genres 项，
+ *    让文档 tags 保持纯净（undo 旧合并行为）。
  *  - schemaVersion < SCHEMA_VERSION 才执行，之后不重复跑。
  */
 function migrateInPlace(db: DBShape): void {
   const from = db.schemaVersion ?? 0
   if (from >= SCHEMA_VERSION) return
-  let moved = 0
+  let touched = 0
+  let stripped = 0
+  let cleaned = 0
+  let cleanedDoc = 0
+  let peeledCategory = 0
   for (const v of db.videos) {
     // tags 必须存在（旧数据 JSON 可能缺）
     if (!Array.isArray(v.tags)) (v as Video & { tags?: unknown }).tags = []
-    const doc = v as Video & { tagCategories?: Record<string, string[]>; backupTags?: string[]; javdbDetail?: JavdbDetail }
+    const doc = v as Video & {
+      tagCategories?: Record<string, string[]>
+      backupTags?: string[]
+      javdbDetail?: JavdbDetail
+      introCategory?: string
+    }
+    const genres = doc.javdbDetail?.genres ?? []
+
+    // 0) 清洗文档级脏标签（tagCategories 和 v.tags 里 AI/Excel 生成的垃圾值）
+    let docDirty = false
+    if (doc.tagCategories) {
+      const newTc: Record<string, string[]> = {}
+      for (const [k, list] of Object.entries(doc.tagCategories)) {
+        // "分类" 是 Excel 独立列，不应作为标签分组；剥出来写到 introCategory
+        if (k === '分类' || k === 'category') {
+          const firstClean = list
+            .map((t) => cleanGenreName(t))
+            .filter((t): t is string => !!t)[0]
+          if (firstClean) {
+            v.introCategory = firstClean
+            peeledCategory++
+          }
+          docDirty = true // 剥掉这个 key
+          continue
+        }
+        const cleanedList = list.map((t) => cleanGenreName(t)).filter((t): t is string => !!t)
+        if (cleanedList.length !== list.length) docDirty = true
+        // 跳过空列表（整个分类都被清干净了）
+        if (cleanedList.length > 0) newTc[k] = cleanedList
+      }
+      // 如果之前有 tagCategories 但剥+洗后全空，直接置 undefined 让 UI 退化处理
+      const gotKeys = Object.keys(newTc)
+      if (gotKeys.length === 0 && Object.keys(doc.tagCategories).length > 0) {
+        doc.tagCategories = undefined
+        docDirty = true
+      } else if (docDirty) {
+        doc.tagCategories = newTc
+        cleanedDoc++
+      }
+    }
+    const cleanedVTags = v.tags.map((t) => cleanGenreName(t)).filter((t): t is string => !!t)
+    if (cleanedVTags.length !== v.tags.length) {
+      v.tags = cleanedVTags
+      cleanedDoc++
+    }
+
+    if (genres.length === 0 && !Array.isArray(doc.backupTags) && !doc.introCategory) continue
+
+    // 1) 清洗已入库的脏数据源标签（【多人】5、纯分隔符 / 等）
+    const cleanGenres = genres.map((g) => cleanGenreName(g)).filter((g): g is string => !!g)
+    if (cleanGenres.length !== genres.length) {
+      doc.javdbDetail!.genres = cleanGenres
+      cleaned++
+    }
+    if (Array.isArray(doc.backupTags)) {
+      const cleanBackup = doc.backupTags.map((g) => cleanGenreName(g)).filter((g): g is string => !!g)
+      if (cleanBackup.length !== doc.backupTags.length) {
+        doc.backupTags = cleanBackup
+        cleaned++
+      }
+    }
+
+    // 2) 合并全部 genres 进 backupTags（无论是否与文档标签重叠——用户要看数据源侧的完整信息）
+    const existing = Array.isArray(doc.backupTags) ? doc.backupTags : []
+    const merged = Array.from(new Set([...existing, ...cleanGenres]))
+    if (merged.length !== existing.length) {
+      doc.backupTags = merged
+      touched++
+    }
+
+    // 3) 如果有文档权威标签（Excel 片单），旧版 backfill 可能把 genres 合并进了 v.tags，
+    //    现在 backupTags 已经承载了完整 genres 信息，把 v.tags 中那些"是 genres 但不在文档标签集合里"的
+    //    旧合并残留项剥掉——让文档 tags 保持权威纯净；
+    //    但如果某个 genre 同时也是文档标签（比如 Excel 和 JavDB 都有"剧情"），保留在 v.tags 不动。
     const docTagSet = new Set<string>()
     if (doc.tagCategories) for (const list of Object.values(doc.tagCategories)) for (const t of list) docTagSet.add(t)
     for (const t of v.tags) docTagSet.add(t)
-    const genres = doc.javdbDetail?.genres ?? []
-    if (genres.length > 0 && (v.descriptionSource === 'manual' || v.tags.length > 0 || doc.tagCategories)) {
-      // 有文档权威标签：把 genres 中「不属于文档标签集合」的项移到 backupTags，去除旧合并的冗余
-      const movedTags: string[] = []
-      for (const g of genres) if (!docTagSet.has(g)) movedTags.push(g)
-      if (movedTags.length) {
-        // 不覆盖已经存在的用户/数据迁移写过的 backupTags，合并去重
-        const old = Array.isArray(doc.backupTags) ? doc.backupTags : []
-        const merged = Array.from(new Set([...old, ...movedTags]))
-        doc.backupTags = merged
-        // 从 tags 里去掉这些非文档项（undo 旧版 backfill 的合并行为）
-        if (v.tags.some((t) => movedTags.includes(t))) {
-          v.tags = v.tags.filter((t) => !movedTags.includes(t))
+
+    if (v.descriptionSource === 'manual' || v.tags.length > 0 || doc.tagCategories) {
+      // genres 中「不在文档标签集合里」的项 → 是旧合并残留，应从 v.tags 剥掉
+      const oldMerged = cleanGenres.filter((g) => !docTagSet.has(g))
+      if (oldMerged.length) {
+        const strippedTags = v.tags.filter((t) => !oldMerged.includes(t))
+        if (strippedTags.length !== v.tags.length) {
+          v.tags = strippedTags
+          stripped++
         }
-        moved++
       }
-    } else if (genres.length > 0 && !v.tags.length && !doc.tagCategories && !doc.backupTags?.length) {
-      // 无文档：原来 tags 可能被旧版合并填进了 genres，或者一直是空；把 genres 放 backupTags 做主标签
-      doc.backupTags = Array.from(new Set(genres))
     }
   }
   db.schemaVersion = SCHEMA_VERSION
-  console.log(`[store] schema migrate v${from} -> v${SCHEMA_VERSION}：迁移了 ${moved} 条视频的数据源标签至 backupTags`)
+  console.log(
+    `[store] schema migrate v${from} -> v${SCHEMA_VERSION}：` +
+    `touched backupTags=${touched}，stripped merged genres=${stripped}，` +
+    `cleaned bad genres=${cleaned}，cleaned doc tags=${cleanedDoc}，` +
+    `peeled '分类' → introCategory=${peeledCategory}`
+  )
 }
 
 async function writeNow(): Promise<void> {

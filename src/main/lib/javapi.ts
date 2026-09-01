@@ -1,5 +1,5 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
-import { extractCode, cacheRemoteImage } from './javdb'
+import { extractCode, cacheRemoteImage, cleanGenreName } from './javdb'
 import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 
 /**
@@ -146,7 +146,10 @@ export async function fetchJavapiDetail(
     studio: m.maker_name || undefined,
     series: m.series_name || undefined,
     rating: m.score != null ? String(m.score) : undefined,
-    genres: (m.tags || []).filter(Boolean),
+    genres: (m.tags || [])
+      .filter(Boolean)
+      .map((t) => cleanGenreName(String(t)))
+      .filter((g): g is string => !!g),
     actors: m.actors || [],
     actresses: m.actors || [],
     samples: (m.preview_images || []).filter((u): u is string => !!u),
@@ -158,6 +161,8 @@ export async function fetchJavapiDetail(
   // 本地化封面 + 预览图（并行，失败的跳过，绝不把远程 URL 写回）
   // javapi 封面来自 javdb 图床，referer 传 javdb.com 更稳
   const referer = 'https://javdb.com'
+  const samplesTotal = detail.samples.length
+  const sampleErrors: string[] = []
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     tasks.push(cacheRemoteImage(detail.cover, `javapi-cover-${dvdId}`, settings, referer))
@@ -165,13 +170,16 @@ export async function fetchJavapiDetail(
     tasks.push(Promise.resolve(null))
   }
   detail.samples.forEach((u, i) => {
-    tasks.push(cacheRemoteImage(u, `javapi-sample-${dvdId}-${i}`, settings, referer))
+    tasks.push(cacheRemoteImage(u, `javapi-sample-${dvdId}-${i}`, settings, referer, (reason) => sampleErrors.push(reason)))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
   return {
     ...detail,
     cover: coverLocal || undefined,
+    // 保留解析出的原始总数，与失败原因（去重）一起供前端提示
+    samplesTotal,
+    sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { t, getLocale, subscribeLocale } from '../../../shared/i18n'
 import type { Library } from '../../../shared/types'
 import Icon from './Icon'
@@ -35,13 +35,17 @@ const GROK_URL = 'https://grok.com'
 const PROMPT_TEXT_ZH = `请根据我提供的番号，按照以下要求生成影匣片单 Excel 内容：
 
 1. 先查询该番号的准确信息（片商、剧情、时长、类型等）。
-2. 用中文撰写详细简介，风格参考下方「简介模版」。
-3. 简介要包含：核心设定、关键过程、高潮/特色内容，语言流畅有画面感。
-4. 简介结束后，参考下方「完整分类标签系统」进行打标签（主题、角色、服装、体型、场景等，可多选，用顿号分隔）。
-5. 最后给出推荐评分（满分10分，保留两位小数），并简要说明评分依据。
-6. 如果我一次提供多个番号，请逐一处理，保持格式统一。
+2. 先确定「分类」（从下方分类体系选一个主分类）。
+3. 用中文撰写详细简介，风格参考下方「简介模版」。
+4. 简介要包含：核心设定、关键过程、高潮/特色内容，语言流畅有画面感。
+5. 简介结束后，参考下方「完整分类标签系统」进行打标签，按 9 个标签类别分栏填写（主题 / 角色 / 服装 / 体型 / 行为 / 玩法 / 场景 / 剧情 / 其他），每栏内多标签用顿号分隔。
+6. 最后给出推荐评分（满分10分，保留两位小数），并简要说明评分依据。
+7. 如果我一次提供多个番号，请逐一处理，保持格式统一。
 
-【Excel 表头】编号\t品番\t简介\t评分\t标签\t备注\t封面路径
+【Excel 表头】编号\t品番\t分类\t推荐评分\t简介\t主题\t角色\t服装\t体型\t行为\t玩法\t场景\t剧情\t其他
+
+【分类体系】从下方选一个最匹配的主分类填入「分类」列：
+- 剧情 / 单体 / 恋爱 / 美少女 / 制服 / 角色扮演 / 校园 / 职场 / 家庭 / 特殊 / 其他
 
 【评分标准】10 分制：
 - 9.5-10.0 殿堂级必看，综合体验极佳
@@ -58,13 +62,17 @@ const PROMPT_TEXT_ZH = `请根据我提供的番号，按照以下要求生成�
 const PROMPT_TEXT_EN = `Generate a YingXia sheet Excel for the given codes. Follow these rules:
 
 1. Look up accurate metadata for each code (studio, plot, duration, genre, etc.).
-2. Write the synopsis in English, using the template style below.
-3. Synopsis should cover: core premise, key moments, highlights. Keep it vivid and engaging.
-4. After the synopsis, assign tags from the tag system below (theme, role, costume, body type, scene, etc.). Use English commas to separate multiple tags.
-5. End with a recommended rating (10-point scale, 2 decimals) and a brief rationale.
-6. Process each code separately if multiple codes are provided. Keep format consistent across all rows.
+2. Pick one main category from the category system below and write it to the "Category" column.
+3. Write the synopsis in English, using the template style below.
+4. Synopsis should cover: core premise, key moments, highlights. Keep it vivid and engaging.
+5. After the synopsis, assign tags into each of the 9 tag-category columns (Theme / Role / Costume / BodyType / Behavior / Play / Scene / Plot / Other). Separate multiple tags inside one cell with commas.
+6. End with a recommended rating (10-point scale, 2 decimals) and a brief rationale.
+7. Process each code separately if multiple codes are provided. Keep format consistent across all rows.
 
-【Excel columns】ID\tCode\tSynopsis\tRating\tTags\tNotes\tCoverPath
+【Excel columns】ID\tCode\tCategory\tRating\tSynopsis\tTheme\tRole\tCostume\tBodyType\tBehavior\tPlay\tScene\tPlot\tOther
+
+【Category system】Pick the single best-fit category:
+- Story / Solo / Romance / BeautifulGirl / Uniform / Cosplay / School / Workplace / Family / Special / Other
 
 【Rating scale】10 points:
 - 9.5-10.0 Masterpiece, essential viewing

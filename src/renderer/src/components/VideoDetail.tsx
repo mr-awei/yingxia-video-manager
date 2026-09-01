@@ -20,8 +20,8 @@ interface Props {
   onPosterFetched?: (videoId: string, posterPath: string, previewPaths?: string[], posterSource?: string) => void
   /** ffprobe 技术参数读取成功回调（回写持久化） */
   onTechInfoFetched?: (videoId: string, tech: Video['techInfo']) => void
-  /** 点击演员/片商/系列 → 请求按该维度筛选并回到首页 */
-  onPickFilter?: (f: { type: 'actor' | 'studio' | 'series'; value: string }) => void
+  /** 点击演员/片商/系列/分类 → 请求按该维度筛选并回到首页 */
+  onPickFilter?: (f: { type: 'actor' | 'studio' | 'series' | 'category'; value: string }) => void
   /** 点击标签 → 请求按该标签筛选全部影片 */
   onPickTag?: (tag: string) => void
   /** 收藏切换（持久化到视频记录） */
@@ -71,6 +71,20 @@ function formatTech(tech?: Video['techInfo']): string | undefined {
   return p.length ? p.join(' · ') : undefined
 }
 
+/** 失败原因代码（主进程 cacheRemoteImage 产出）→ 本地化人话。
+ *  旧版本持久化的中文原因（如「下载超时」）直接原样透传，避免显示翻译占位符。 */
+function renderFailReason(r: string): string {
+  if (r === 'invalid-url') return t('detail.screenshotFailReason.invalidUrl')
+  if (r === 'http-403') return t('detail.screenshotFailReason.http403')
+  const m = /^http-(\d{3})$/.exec(r)
+  if (m) return t('detail.screenshotFailReason.httpStatus', { code: m[1] })
+  if (r === 'too-small') return t('detail.screenshotFailReason.tooSmall')
+  if (r === 'timeout') return t('detail.screenshotFailReason.timeout')
+  if (r === 'cert') return t('detail.screenshotFailReason.cert')
+  if (r === 'network') return t('detail.screenshotFailReason.network')
+  return r
+}
+
 export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, onPosterFetched, onTechInfoFetched, onPickFilter, onPickTag, onToggleFlag, related, onOpenRelated, seriesBase, seriesMembers, onEdit, onDelete }: Props) {
   const [detail, setDetail] = useState<Video['javdbDetail']>(video.javdbDetail)
   /** 本地 video 副本：截帧/封面更新后立即反映，不必等父组件重新拉取 */
@@ -87,12 +101,15 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     () => localVideo.previewPaths?.map((url) => posterUrl(url, previewVersion) ?? '') ?? [],
     [localVideo.previewPaths, previewVersion]
   )
+  /** 无预览图自动截帧：本次详情页打开中是否已执行过（防止完成/失败后循环重触发） */
+  const autoFramedRef = useRef(false)
   useEffect(() => {
     setLocalVideo(video)
     setDetail(video.javdbDetail)
     setCoverImgError(false)
     setPosterVersion(video.coverVersion ?? 0)
     setPreviewVersion(0)
+    autoFramedRef.current = false
   }, [video.id])
   /** 手动「补齐信息」进行中（与截帧互不干扰，各自独立 loading） */
   const [fetching, setFetching] = useState(false)
@@ -117,12 +134,14 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       if (res?.ok && res.detail) {
         setDetail(res.detail)
         onDetailFetched?.(video.id, res.detail)
-        const src = res.source === 'javbus' ? 'JavBus' : res.source === 'javinfo' ? 'Javinfo' : res.source === 'javapi' ? 'Javapi' : 'JavDB'
+        const src = res.source === 'javbus' ? 'JavBus' : res.source === 'javinfo' ? 'Javinfo' : res.source === 'javapi' ? 'Javapi' : res.source === 'javlibrary' ? 'JavLibrary' : 'JavDB'
         // v2.2.14：截图下载失败（图床被网络封锁）时如实提示，不再假装完全成功
         const total = res.detail.samplesTotal ?? 0
         const got = res.detail.samples?.length ?? 0
         if (total > got) {
-          toast({ text: t('detail.infoUpdatedWithScreenshotFail', { source: src, fail: total - got, total }), tone: 'warn', duration: 6000 })
+          const reasons = [...new Set(res.detail.sampleErrors ?? [])].filter(Boolean)
+          const reason = reasons.length > 0 ? reasons.slice(0, 2).map(renderFailReason).join('、') : t('detail.screenshotFailReasonDefault')
+          toast({ text: t('detail.infoUpdatedWithScreenshotFail', { source: src, total, fail: total - got, reason }), tone: 'warn', duration: 8000 })
         } else {
           toast({ text: t('detail.infoUpdated', { source: src }), tone: 'ok' })
         }
@@ -247,7 +266,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
     zoomGroupKey.current = key
     zoomIndex.current = Math.max(0, group.findIndex(u => u === currentUrl))
   }
-  /** 延迟打开：hover 停留 350ms 稳定后才开，避免划过误触；右键关闭后 2s 内禁用 */
+  /** 延迟打开：hover 停留 1s 稳定后才开，避免划过误触；右键关闭后 2s 内禁用 */
   const scheduleOpen = (url: string) => {
     if (isHoverDisabled()) return
     if (openTimer.current) clearTimeout(openTimer.current)
@@ -255,7 +274,7 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       openTimer.current = null
       if (isHoverDisabled()) return
       setZoomUrl(url)
-    }, 350)
+    }, 1000)
   }
   const clearOpenTimer = () => {
     if (openTimer.current) {
@@ -329,6 +348,8 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
   const d = detail
   // 只用本地路径：远程 URL 经 posterUrl 透传会让 Chromium 直连 javdb CDN 触发 403 反盗链
   const isLocal = (u?: string) => !!u && !/^https?:\/\//.test(u)
+  /** 本地可展示的 javdb 截图数量（远程 URL 无法渲染，不算有效预览图） */
+  const localSamples = d?.samples?.filter(isLocal).length ?? 0
   // 手动{t('detail.setAsCover')}（posterSource='manual'，预览帧{t('detail.setAsCover')}）优先级最高，立即生效且持久；
   // 否则用详情真实封面（d.cover），再退回 posterPath
   const originalCover =
@@ -337,10 +358,35 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
       : d?.cover && isLocal(d.cover)
         ? d.cover
         : localVideo.posterPath) || null
-  // 无封面/封面加载失败 → ffmpeg 截帧兜底（懒加载）
+
+  // 进入「无预览图」的详情页时自动截帧：与手动「重新截帧」完全一致（1 封面 + 预览帧，走同一 IPC）。
+  // 元数据自动补齐进行中先等待（补齐可能带回 javdb 截图）；补齐结束仍无任何预览图（samples 与
+  // ffmpeg 预览帧均为空）时自动执行一次，成功后预览帧持久化，下次打开直接命中不再重复。
+  useEffect(() => {
+    if (autoFramedRef.current) return
+    if (fetchingRef.current || framing) return
+    if ((localVideo.previewPaths?.length ?? 0) > 0) return
+    if (localSamples > 0) return
+    autoFramedRef.current = true
+    void handleGenerateFrames()
+  }, [video.id, localVideo.previewPaths, localSamples, fetching, framing, handleGenerateFrames])
+
+  // 自动截帧计划中：本地截图与预览帧均为空且元数据补齐已结束。此期间屏蔽单帧兜底，
+  // 避免单帧兜底与完整截帧两个 ffmpeg 进程同时截同一文件
+  const autoFramePlanned =
+    !autoFramedRef.current &&
+    (localVideo.previewPaths?.length ?? 0) === 0 &&
+    localSamples === 0 &&
+    !fetching &&
+    !framing
+  // 无封面/封面加载失败 → ffmpeg 截帧兜底（懒加载；自动截帧规划中/进行中时暂不触发单帧兜底）
   const { fallbackPoster, isFrameFallback } = useFrameFallback(
     localVideo,
-    originalCover && !coverImgError ? originalCover : null
+    originalCover && !coverImgError
+      ? originalCover
+      : autoFramePlanned || (autoFramedRef.current && framing)
+        ? '__auto_frame_planned__'
+        : null
   )
   const coverSrc = (originalCover && !coverImgError ? originalCover : null) ?? fallbackPoster
 
@@ -627,6 +673,18 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   </button>
                 ) : undefined}
               </MetaRow>
+              {/* Excel 片单「分类」列的单值（如"剧情"、"单体"），独立于 tagCategories */}
+              {localVideo.introCategory ? (
+                <MetaRow label={t('detail.category')}>
+                  <button
+                    type="button"
+                    onClick={() => onPickFilter?.({ type: 'category', value: localVideo.introCategory! })}
+                    className="text-brand hover:underline underline-offset-2"
+                  >
+                    {localVideo.introCategory}
+                  </button>
+                </MetaRow>
+              ) : null}
               {/* javdb 评分仅在没有我的评分时兜底显示 */}
               <MetaRow label={t('detail.score')} value={video.rating != null ? undefined : d?.rating} />
               {/* 
@@ -841,22 +899,39 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
         {(() => {
           const all = d?.samples ?? []
           const remoteOnly = all.filter(u => !isLocal(u))
-          // 本地图数组（滚轮切换也只在本地图上生效, 远程 URL 无法预览所以跳过）
           const localGroup = all.filter(isLocal)
+          const localZoomGroup = localGroup.map(u => posterUrl(u) ?? u)
+          const total = d?.samplesTotal ?? 0
+          const got = all.length
+          const failedCount = total > got ? total - got : 0
+          const rawReasons = [...new Set(d?.sampleErrors ?? [])].filter(Boolean)
+          const reasonLines = rawReasons.map(renderFailReason)
+          const hasFailed = failedCount > 0
+          const showFailInline = hasFailed && d
           if (all.length === 0) {
             // v2.2.14：详情抓到了但截图一张都没有 → 显示原因说明，不再让整个区块神秘消失
             if (d) {
-              const failed = d.samplesTotal ?? 0
               return (
                 <div className="mb-6">
                   <div className="text-white/80 font-medium mb-2 flex items-center gap-2">
                     <Icon name="info" size={13} className="text-[#FF6B8A] animate-pulse shrink-0" />
-                    {t('detail.keyScreenshotsHeader', { count: failed || t('app.none') })}
-                    <span className="text-white/45 text-[12px]">{failed > 0 ? t('detail.downloadFailed') : t('detail.notFetched')}</span>
+                    {t('detail.keyScreenshotsHeader', { count: failedCount || t('app.none') })}
+                    <span className="text-white/45 text-[12px]">{hasFailed ? t('detail.downloadFailed') : t('detail.notFetched')}</span>
                   </div>
-                  <div className="rounded-lg border border-white/5 bg-ink-800/50 px-3 py-2.5 text-[12px] text-amber-400/80 leading-relaxed">
-                    {failed > 0 ? t('detail.keyScreenshotFailedCount', { count: failed }) : t('detail.keyScreenshotNone')}
-                    {t('detail.keyScreenshotRetryHint')}
+                  <div className="rounded-lg border border-white/5 bg-ink-800/50 px-3 py-2.5 text-[12px] text-amber-400/80 leading-relaxed space-y-1">
+                    {hasFailed ? (
+                      <>
+                        <div>{t('detail.keyScreenshotFailedCount', { count: failedCount })}</div>
+                        {reasonLines.length > 0 ? (
+                          <ul className="list-disc list-inside text-amber-400/90 space-y-0.5 pl-1">
+                            {reasonLines.map((r, i) => <li key={i}>{r}</li>)}
+                          </ul>
+                        ) : (
+                          <div className="text-amber-400/70">{t('detail.screenshotFailReasonDefault')}</div>
+                        )}
+                        <div className="text-white/55 pt-1">{t('detail.keyScreenshotRetryHint')}</div>
+                      </>
+                    ) : t('detail.keyScreenshotNone')}
                   </div>
                 </div>
               )
@@ -875,14 +950,30 @@ export default function VideoDetail({ video, onClose, onPlay, onDetailFetched, o
                   </span>
                 ) : null}
               </div>
+              {/* 部分截图下载失败（还有能显示的图）—— 顶部显示失败详情 */}
+              {showFailInline && (
+                <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-300/90 leading-relaxed">
+                  <div className="font-medium mb-1">
+                    {t('detail.keyScreenshotPartialFail', { got, total, fail: failedCount })}
+                  </div>
+                  {reasonLines.length > 0 ? (
+                    <ul className="list-disc list-inside space-y-0.5 text-amber-200/90">
+                      {reasonLines.map((r, i) => <li key={i}>{r}</li>)}
+                    </ul>
+                  ) : (
+                    <div className="text-amber-300/80">{t('detail.screenshotFailReasonDefault')}</div>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {all.map((url, i) => (
                   <div
                     key={`${url}_${i}`}
                     className={`aspect-video rounded-lg overflow-hidden bg-ink-800 ${isLocal(url) ? 'cursor-zoom-in' : 'opacity-30'}`}
                     onMouseEnter={isLocal(url) ? () => {
-                      setZoomGroup(localGroup, 'samples', url)
-                      cancelClose(); scheduleOpen(url)
+                      const zu = posterUrl(url) ?? url
+                      setZoomGroup(localZoomGroup, 'samples', zu)
+                      cancelClose(); scheduleOpen(zu)
                     } : undefined}
                     onMouseLeave={isLocal(url) ? clearOpenTimer : undefined}
                   >

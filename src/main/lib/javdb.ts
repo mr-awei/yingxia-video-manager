@@ -17,6 +17,26 @@ const BASE = 'https://javdb.com'
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
 
+/** 清洗 genre 名称：
+ *  - 剔除尾部的数字计数（`【多人】5` → `多人`；`剧情12` → `剧情`）
+ *  - 剔除方括号/圆括号包裹的数字段（`[5]`、`(3)`）
+ *  - 跳过纯分隔符（`/`、`-`、`|`、`*`）和空串、过短串 */
+export function cleanGenreName(raw: string): string | null {
+  let s = raw.trim()
+  // 去掉尾部数字计数
+  s = s.replace(/\s*\d+\s*$/, '')
+  // 去掉方括号/圆括号包裹的纯数字（【5】/[5]/(5)）
+  s = s.replace(/[【\[(]?\s*\d+\s*[】\])]?/g, '')
+  // 去掉全角括号包裹但不含实质内容的残留（如「多人」→ 保留，「」→ 去掉）
+  s = s.replace(/[【】\[\]()（）]/g, '')
+  s = s.trim()
+  if (!s) return null
+  // 纯符号/单字符
+  if (/^[\s\/\-|*·,，。、.]+$/.test(s)) return null
+  if (s.length < 2) return null
+  return s
+}
+
 // 代理出口统一由 src/main/lib/proxy.ts 提供（getDispatcher），支持 http/https/socks4/socks5/system。
 
 // 注意：extractCode 2026-08-30 统一从 src/shared/code.ts re-export（修域名前缀 bug），
@@ -112,12 +132,15 @@ export async function searchJavdb(
   return { ...hit, title: hit.code }
 }
 
-/** 把任意远程图片下载到本地缓存目录（带 javdb Referer，走代理），返回本地路径 */
+/** 把任意远程图片下载到本地缓存目录（带 javdb Referer，走代理），返回本地路径。
+ *  onFail 仅在需要下载且失败时回调一次（给出失败原因**代码**，前端按语言翻译成人话）；
+ *  代码：invalid-url / http-403 / http-<status> / too-small / timeout / cert / network。缓存命中/成功不回调 */
 export async function cacheRemoteImage(
   remoteUrl: string,
   key: string,
   _settings: Settings,
-  referer: string = BASE
+  referer: string = BASE,
+  onFail?: (reason: string) => void
 ): Promise<string | null> {
   const safe = key.replace(/[^A-Za-z0-9_-]/g, '_')
   const out = path.join(postersCacheDir(), `${safe}.jpg`)
@@ -130,6 +153,7 @@ export async function cacheRemoteImage(
   // URL 校验：空串 / 相对路径 / 非 http(s) 协议直接跳过，避免 new URL / net.fetch 抛 Invalid URL。
   if (!remoteUrl || !/^https?:\/\//i.test(remoteUrl)) {
     console.log(`[cacheRemoteImage] ${safe} skip invalid URL ${JSON.stringify(remoteUrl)}`)
+    onFail?.('invalid-url')
     return null
   }
   const headers: Record<string, string> = {
@@ -151,18 +175,27 @@ export async function cacheRemoteImage(
     const res = await net.fetch(remoteUrl, { headers, signal: ctrl.signal })
     if (!res.ok) {
       console.log(`[cacheRemoteImage] ${key} HTTP ${res.status} ${remoteUrl}`)
+      onFail?.(res.status === 403 ? 'http-403' : `http-${res.status}`)
       return null
     }
     const buf = Buffer.from(await res.arrayBuffer())
     if (buf.length < 1000) {
       console.log(`[cacheRemoteImage] ${key} too small ${buf.length}B ${remoteUrl}`)
+      onFail?.('too-small')
       return null
     }
     await fs.mkdir(postersCacheDir(), { recursive: true })
     await fs.writeFile(out, buf)
     return out
   } catch (e) {
-    console.log(`[cacheRemoteImage] ${key} error ${(e as Error)?.message || e} ${remoteUrl}`)
+    const msg = String((e as Error)?.message || e)
+    console.log(`[cacheRemoteImage] ${key} error ${msg} ${remoteUrl}`)
+    const reason = /abort|timeout/i.test(msg)
+      ? 'timeout'
+      : /cert|ssl/i.test(msg)
+        ? 'cert'
+        : 'network'
+    onFail?.(reason)
     return null
   } finally {
     clearTimeout(timer)
@@ -291,14 +324,17 @@ export function parseJavdbDetailHtml(html: string, fallbackCode: string): JavdbD
     console.log(`[parse] ${fallbackCode} label NOT FOUND`)
   }
 
-  // 类别：href="/actors/censored" 等纯小写 slug
-  const genres: string[] = []
-  const genreRe = /href="\/actors\/([a-z]+)"[^>]*>([^<]+)</g
+  // 类别：JavDB 用 /tags/xxx 表示真正的类别标签（非 /actors/，后者是演员分组）
+  // 同时 /genres/xxx 兼容老结构；去重 + 清理数字后缀、纯分隔符
+  const genresSet = new Set<string>()
+  const genreRe = /href="\/(?:tags|genres)\/[^"]*"[^>]*>([^<]+)<\/a>/g
   let gm: RegExpExecArray | null
   while ((gm = genreRe.exec(html)) !== null) {
-    const name = gm[2].trim()
-    if (name && !genres.includes(name)) genres.push(name)
+    const raw = gm[1].trim()
+    const clean = cleanGenreName(raw)
+    if (clean) genresSet.add(clean)
   }
+  const genres = [...genresSet]
 
   // 关键截图（大图）：samples/<xx>/<UID>_l_<N>.jpg
   const samples: string[] = []
@@ -373,6 +409,7 @@ export async function fetchJavdbDetail(
 
   // 把远程图片下载到本地缓存（并行）。失败的跳过。
   const samplesTotal = detail.samples.length
+  const sampleErrors: string[] = []
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     tasks.push(cacheRemoteImage(detail.cover, `javdb-cover-${hit.uid}`, settings))
@@ -380,7 +417,7 @@ export async function fetchJavdbDetail(
     tasks.push(Promise.resolve(null))
   }
   detail.samples.forEach((url, i) => {
-    tasks.push(cacheRemoteImage(url, `javdb-sample-${hit.uid}-${i}`, settings))
+    tasks.push(cacheRemoteImage(url, `javdb-sample-${hit.uid}-${i}`, settings, BASE, (reason) => sampleErrors.push(reason)))
   })
   // 把远程图片下载到本地缓存（并行）。失败的跳过，绝不把远程 URL 写回 JavdbDetail
   // （远程 URL 经 posterUrl 透传会让 Chromium 直接请求 javdb CDN 触发 403 反盗链）
@@ -391,6 +428,8 @@ export async function fetchJavdbDetail(
     cover: coverLocal || undefined,
     // v2.2.14：保留解析出的原始总数，供前端区分「本来就没图」与「下载失败」
     samplesTotal,
+    // 失败原因（去重），供前端提示
+    sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

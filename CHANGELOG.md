@@ -730,3 +730,16 @@ v2.2.4 升级时 installer 清掉了 posters 目录里的旧 .jpg（`<video.id>_
 **修复**
 - **批量补齐不再误停**：`fetchDetailSmart` 之前把「搜索无结果」（数据源确实没这个番号，正常情况）也计为连续失败，导致 IP 没被封也自动停止/切源。现在只有真正的网络/会话异常（请求失败、超时、年龄验证失败）才累计失败次数；「无结果/无法识别番号」静默不计。javbus 的「搜索无结果」提示同步改为静默。
 - 批量补齐按用户设置的间隔执行（`fetchIntervalMs`，不再有额外固定延时叠加）。
+## v2.6.6（2026-09-02）
+
+**标签分层修复 + 截图失败详情 + Excel 片单向导对齐 + 元数据清洗**
+
+- **修复「数据源标签」显示不一致**：v2.6.5 把 ackupTags 合并逻辑写反了，导致数据源 genres 在多数视频上看不到；改回无条件合并全部 genres，不管是否与 Excel 片单标签重叠。
+- **修复 Excel 分类列混入标签分组**：excel.ts 未跳过「分类」列，AI 生成的 【多人】2 / 剧情 被当成标签拆入 	agCategories['分类']；现在分类列值走独立字段 Video.introCategory，详情页 MetaRow 单独一行展示。
+- **修复数据源 genres 解析污染**：JavDB 旧正则 /href=\"\/actors\/xxx\"/ 匹配到演员分组（【多人】5）而非真正的类别标签；修正为 /tags/xxx 结构，并新增 cleanGenreName() 通用清洗器（去数字后缀、括号、纯分隔符），覆盖 JavDB / JavBus / JavLibrary / Javinfo / Javapi 五个数据源。
+- **截图失败详情展示**：补齐信息后弹窗 + 详情页截图区**双处**展示失败张数、去重原因列表及解决建议；前端翻译失败原因代码（http-403、	imeout、
+etwork…），toast 和 UI 共享同一套映射。
+- **统一 hover 大图延迟 1s**：VideoDetail 样本图 / EntryCard 预览卡，所有 hover 大图展示延迟从 350ms 升至 1s。
+- **对齐自动截帧与手动截帧**：无预览图的详情页自动调用 ideoGeneratePreviews 完整多帧截帧（与手动「重新截帧」一致），不再走旧的单帧兜底路径，避免并发 ffmpeg 进程。
+- **Excel 片单向导表头对齐实际数据结构**：向导提示词里的表头从旧版 简介/评分/标签/备注/封面路径 更正为 分类/推荐评分/简介/主题/角色/服装/体型/行为/玩法/场景/剧情/其他，并新增「分类体系」段落让 AI 生成正确的分类值。
+- **store schema 迁移升到 2026090204**：启动时自动剥离 	agCategories['分类'] 至 Video.introCategory，清洗文档级和数据源级脏标签，迁移日志统计 touched / peeled / cleaned 三类数量。

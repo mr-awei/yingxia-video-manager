@@ -12,7 +12,7 @@ import type {
 
 /** videoFetchJavdbDetail 返回：成功（含详情 + 来源）或失败（含原因） */
 export type FetchDetailResult =
-  | { ok: true; detail: JavdbDetail; source: 'javapi' | 'javinfo' | 'javdb' | 'javbus' }
+  | { ok: true; detail: JavdbDetail; source: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary' }
   | { ok: false; error: string }
 
 /** videoRenameFile 返回：成功（含改名后的 video + 新旧名）或失败（原因，不抛异常） */

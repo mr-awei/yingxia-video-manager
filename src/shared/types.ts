@@ -74,6 +74,9 @@ export interface Video {
   lastMetaFetchAt?: number
 
   frameFailedAt?: number
+  /** Excel 片单「分类」列的单值（如"剧情"、"单体"），独立字段不进 tagCategories；
+   *  详情页 MetaRow 单独展示。无片单或未匹配时为 undefined。v2.6.5 起引入。 */
+  introCategory?: string
 }
 
 /** javdb 视频详情页抓取的元数据 */
@@ -104,6 +107,8 @@ export interface JavdbDetail {
    * 旧数据无此字段。
    */
   samplesTotal?: number
+  /** 下载失败截图的原因代码列表（去重后，如 'http-403'、'http-404'、'timeout'、'cert'、'network'、'invalid-url'、'too-small'）；由前端按语言翻译成人话。旧数据无此字段 */
+  sampleErrors?: string[]
   /** 解析器版本标记：v2 = zip 配对解析器（2026-08-26 修复男演员混入）。旧数据无此字段。 */
   parseVer?: number
   /** 数据来源：javdb / javbus / javlibrary / javapi / javinfo（旧数据无此字段，默认视为 javdb） */
@@ -316,6 +321,8 @@ export interface IntroItem {
   tagCategories?: Record<string, string[]>
   /** 推荐评分（Excel 片单中的评分列，0-10 分；权威，覆盖 javdb） */
   score?: number
+  /** Excel 片单「分类」列的单值，如 "剧情"、"单体"，独立于 tagCategories */
+  category?: string
   /** 原始行文本 */
   raw: string
 }
@@ -397,6 +404,7 @@ export interface ReconcileResult {
 /** Excel tagCategories 里这些分类是元数据/简介/评分, 不是标签, 统一跳过不收集
  *  导出给 UI 层去重渲染时共享, 避免前端自己硬编码一份同名单. */
 export const NON_TAG_CATEGORY_NAMES = new Set([
+  '分类', 'category',
   '推荐评分', '评分', '简介', '说明', '备注', 'note', 'comment',
   '推荐', '描述', 'desc', 'description', 'summary'
 ])

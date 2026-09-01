@@ -1,7 +1,12 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
+<<<<<<< HEAD
 import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 import { extractCode, cacheRemoteImage } from './javdb'
+=======
+import { extractBaseCode } from '../../shared/code'
+import { extractCode, cacheRemoteImage, cleanGenreName } from './javdb'
+>>>>>>> e349fd2 (feat: v2.6.6 标签分层修复 + 截图失败详情 + Excel 向导对齐 + 元数据清洗)
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -122,13 +127,14 @@ export function parseJavBusDetailHtml(html: string, fallbackCode: string): Javdb
   }
 
   // 类别：<a href="/genre/xxx">名称</a>
-  const genres: string[] = []
+  const genresSet = new Set<string>()
   const genreRe = /href="[^"]*\/genre\/[^"]*"[^>]*>([^<]+)<\/a>/g
   let gm: RegExpExecArray | null
   while ((gm = genreRe.exec(html)) !== null) {
-    const name = gm[1].trim()
-    if (name && !genres.includes(name)) genres.push(name)
+    const clean = cleanGenreName(gm[1])
+    if (clean) genresSet.add(clean)
   }
+  const genres = [...genresSet]
 
   // 女优：<div class="star-name"><a href="..." title="山岸逢花">山岸逢花</a></div>
   const actresses: string[] = []
@@ -221,8 +227,9 @@ export async function fetchJavBusDetail(
     tasks.push(Promise.resolve(null))
   }
   const samplesTotal = detail.samples.length
+  const sampleErrors: string[] = []
   detail.samples.forEach((u, i) => {
-    tasks.push(cacheRemoteImage(u, `javbus-sample-${codeNorm}-${i}`, settings, detailUrl))
+    tasks.push(cacheRemoteImage(u, `javbus-sample-${codeNorm}-${i}`, settings, detailUrl, (reason) => sampleErrors.push(reason)))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
@@ -232,6 +239,8 @@ export async function fetchJavBusDetail(
     cover: coverLocal || undefined,
     // v2.2.14：保留解析出的原始总数，供前端区分「本来就没图」与「下载失败」
     samplesTotal,
+    // 失败原因（去重），供前端提示
+    sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((p): p is string => !!p)
   }
 }

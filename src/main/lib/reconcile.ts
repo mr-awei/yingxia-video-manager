@@ -222,6 +222,8 @@ async function ensureVideo(
     score?: number
     /** Excel 片单结构化分类标签（新格式）；无片单时为 undefined */
     tagCategories?: Record<string, string[]>
+    /** Excel 片单「分类」列的单值，独立于 tagCategories */
+    introCategory?: string
   },
   changes: VideoChange[]
 ): Promise<Video> {
@@ -237,7 +239,8 @@ async function ensureVideo(
       JSON.stringify(existing.tags) !== JSON.stringify(nextTags) ||
       JSON.stringify(existing.tagCategories ?? null) !== JSON.stringify(nextCats ?? null) ||
       existing.rating !== meta.score ||
-      !!existing.domestic !== domestic
+      !!existing.domestic !== domestic ||
+      existing.introCategory !== meta.introCategory
     ) {
       const updated: Video = {
         ...existing,
@@ -246,7 +249,8 @@ async function ensureVideo(
         tagCategories: nextCats,
         descriptionSource: 'manual',
         rating: meta.score ?? existing.rating,
-        domestic
+        domestic,
+        introCategory: meta.introCategory ?? existing.introCategory
       }
       changes.push({ type: 'update', video: updated })
       return updated
@@ -268,7 +272,8 @@ async function ensureVideo(
     tagCategories: meta.tagCategories && Object.keys(meta.tagCategories).length ? { ...meta.tagCategories } : undefined,
     rating: meta.score,
     addedAt: Date.now(),
-    fileSize: stat?.size
+    fileSize: stat?.size,
+    introCategory: meta.introCategory
   }
   if (!video.posterPath) {
     const r = await resolvePoster(video, library, settings, { allowFfmpeg: false })
@@ -361,10 +366,18 @@ export async function reconcileLibrary(
         if (files.length > 0) {
           // L352: 同 code 多文件（分集 / 多碟）时，主 entry 只绑定第一个文件作为 video（列表页不重复展示），
           // 其余文件也 ensureVideo 后存入 siblingVideos，供详情页渲染分集列表（像爱奇艺那样）。
-          const video = await ensureVideo(files[0], library, settings, item, changes)
+          const metaForVideo = {
+            code: item.code,
+            description: item.description,
+            tags: item.tags,
+            tagCategories: item.tagCategories,
+            score: item.score,
+            introCategory: item.category
+          }
+          const video = await ensureVideo(files[0], library, settings, metaForVideo, changes)
           const siblingVideos: Video[] = []
           for (let i = 1; i < files.length; i++) {
-            const sib = await ensureVideo(files[i], library, settings, item, changes)
+            const sib = await ensureVideo(files[i], library, settings, metaForVideo, changes)
             siblingVideos.push(sib)
           }
           entries.push({

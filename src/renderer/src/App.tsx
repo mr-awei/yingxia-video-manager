@@ -1666,10 +1666,11 @@ export default function App() {
     setSelectedYears(new Set())
   }, [])
 
-  const handlePickFilter = useCallback((f: { type: 'actor' | 'studio' | 'series'; value: string }) => {
+  const handlePickFilter = useCallback((f: { type: 'actor' | 'studio' | 'series' | 'category'; value: string }) => {
     setDetail(null)
     if (f.type === 'actor') setSelectedActors(new Set([f.value]))
     else if (f.type === 'studio') setSelectedStudios(new Set([f.value]))
+    else if (f.type === 'category') setFilter((p) => ({ ...p, search: p.search && p.search.length ? `${p.search} OR ${f.value}` : f.value }))
     else setSelectedSeries(new Set([f.value]))
     setView('browse')
     setSmart('all')

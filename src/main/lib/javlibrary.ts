@@ -1,7 +1,7 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
 import { extractBaseCode, normalizeManualCode } from '../../shared/code'
-import { extractCode, cacheRemoteImage } from './javdb'
+import { extractCode, cacheRemoteImage, cleanGenreName } from './javdb'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -92,8 +92,10 @@ export function parseJavLibraryDetailHtml(html: string, code: string): JavdbDeta
   const rating = pick(html, /<span class="score"[^>]*>([^<]+)<\/span>/)
   // 演员（<div id="video_cast"><span class="cast"><a ...>NAME</a>）
   const actors = pickAll(html, /<span class="cast"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/)
-  // 类别（<span class="genre"><a ...>TAG</a>）
+  // 类别（<span class="genre"><a ...>TAG</a>）—— 清洗过滤脏标签
   const genres = pickAll(html, /<span class="genre"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/)
+    .map(cleanGenreName)
+    .filter((g): g is string => !!g && g.length >= 2)
   // 截图（<div id="video_pics"> 内 <img src>）
   const samples = pickAll(html, /<div id="video_pics">[\s\S]*?<img[^>]*src="([^"]+)"[\s\S]*?<\/div>/)?.length
     ? pickAll(html, /<div id="video_pics">[\s\S]*?<img[^>]*src="([^"]+)"[\s\S]*?<\/div>/)
@@ -146,20 +148,26 @@ export async function fetchJavLibraryDetail(
   }
 
   // 本地化图片（封面 + 截图），失败跳过
+  const sampleUrls = detail.samples.slice(0, 20)
+  const samplesTotal = sampleUrls.length
+  const sampleErrors: string[] = []
   const tasks: Promise<string | null>[] = []
   if (detail.cover) {
     tasks.push(cacheRemoteImage(detail.cover, `javlibrary-cover-${codeNorm}`, settings, base()))
   } else {
     tasks.push(Promise.resolve(null))
   }
-  detail.samples.slice(0, 20).forEach((url, i) => {
-    tasks.push(cacheRemoteImage(url, `javlibrary-sample-${codeNorm}-${i}`, settings, base()))
+  sampleUrls.forEach((url, i) => {
+    tasks.push(cacheRemoteImage(url, `javlibrary-sample-${codeNorm}-${i}`, settings, base(), (reason) => sampleErrors.push(reason)))
   })
   const results = await Promise.all(tasks)
   const [coverLocal, ...sampleLocals] = results
   return {
     ...detail,
     cover: coverLocal ?? detail.cover,
+    // 保留解析出的原始总数，与失败原因（去重）一起供前端提示
+    samplesTotal,
+    sampleErrors: [...new Set(sampleErrors)],
     samples: sampleLocals.filter((x): x is string => !!x)
   }
 }

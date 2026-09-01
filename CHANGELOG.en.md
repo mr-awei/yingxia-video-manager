@@ -656,3 +656,17 @@ Measured: 22 videos / 330 dead preview paths total flooding the console.
 
 
 
+
+## v2.6.6 (2026-09-02)
+
+**Tag-layer fix + screenshot-failure details + Excel sheet wizard alignment + metadata cleanup**
+
+- **Fix inconsistent Source tags display**: v2.6.5 merged ackupTags conditionally — when genres overlapped with sheet tags, they were skipped; now all genres unconditionally land in ackupTags so the detail page shows the full source-side category set.
+- **Fix Excel Category column leaking into tag groups**: excel.ts didn't skip the 分类 column, so AI-generated values like 【多人】2 / Drama were split into tags and written into 	agCategories['分类']. The Category column now flows through a dedicated Video.introCategory field and renders as a standalone MetaRow in the detail page.
+- **Fix JavDB genres parser pulling actor groups**: The old regex /href=\"\/actors\/xxx\"/ matched actor groupings (【多人】5) instead of real categories. Corrected to /tags/xxx, and added a shared cleanGenreName() sanitizer (strips numeric suffixes, brackets, pure separators) used by all five sources: JavDB / JavBus / JavLibrary / Javinfo / Javapi.
+- **Screenshot-failure details shown in two places**: After "Fetch info", both the corner toast and the in-page sample-image block display the failed count, a de-duplicated reason list, and actionable hints. The front-end translates reason codes (http-403, 	imeout, 
+etwork, …) — toast and UI share the same mapping.
+- **Unified hover-to-zoom delay to 1 s**: VideoDetail sample cards and EntryCard preview cards now wait 1 s before opening the zoom overlay (up from 350 ms).
+- **Align auto framing with manual framing**: When a detail page opens with no previews, the app now calls ideoGeneratePreviews — the same full multi-frame pipeline as the manual "Re-framing" button — instead of the old single-frame fallback.
+- **Excel sheet wizard prompt aligned to the real schema**: Wizard prompt headers corrected from Synopsis/Rating/Tags/Notes/CoverPath to the real Category/Rating/Synopsis/Theme/Role/Costume/BodyType/Behavior/Play/Scene/Plot/Other, plus a "Category system" paragraph so AI picks the right single category value.
+- **Store schema bump to 2026090204**: On startup the migration peels 	agCategories['分类'] out into Video.introCategory, sanitizes dirty tags on both the doc and source sides, and logs counts for touched / peeled / cleaned entries.
