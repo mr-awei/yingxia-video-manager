@@ -1,39 +1,26 @@
 !macro customInit
   # 安装器初始化。
   # 此宏在「安装」和「卸载」时都会被 electron-builder 调用。
-  # 用 IsUninst 区分场景 —— 卸载流程跳过语言选择和运行检测。
+  # 用 IsUninst 区分场景 —— 卸载流程跳过运行检测。
   !ifdef IsUninst
     Goto InitEnd
   !endif
 
   # ====================
-  # 第一步：nsDialogs 语言选择（仅简体中文 / English）
+  # 把 MUI 语言选择器的结果写入注册表，供应用首次启动读取。
+  # $LANGUAGE 由 electron-builder 的 displayLanguageSelector 在 .onInit 更早阶段设置。
+  #   2052 = 简体中文 → zh-CN
+  #   1033 = 英文     → en-US
   # ====================
-  nsDialogs::Create 1018
-  Pop $0
-  ${NSD_CreateLabel} 10 12 100% 14u "Select installation language"
-  Pop $0
-  ${NSD_CreateRadioButton} 18 36 100% 12u "简体中文"
-  Pop $1
-  ${NSD_CreateRadioButton} 18 54 100% 12u "English"
-  Pop $2
-  ${NSD_SetState} $1 1   # 默认选中简体中文
-  nsDialogs::Show
-  Pop $5
-  ${NSD_GetState} $1 $6
-  ${If} $6 == 1
-    StrCpy $LANGUAGE "2052"       # NSIS 简体中文
-    StrCpy $R0 "zh-CN"            # 应用内部 locale
+  ${If} $LANGUAGE == "2052"
+    StrCpy $R0 "zh-CN"
   ${Else}
-    StrCpy $LANGUAGE "1033"       # NSIS 英文
-    StrCpy $R0 "en-US"            # 应用内部 locale
+    StrCpy $R0 "en-US"
   ${EndIf}
-
-  # 写入注册表，供应用首次启动读取（主进程 readInstallerLanguage）
   WriteRegStr HKCU "Software\YingXia" "InstallerLanguage" $R0
 
   # ====================
-  # 第二步：检测旧版本是否仍在运行
+  # 检测旧版本是否仍在运行
   # ====================
   FindWindow $0 "" "影匣"
   IntCmp $0 0 InitEnd

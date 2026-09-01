@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.4 (2026-09-01)
+
+**Fix installer startup crash + switch to MUI native language selector**
+
+- **Fix double-click installer no response / Program Compatibility Assistant TLS warning**: The root cause was mixing a custom `nsDialogs` language dialog with `FindWindow` running-app detection inside `customInit` (called during `.onInit`), which caused an NSIS runtime crash (exit code -1073741819 / 0xC0000005). Replaced the custom nsDialogs language picker with electron-builder's native `displayLanguageSelector` + `installerLanguages: ['zh_CN', 'en_US']`.
+- **Installer language picker still limited to Simplified Chinese and English**: `installerLanguages` restricts MUI to loading only `SimpChinese` and `English` language files.
+- **Uninstaller checkbox retained**: `customUnInstall` still uses an nsDialogs checkbox to ask whether to delete `%APPDATA%\local-video-manager`; unchecked by default. Dialog text follows the installer `$LANGUAGE`.
+- **Installer running-app check retained**: Still detects the "影匣" window and prompts the user to close the app first, but no longer mixed with nsDialogs, avoiding the crash.
+
 ## v2.6.3 (2026-09-01)
 
 **Installer language picker + uninstaller checkbox for data removal + English user notice without PRC laws**

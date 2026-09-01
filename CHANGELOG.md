@@ -1,5 +1,14 @@
 # 更新日志（Changelog）
 
+## v2.6.4（2026-09-01）
+
+**修复安装器启动崩溃 + 改用 MUI 原生语言选择器**
+
+- **修复双击安装包无反应 / 程序兼容性助手弹 TLS 警告**：根因是 `customInit` 宏中混用 `nsDialogs` 自定义语言对话框与 `FindWindow` 运行检测，在 .onInit 阶段触发 NSIS 运行时崩溃（exit code -1073741819 / 0xC0000005）。已移除自定义 nsDialogs 语言选择，改由 electron-builder 原生 `displayLanguageSelector` + `installerLanguages: ['zh_CN', 'en_US']` 提供稳定语言选择框。
+- **安装器语言选择框仍仅保留简体中文和 English**：通过 `installerLanguages` 限制 MUI 只加载 `SimpChinese` 和 `English` 两个语言文件。
+- **卸载器复选框保留**：`customUnInstall` 仍使用 nsDialogs 复选框询问是否删除 `%APPDATA%\local-video-manager`，默认不勾选；卸载器文案跟随安装时选定的 `$LANGUAGE`。
+- **安装器运行中检测保留**：继续检测「影匣」窗口并提示用户先关闭应用，但不再与 nsDialogs 混用，避免崩溃。
+
 ## v2.6.3（2026-09-01）
 
 **安装器语言选择 + 卸载器复选框删除用户数据 + 用户须知去中国法律法规**

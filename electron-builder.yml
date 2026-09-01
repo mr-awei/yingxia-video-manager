@@ -37,5 +37,8 @@ nsis:
   shortcutName: 影匣
   deleteAppDataOnUninstall: false
   differentialPackage: false
-  # 安装前执行 build/installer.nsh，强制结束旧进程
+  # 安装第一步显示 MUI 语言选择框，且只加载简体中文、英文两种语言文件
+  displayLanguageSelector: true
+  installerLanguages: ['zh_CN', 'en_US']
+  # 安装前执行 build/installer.nsh，把安装器语言写入注册表
   include: build/installer.nsh
