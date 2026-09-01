@@ -1,6 +1,6 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 import { extractCode, cacheRemoteImage } from './javdb'
 
 const UA =
@@ -123,10 +123,13 @@ export function parseJavLibraryDetailHtml(html: string, code: string): JavdbDeta
 export async function fetchJavLibraryDetail(
   code: string,
   settings: Settings,
-  _onError?: (m: string) => void
+  _onError?: (m: string) => void,
+  /** v2.3.12：true = 手工输入的番号，自动提取失败时直接采用（详见 javapi.ts 同名参数注释） */
+  manual = false
 ): Promise<JavdbDetail | null> {
   // 与 javbus 一致：先归一番号（KSJK013 → KSJK-013 → base code）
-  const codeNorm = extractBaseCode(extractCode(code)) || extractCode(code)
+  const autoCode = extractBaseCode(extractCode(code)) || extractCode(code)
+  const codeNorm = autoCode || (manual ? normalizeManualCode(code) : '')
   if (!codeNorm) return null
   const detailUrl = await searchDetailUrl(codeNorm, settings)
   if (!detailUrl) {

@@ -102,7 +102,7 @@ export async function fetchPosterSmart(video: Video, settings: Settings): Promis
         const d = await fetchJavBusDetail(code, settings)
         if (d?.cover) return d.cover // fetchJavBusDetail 内部已下载到本地
       } else if (src === 'javlibrary') {
-        const d = await fetchJavLibraryDetail(code, settings)
+        const d = await fetchJavLibraryDetail(code, settings, undefined)
         if (d?.cover) return d.cover
       } else if (src === 'javinfo') {
         if (hasJavinfoKey(settings)) {
@@ -142,7 +142,9 @@ export async function fetchDetailSmart(
   rawInput: string,
   settings: Settings,
   state: SmartFetchState,
-  onEvent?: (e: SmartFetchEvent) => void
+  onEvent?: (e: SmartFetchEvent) => void,
+  /** v2.6.5：true = 手工输入的番号（详情页「手工输入番号」窗口），各数据源自动提取失败时直接采用它 */
+  manual = false
 ): Promise<MovieDetailResult> {
   // v2.2.14：入口统一清洗搜索番号 — 之前三处调用方（ipc 单点/批量补齐、reconcile 兜底）
   // 都直接把 v.title / folderName / fileName 原样当 code 传，遇到 SONE-560_1 / 【中文字幕】SONE-280
@@ -156,7 +158,7 @@ export async function fetchDetailSmart(
   const ev = (e: Omit<SmartFetchEvent, 'code'>) => onEvent?.({ code, ...e })
   if (mode === 'javapi') {
     try {
-      const javapi = await fetchJavapiDetail(code, settings, onError)
+      const javapi = await fetchJavapiDetail(code, settings, onError, manual)
       if (javapi) return { detail: javapi, source: 'javapi' }
     } catch (e) {
       errors.push(`Javapi 异常：${(e as Error)?.message || e}`)
@@ -165,7 +167,7 @@ export async function fetchDetailSmart(
   }
   if (mode === 'javinfo') {
     try {
-      const javinfo = await fetchJavinfoDetail(code, settings, onError)
+      const javinfo = await fetchJavinfoDetail(code, settings, onError, manual)
       if (javinfo) return { detail: javinfo, source: 'javinfo' }
     } catch (e) {
       errors.push(`Javinfo 异常：${(e as Error)?.message || e}`)
@@ -175,7 +177,7 @@ export async function fetchDetailSmart(
   if (mode === 'javdb') {
     const errs: string[] = []
     try {
-      const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m))
+      const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m), manual)
       if (javdb) return { detail: javdb, source: 'javdb' }
     } catch (e) {
       errs.push(`JavDB 异常：${(e as Error)?.message || e}`)
@@ -185,7 +187,7 @@ export async function fetchDetailSmart(
   if (mode === 'javbus') {
     const errs: string[] = []
     try {
-      const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m))
+      const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m), manual)
       if (javbus) return { detail: javbus, source: 'javbus' }
     } catch (e) {
       errs.push(`JavBus 异常：${(e as Error)?.message || e}`)
@@ -195,7 +197,7 @@ export async function fetchDetailSmart(
   if (mode === 'javlibrary') {
     const errs: string[] = []
     try {
-      const javlibrary = await fetchJavLibraryDetail(code, settings, (m) => errs.push(m))
+      const javlibrary = await fetchJavLibraryDetail(code, settings, (m) => errs.push(m), manual)
       if (javlibrary) return { detail: javlibrary, source: 'javlibrary' }
     } catch (e) {
       errs.push(`JavLibrary 异常：${(e as Error)?.message || e}`)
@@ -288,7 +290,7 @@ export async function fetchDetailSmart(
         const errs: string[] = []
         ev({ src, status: 'trying' })
         try {
-          const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m))
+          const javdb = await fetchJavdbDetail(code, settings, (m) => errs.push(m), manual)
           if (javdb) {
             state.javdbFails = 0
             srcResults.push({ src, status: 'hit' })
@@ -319,7 +321,7 @@ export async function fetchDetailSmart(
       const errs: string[] = []
       ev({ src, status: 'trying' })
       try {
-        const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m))
+        const javbus = await fetchJavBusDetail(code, settings, (m) => errs.push(m), manual)
         if (javbus) {
           state.javbusFails = 0
           srcResults.push({ src, status: 'hit' })
@@ -345,7 +347,7 @@ export async function fetchDetailSmart(
       // javlibrary：不计数（数据与 javdb/javbus 重叠度高，纯兜底，静默）
       ev({ src, status: 'trying' })
       try {
-        const javlibrary = await fetchJavLibraryDetail(code, settings)
+        const javlibrary = await fetchJavLibraryDetail(code, settings, undefined, manual)
         if (javlibrary) {
           srcResults.push({ src, status: 'hit' })
           ev({ src, status: 'hit' })

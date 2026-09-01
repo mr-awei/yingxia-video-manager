@@ -15,6 +15,11 @@ export type FetchDetailResult =
   | { ok: true; detail: JavdbDetail; source: 'javapi' | 'javinfo' | 'javdb' | 'javbus' }
   | { ok: false; error: string }
 
+/** videoRenameFile 返回：成功（含改名后的 video + 新旧名）或失败（原因，不抛异常） */
+export type RenameFileResult =
+  | { ok: true; video: Video; oldName: string; newName: string }
+  | { ok: false; error: string }
+
 /** 批量补齐（libraryFetchJavdbAll）结果统计 */
 export interface BatchFetchResult {
   /** 成功部数 */
@@ -129,8 +134,11 @@ export interface AppApi {
   libraryFetchPause(): Promise<void>
   libraryFetchResume(): Promise<void>
   libraryFetchStop(): Promise<void>
-  /** 抓取详情页元数据（JavDB → JavBus 多源），返回是否成功及来源 / 失败原因 */
-  videoFetchJavdbDetail(id: string): Promise<FetchDetailResult>
+  /** 抓取详情页元数据（JavDB → JavBus 多源），返回是否成功及来源 / 失败原因。
+   *  v2.6.5：codeOverride = 手工输入的番号（文件名/标题识别不出番号时的兜底入口）。 */
+  videoFetchJavdbDetail(id: string, codeOverride?: string): Promise<FetchDetailResult>
+  /** v2.6.5：编辑标题后同步修改磁盘文件名（保留扩展名），失败返回原因（不抛异常） */
+  videoRenameFile(id: string, newTitle: string): Promise<RenameFileResult>
   /** 用 ffprobe 读取视频技术参数（分辨率/编码/码率/帧率/时长），并缓存到视频 */
   videoProbe(id: string): Promise<Video | null>
   /** v2.3.7 批量补齐当前库视频时长（ffprobe 读时长写 techInfo），返回处理统计 */

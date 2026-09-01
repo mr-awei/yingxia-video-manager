@@ -65,10 +65,18 @@ async function ensureLoaded(): Promise<DBShape> {
     if (now - lastStatMs > STAT_THROTTLE_MS) {
       lastStatMs = now
       try {
+        // v2.6.5：写盘进行中跳过检测——批量补齐频繁写盘时，`fs.stat` 返回的 mtime
+        // 在 Windows 高并发 rename 下可能短暂不一致，会造成「自己写盘被误判成外部修改」的刷屏。
+        // 写盘是串行的（writeInFlight 防重入），写盘期间暂不检测即可彻底消除该竞态。
+        if (writeInFlight) return cache
         const st = await fs.stat(dbPath)
         if (st.mtimeMs !== lastSelfWriteMs && st.mtimeMs !== lastLoadMs) {
           console.log('[store] 检测到 data.json 被外部修改，重载内存缓存')
           cache = null
+          // v2.6.5：把「重载前已知的磁盘 mtime」记为基准，避免重载后又因自己写盘把 mtime 推新、
+          // 与旧基准不匹配而反复误判
+          lastLoadMs = st.mtimeMs
+          lastSelfWriteMs = st.mtimeMs
         }
       } catch {
         /* 文件暂时不可访问（被占用等）：保守沿用内存 */

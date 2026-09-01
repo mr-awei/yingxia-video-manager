@@ -1,6 +1,6 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 import { extractCode, cacheRemoteImage } from './javdb'
 
 const UA =
@@ -177,11 +177,14 @@ export function parseJavBusDetailHtml(html: string, fallbackCode: string): Javdb
 export async function fetchJavBusDetail(
   code: string,
   settings: Settings,
-  onError?: (m: string) => void
+  onError?: (m: string) => void,
+  /** v2.6.5：true = 手工输入的番号，自动提取失败时直接采用（避免数字开头番号被判无番号） */
+  manual = false
 ): Promise<JavdbDetail | null> {
   // 先 extractCode 提取番号（可能拿到 HUNTA-468CD2），再 extractBaseCode 剥后缀得 HUNTA-468。
   // JavBus 上没有 HUNTA-468CD2，只有 HUNTA-468，必须剥后缀。
-  const codeNorm = extractBaseCode(extractCode(code)) || extractCode(code)
+  const autoCode = extractBaseCode(extractCode(code)) || extractCode(code)
+  const codeNorm = autoCode || (manual ? normalizeManualCode(code) : '')
   if (!codeNorm) {
     // 「无法识别番号」属正常结果（数据源确实无对应），不触发 onError——
     // 让批量对账把「无结果」与「网络失败」区分开（网络失败才累计停止）。

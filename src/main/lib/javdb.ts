@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { net } from 'electron'
 import type { JavdbDetail, Settings, Video } from '../../shared/types'
-import { extractBaseCode, extractCode } from '../../shared/code'
+import { extractBaseCode, extractCode, normalizeManualCode } from '../../shared/code'
 import { postersCacheDir } from './images'
 import { getDispatcher } from './proxy'
 
@@ -344,9 +344,11 @@ export function parseJavdbDetailHtml(html: string, fallbackCode: string): JavdbD
 export async function fetchJavdbDetail(
   code: string,
   settings: Settings,
-  onError?: (m: string) => void
+  onError?: (m: string) => void,
+  /** v2.6.5：true = 手工输入的番号，自动提取失败时直接采用（避免数字开头番号被判无番号） */
+  manual = false
 ): Promise<JavdbDetail | null> {
-  const codeNorm = extractCode(code)
+  const codeNorm = extractCode(code) || (manual ? normalizeManualCode(code) : '')
   if (!codeNorm) {
     // 「无法识别番号」属正常结果（静默，不算网络失败，避免批量误停）
     return null

@@ -19,7 +19,7 @@ import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
 import { probeVideo, probeImage } from './ffprobe'
-import { previewRenames, applyRenames } from './rename'
+import { previewRenames, applyRenames, safeFileBaseName } from './rename'
 import { DEFAULT_IMAGE_PRIORITY, type JavdbDetail, type Library, type ScanProgress, type Settings, type Video, type ImageSource, type UpdateSource, type TechInfo } from '../../shared/types'
 import { type UpdateCheckResult, type UpdateAssetInfo } from '../../shared/api-types'
 // v2.2.4 抽到独立模块（让 reconcile.ts 也能调 fetchDetailSmart，无循环依赖）
@@ -363,13 +363,15 @@ function detectUrgency(notes: string, minimumVersion?: string, currentVersion?: 
 async function fetchMovieDetail(
   code: string,
   settings: Settings,
-  onEvent?: (e: { code: string; src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }) => void
+  onEvent?: (e: { code: string; src: 'javapi' | 'javinfo' | 'javdb' | 'javbus' | 'javlibrary'; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }) => void,
+  /** v2.6.5：true = 手工输入的番号，各数据源不再对它做「从文件名猜番号」的提取 */
+  manual = false
 ): Promise<MovieDetailResult> {
   // v2.2.6：fetchDetailSmart 已统一处理所有 5 个源（含顺序、降级、错误信息），
   // 这里保留 wrapper 是为了让 videoFetchJavdbDetail 等老调用方零改动；
   // fetchDetailSmart 内部会按 settings.dataSource / customSourceOrder 自动分支。
   const state = createSmartFetchState()
-  return await fetchDetailSmart(code, settings, state, onEvent)
+  return await fetchDetailSmart(code, settings, state, onEvent, manual)
 }
 
 function emitProgress(p: ScanProgress): void {
@@ -674,18 +676,30 @@ export function registerIpc(): void {
   })
 
   // ---------- javdb 详情抓取 ----------
-  ipcMain.handle(IPC.videoFetchJavdbDetail, async (_e, id: string) => {
+  ipcMain.handle(IPC.videoFetchJavdbDetail, async (_e, id: string, codeOverride?: string) => {
     const v = await repo.getVideo(id)
     if (!v) throw new Error('视频不存在')
     const settings = await repo.getSettings()
-    // 搜索源：title → folderName → fileName；剥掉分集后缀，只取 base code 去搜（SONE-560_1 → SONE-560）
-    const rawCode = (v.title || v.folderName || v.fileName || '').trim()
-    const code = extractBaseCode(rawCode) || rawCode
-    if (!code) return null
+    // v2.6.5：搜索源优先级改为「手工番号 → title → folderName → fileName」。
+    // codeOverride = 用户手工输入的番号（文件名/标题识别不出番号时的兜底入口）。
+    const manual = typeof codeOverride === 'string' ? codeOverride.trim() : ''
+    const rawCode = (manual || v.title || v.folderName || v.fileName || '').trim()
+    if (!rawCode) return null
+    if (manual) {
+      console.log(`[ipc] videoFetchJavdbDetail 手工番号：${v.fileName} -> ${manual}`)
+    }
+    // 手工番号跳过 extractCode 清洗（用户已给出确定番号，如 476MLA-203 数字开头会被误判）；
+    // 否则保留作者库的「剥分集后缀取 base code」清洗（SONE-560_1 → SONE-560）
+    const code = manual ? rawCode : extractBaseCode(rawCode) || rawCode
     // v2.2.10：单点补齐也推 fetchEvent（右下角浮层实时显示"javdb 失败 → 降级 javbus"）
-    const mr = await fetchMovieDetail(code, settings, (e) => {
-      emitProgress({ libraryId: v.libraryId, total: 1, done: 0, current: v.title, fetchEvent: e })
-    })
+    const mr = await fetchMovieDetail(
+      code,
+      settings,
+      (e) => {
+        emitProgress({ libraryId: v.libraryId, total: 1, done: 0, current: v.title, fetchEvent: e })
+      },
+      !!manual
+    )
     // v2.2.13-fix：无论成功/失败，结束前发一次 done=1，让前端 Toast 有机会 dismiss
     emitProgress({ libraryId: v.libraryId, total: 1, done: 1, current: v.title })
     if (!mr.detail) return { ok: false as const, error: mr.error || '未获取到数据' }
@@ -719,6 +733,56 @@ export function registerIpc(): void {
       }
     }
     return { ok: true as const, detail: mr.detail, source: mr.source ?? ('javdb' as const) }
+  })
+
+  // ---------- 编辑标题后同步修改磁盘文件名（v2.6.5）----------
+  // 用户在「编辑影片信息」里改标题并勾选「同时修改文件名」时调用。
+  // 保持扩展名与所在目录不变，只改主文件名；失败一律返回原因，不抛异常（元数据保存不受影响）。
+  ipcMain.handle(IPC.videoRenameFile, async (_e, id: string, newTitle: string) => {
+    const v = await repo.getVideo(id)
+    if (!v) return { ok: false as const, error: '视频不存在' }
+    const safeBase = safeFileBaseName(newTitle)
+    if (!safeBase) return { ok: false as const, error: '标题为空或不含可用字符，无法生成文件名' }
+    const oldPath = v.path
+    const dir = path.dirname(oldPath)
+    const ext = path.extname(oldPath)
+    const newPath = path.join(dir, safeBase + ext)
+    // 大小写不同也算改名：Windows 文件系统不敏感，rename 同名不同大小写会被忽略。
+    if (newPath.toLowerCase() === oldPath.toLowerCase()) {
+      return { ok: true as const, video: v, oldName: path.basename(oldPath), newName: path.basename(oldPath) }
+    }
+    try {
+      await fs.access(oldPath)
+    } catch {
+      return { ok: false as const, error: `原文件已不存在：${oldPath}` }
+    }
+    try {
+      await fs.access(newPath)
+      return { ok: false as const, error: `目标文件名已存在：${path.basename(newPath)}` }
+    } catch {
+      /* 目标不存在，可以继续 */
+    }
+    try {
+      await fs.rename(oldPath, newPath)
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      const friendly = /EPERM|EBUSY|being used/i.test(msg)
+        ? '文件被占用（可能正在播放或已被其他程序打开）'
+        : msg
+      return { ok: false as const, error: `改名失败：${friendly}` }
+    }
+    const updated = await repo.updateVideo(id, {
+      path: newPath,
+      fileName: path.basename(newPath)
+    })
+    if (!updated) return { ok: false as const, error: '改名成功但写回数据失败' }
+    console.log(`[ipc] videoRenameFile: ${path.basename(oldPath)} -> ${path.basename(newPath)}`)
+    return {
+      ok: true as const,
+      video: updated,
+      oldName: path.basename(oldPath),
+      newName: path.basename(newPath)
+    }
   })
 
   ipcMain.handle(IPC.libraryFetchJavdbAll, async (_e, libraryId: string, force = false) => {

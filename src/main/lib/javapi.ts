@@ -1,6 +1,6 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { extractCode, cacheRemoteImage } from './javdb'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 
 /**
  * javapi —— 自托管本地 JAV 聚合 API（https://github.com/a1850976305/javapi）
@@ -112,14 +112,19 @@ async function lookupMovie(
 export async function fetchJavapiDetail(
   code: string,
   settings: Settings,
-  onError?: (m: string) => void
+  onError?: (m: string) => void,
+  /** v2.3.12：true = code 是用户手工输入的番号（已是确定值）。
+   *  自动提取失败时直接采用它，不再套「从文件名猜番号」的启发式——
+   *  否则 476MLA-203 这类数字开头的番号会被判为「无法识别番号」。 */
+  manual = false
 ): Promise<JavdbDetail | null> {
   if (!hasJavapiConfig(settings)) {
     onError?.('未配置本地 Javapi（设置 → 数据源 → Javapi URL / Key）')
     return null
   }
   // 与其他源一致：先提取番号，再剥 -CD/-PART/-A 等后缀（HUNTA-468CD2 → HUNTA-468）
-  const codeNorm = extractBaseCode(extractCode(code)) || extractCode(code)
+  const autoCode = extractBaseCode(extractCode(code)) || extractCode(code)
+  const codeNorm = autoCode || (manual ? normalizeManualCode(code) : '')
   if (!codeNorm) {
     onError?.('无法从文件名/标题识别番号')
     return null

@@ -1,7 +1,7 @@
 import type { JavdbDetail, Settings } from '../../shared/types'
 import { getDispatcher } from './proxy'
 import { extractCode, cacheRemoteImage } from './javdb'
-import { extractBaseCode } from '../../shared/code'
+import { extractBaseCode, normalizeManualCode } from '../../shared/code'
 
 /**
  * javinfo.dev —— JAV 元数据聚合 API（https://javinfo.dev，服务端 https://api.javinfo.dev）
@@ -127,14 +127,17 @@ async function lookupMovie(
 export async function fetchJavinfoDetail(
   code: string,
   settings: Settings,
-  onError?: (m: string) => void
+  onError?: (m: string) => void,
+  /** v2.3.12：true = 手工输入的番号，自动提取失败时直接采用（详见 javapi.ts 同名参数注释） */
+  manual = false
 ): Promise<JavdbDetail | null> {
   if (!hasJavinfoKey(settings)) {
     onError?.('未配置 javinfo API key（设置 → 数据源 → Javinfo Key 填写）')
     return null
   }
   // 与 javdb/javbus 一致：先提取番号，再剥 -CD/-PART/-A 等后缀（HUNTA-468CD2 → HUNTA-468）
-  const codeNorm = extractBaseCode(extractCode(code)) || extractCode(code)
+  const autoCode = extractBaseCode(extractCode(code)) || extractCode(code)
+  const codeNorm = autoCode || (manual ? normalizeManualCode(code) : '')
   if (!codeNorm) {
     onError?.('无法从文件名/标题识别番号')
     return null

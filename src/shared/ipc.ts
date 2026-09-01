@@ -28,6 +28,8 @@ export const IPC = {
   libraryFetchStop: 'library:fetchStop',
   // javdb 详情抓取
   videoFetchJavdbDetail: 'video:fetchJavdbDetail',
+  // 编辑标题后同步修改磁盘文件名（v2.6.5）
+  videoRenameFile: 'video:renameFile',
   // ffmpeg 兜底截帧：随机截 1 张封面 + 15 张预览图
   videoGeneratePreviews: 'video:generatePreviews',
   // ffmpeg 单帧兜底：无封面时截 1 帧视频画面作为封面（列表懒加载用，返回本地路径或 null）

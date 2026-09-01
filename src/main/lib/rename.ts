@@ -38,6 +38,33 @@ export function cleanVideoFileName(fileName: string): string | null {
   return result === upper ? null : result
 }
 
+/** Windows 保留设备名（单独作为文件名时非法） */
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i
+
+/**
+ * 把用户编辑的标题转成安全的（Windows）文件名主干（不含扩展名）。
+ * 供「编辑影片信息 → 保存时同步修改文件名」使用：
+ * - 去掉 \ / : * ? " < > | 与控制字符（Windows 文件名非法）
+ * - 合并空白、去掉首尾空格与结尾的点（Windows 不允许以空格/点结尾）
+ * - 撞上保留设备名（CON/PRN/AUX/NUL/COM1…）时加下划线前缀
+ * - 长度截断到 120 字符（留出目录路径空间，规避 MAX_PATH 260 限制）
+ * 返回空串表示标题无法用作文件名。
+ */
+export function safeFileBaseName(title: string, maxLen = 120): string {
+  if (!title) return ''
+  let s = String(title)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  // 结尾的点/空格在 Windows 上会被静默丢弃，改名后与原名不一致
+  s = s.replace(/[.\s]+$/, '')
+  if (!s) return ''
+  if (RESERVED.test(s)) s = `_${s}`
+  if (s.length > maxLen) s = s.slice(0, maxLen).replace(/[\s.]+$/, '')
+  return s
+}
+
 /** 预览：扫描文件夹中可安全改名的文件（只处理无 video 记录、未被用户忽略的文件） */
 export async function previewRenames(
   folderPath: string,

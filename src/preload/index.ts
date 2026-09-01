@@ -24,7 +24,9 @@ const api: AppApi = {
   libraryFetchPause: () => ipcRenderer.invoke(IPC.libraryFetchPause),
   libraryFetchResume: () => ipcRenderer.invoke(IPC.libraryFetchResume),
   libraryFetchStop: () => ipcRenderer.invoke(IPC.libraryFetchStop),
-  videoFetchJavdbDetail: (id) => ipcRenderer.invoke(IPC.videoFetchJavdbDetail, id),
+  videoFetchJavdbDetail: (id, codeOverride) =>
+    ipcRenderer.invoke(IPC.videoFetchJavdbDetail, id, codeOverride),
+  videoRenameFile: (id, newTitle) => ipcRenderer.invoke(IPC.videoRenameFile, id, newTitle),
   videoProbe: (id) => ipcRenderer.invoke(IPC.videoProbe, id),
   libraryBatchProbe: (libraryId) => ipcRenderer.invoke(IPC.libraryBatchProbe, libraryId),
   videoShareTorrents: (id) => ipcRenderer.invoke(IPC.videoShareTorrents, id),
