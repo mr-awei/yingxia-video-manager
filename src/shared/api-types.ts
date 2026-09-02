@@ -162,8 +162,9 @@ export interface AppApi {
     bundledRemoved?: boolean
     note?: string
   }>
-  /** 卸载应用（危险操作）：调用 NSIS 卸载程序，静默卸载 */
-  appUninstall(): Promise<{ ok: boolean; error?: string }>
+  /** 卸载应用（危险操作）：弹出应用内确认框后调用 NSIS 卸载程序。
+   *  keepUser=true 保留用户数据；false 则在卸载流程中删除用户数据（受保护脚本安全校验） */
+  appUninstall(keepUser: boolean): Promise<{ ok: boolean; error?: string }>
   /** 监听：批量抓取时每抓到一张实时回调 {videoId, posterPath} */
   onJavdbFetched(cb: (p: { videoId: string; posterPath: string }) => void): () => void
   /** 在系统文件管理器中显示并选中该文件（用于改名） */

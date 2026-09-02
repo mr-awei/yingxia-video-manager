@@ -7,7 +7,7 @@
 </div>
 
 <div align="center">
-  <strong>v2.6.6</strong> ·
+  <strong>v2.6.7</strong> ·
   <span>2026-09-02</span> ·
   <a href="CHANGELOG.md">Changelog</a>
 </div>
@@ -33,6 +33,7 @@ YingXia is a Windows desktop app that turns a local video folder into a beautifu
 - **Smart metadata fetch**: Auto-identifies video codes and fetches metadata from configurable sources (JavDB, JavBus, JavLibrary, Javapi, Javinfo) with automatic fallback. Drag-to-reorder sources, pause/resume/stop the batch, and get per-video failure reasons shown both as a toast and inline in the detail page.
 - **Series episodes**: Multiple files for the same code (e.g. `SONE-560_1.mp4`, `SONE-560_2.mp4`) show as one card; the detail page lists episodes and lets you switch.
 - **Random, quality-filtered frame extraction**: When no source cover is available, ffmpeg extracts 12–22 candidate frames and automatically rejects black, white, blurry, or monotonous frames — so "Re-frame" always produces a fresh, sharp pick. Auto-framing on the detail page uses the same pipeline as manual framing.
+- **Unified uninstall flow with a clear data choice**: Triggering "Uninstall" from Settings opens one in-app confirmation where you choose **Keep** or **Delete** your app data; the choice is passed straight to the uninstaller, so you no longer face separate "confirm uninstall" and "keep data?" dialogs. Deletion is guarded by a safety script that refuses to touch any folder you added as a media library.
 - **Bilingual from install**: The NSIS installer asks for your language (简体中文 / English) on the first screen; the app opens in that language, the uninstaller follows it, and you can switch anytime in Settings.
 - **English notice without PRC laws**: The in-app legal notice renders locale-specific content — Chinese users see PRC law excerpts; English users see a generic disclaimer.
 - **Privacy shield**: One-click blur of all covers, deletion-lock with SHA-256 verification, and zero uploads.
@@ -75,6 +76,14 @@ AI-generated sheets usually produce **中文 headers**. The onboard wizard auto-
 
 ---
 
+## Installation & Uninstall
+
+- **Download**: Get the latest installer from the [GitHub Releases](https://github.com/mr-awei/yingxia-video-manager/releases) page (mirrored to Gitee).
+- **Install**: Run `影匣 Setup x.x.x.exe`. Pick your UI language on the first screen; it is saved and applied on first launch.
+- **Uninstall**: Use *Apps & features* (Windows) or the Start-menu entry. You will be asked whether to **keep** or **delete** your app data (`%APPDATA%\local-video-manager`). Your media libraries and media files are **never** touched — the deletion is guarded so it refuses to remove any folder you added as a media library.
+
+---
+
 ## Development
 
 ```bash
@@ -89,14 +98,11 @@ npm run pack       # clean + build + electron-builder installer
 
 ## Version History
 
-**v2.6.6** (2026-09-02) — Tag-layer fix · screenshot-failure details · Excel sheet wizard alignment · metadata cleanup
+**v2.6.7** (2026-09-02) — In-app uninstall flow consolidation · uninstaller robustness fixes
 
-- **Fixed inconsistent `Source tags` display**: all source-side genres now unconditionally land in `backupTags`, so the detail page shows the full category set.
-- **Fixed the Excel `分类` column leaking into tag groups**: the column now flows through a dedicated `Video.introCategory` field and renders as a standalone MetaRow.
-- **Fixed JavDB genres parser pulling actor groups** (`【多人】5`): corrected to `/tags` structure and added a shared `cleanGenreName()` sanitizer used by all five sources.
-- **Screenshot-failure details in two places**: failed count, de-duplicated reasons, and hints shown both in the toast and inline in the detail page.
-- **Unified hover-to-zoom delay to 1 s**; **auto framing now uses the same multi-frame pipeline** as manual "Re-frame".
-- **Excel sheet wizard prompt aligned to the real schema**; **store schema bumped to `2026090204`** with dirty-tag cleanup.
+- **In-app uninstall confirmation + keep/delete merged into one flow**: Settings "Uninstall" opens a single in-app confirm where you pick keep/delete; the choice goes straight to the uninstaller.
+- **Fixed NSIS build failure** (warning 6155 treated as error) caused by a redundant `!undef`.
+- **Fixed "Unable to clean up user data"**: the PowerShell guard script was UTF-8 without BOM and mis-parsed on Chinese Windows; now UTF-8 with BOM, accepts the `-DataDirOverride` argument, force-kills lingering processes, and retries deletion 5×.
 
 Older releases: see [CHANGELOG.md](CHANGELOG.md).
 

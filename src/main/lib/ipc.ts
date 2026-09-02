@@ -427,10 +427,14 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
     confidence: 'none'
   }
 
-  // 按首选源优先，失败后回退到另一源（GitHub 在大陆网络可能不稳定）
+  // 按首选源优先，失败后回退到另一源（GitHub 在大陆网络可能不稳定）。
+  // v2.6.7 修复：Gitee 的 releases/latest 可能严重落后于 GitHub，
+  // 因此即使首选源请求成功，只要返回的版本不比当前新，就继续尝试另一源，
+  // 避免用户实际有新版可用却被提示「已是最新」。
   const order: UpdateSource[] = preferred === 'gitee' ? ['gitee', 'github'] : ['github', 'gitee']
   const errors: string[] = []
   let usedFallback = false
+  let bestResult: UpdateCheckResult | null = null
 
   for (const source of order) {
     try {
@@ -456,6 +460,7 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
         html_url?: string
         body?: string
         published_at?: string
+        created_at?: string
         prerelease?: boolean
         draft?: boolean
         assets?: unknown[]
@@ -470,7 +475,11 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
           ? `https://gitee.com/${repoPath}/releases`
           : `https://github.com/${repoPath}/releases`)
       const notes = typeof j.body === 'string' ? j.body : ''
-      const publishedAt = typeof j.published_at === 'string' ? j.published_at : undefined
+      // Gitee Release API 没有 published_at，使用 created_at 兜底
+      const publishedAt =
+        typeof j.published_at === 'string' ? j.published_at
+        : typeof j.created_at === 'string' ? j.created_at
+        : undefined
       const isPrerelease = !!j.prerelease
       const isDraft = !!j.draft
 
@@ -506,25 +515,35 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
         error: !latest ? '无法解析版本号' : undefined
       }
 
-      try {
-        await repo.saveSettings({
-          lastUpdateCheck: Date.now(),
-          pendingUpdate: result.hasUpdate && result.releaseUrl
-            ? {
-                version: result.latestVersion,
-                url: result.releaseUrl,
-                urgency: result.urgency,
-                publishedAt: result.publishedAt,
-                assetName: result.asset?.name,
-                assetSize: result.asset?.size
-              }
-            : null
-        })
-      } catch {
-        /* 持久化失败不影响本次返回 */
+      if (hasUpdate) {
+        // 明确发现新版本，直接落盘并返回，不需要再试其他源
+        try {
+          await repo.saveSettings({
+            lastUpdateCheck: Date.now(),
+            pendingUpdate: result.releaseUrl
+              ? {
+                  version: result.latestVersion,
+                  url: result.releaseUrl,
+                  urgency: result.urgency,
+                  publishedAt: result.publishedAt,
+                  assetName: result.asset?.name,
+                  assetSize: result.asset?.size
+                }
+              : null
+          })
+        } catch {
+          /* 持久化失败不影响本次返回 */
+        }
+        return result
       }
 
-      return result
+      // 请求成功但没有检测到更新：记录当前源的结果，继续尝试另一源，
+      // 防止首选源（如 Gitee）的 latest 版本过旧导致漏报更新。
+      if (!bestResult || cmpVer(result.latestVersion, bestResult.latestVersion) > 0) {
+        bestResult = result
+      }
+      usedFallback = true
+      // 继续尝试另一源
     } catch (e) {
       const cause = (e as { cause?: { code?: string; message?: string } })?.cause
       const err =
@@ -535,6 +554,16 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
       usedFallback = true
       // 继续尝试另一源
     }
+  }
+
+  // 至少有一个源成功但两个源都没检测到更新：返回版本号最大的那个结果
+  if (bestResult) {
+    try {
+      await repo.saveSettings({ lastUpdateCheck: Date.now(), pendingUpdate: null })
+    } catch {
+      /* 持久化失败不影响本次返回 */
+    }
+    return bestResult
   }
 
   // 两个源都失败
@@ -1118,18 +1147,23 @@ export function registerIpc(): void {
     return saved
   })
   // ---------- 卸载应用（危险操作） ----------
-  ipcMain.handle(IPC.appUninstall, async () => {
+  ipcMain.handle(IPC.appUninstall, async (_evt, keepUser: boolean) => {
     try {
       // NSIS 卸载程序与主程序同目录：Uninstall <productName>.exe
       const dir = path.dirname(process.execPath)
       const candidates = ['Uninstall 影匣.exe', 'Uninstall.exe']
+      // 把「是否保留用户数据」决定传入卸载程序：
+      //   /YXKEEPDATA → 保留；/YXDELDATA → 删除（仍受保护脚本安全校验，永不触碰媒体库）
+      // 注意：不可用 electron-builder 自带的 --delete-app-data（会无差别 RMDir，不安全）。
+      const dataArg = keepUser ? '/YXKEEPDATA' : '/YXDELDATA'
       for (const name of candidates) {
         const p = path.join(dir, name)
         try {
           await fs.access(p)
-          // 静默卸载（NSIS /S 参数），卸载程序会等待应用退出后继续
-          // 关键：必须 detached + 继承环境 + 脱离进程组，否则卸载程序会随主进程一起被杀
-          const child = spawn(p, ['/S'], {
+          // 非静默启动 NSIS 卸载程序，使其卸载界面（进度页）正常弹出；
+          // 数据去留已由应用内确认框决定，卸载器会据此跳过「是否保留用户数据」页。
+          // 关键：必须 detached + 继承环境 + 脱离进程组，否则卸载程序会随主进程一起被杀。
+          const child = spawn(p, [dataArg], {
             detached: true,
             stdio: 'ignore',
             windowsHide: true,
@@ -1137,11 +1171,12 @@ export function registerIpc(): void {
             env: { ...process.env }
           })
           child.unref()
-          // 给卸载程序 500ms 启动时间，然后主动退出应用
-          // 卸载程序会检测到应用退出后继续完成卸载
+          // 主动退出应用，让出文件锁。Electron 需要约 1~2s 才能完全释放
+          // 缓存/Storage 锁，因此延迟 2000ms；用户点过欢迎页后才进入删除阶段，
+          // 这段延迟不会阻塞卸载流程。
           setTimeout(() => {
             app.quit()
-          }, 500)
+          }, 2000)
           return { ok: true }
         } catch {
           /* 继续找下一个 */

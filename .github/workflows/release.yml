@@ -133,13 +133,30 @@ jobs:
             echo "::warning::GITEE_TOKEN 未配置，跳过 Gitee Release 同步（GitHub Release 已发布）"
             exit 0
           fi
-          ASSET="YingXia-Setup-${TAG#v}-x64.exe"
-          DOWNLOAD_URL="https://github.com/mr-awei/yingxia-video-manager/releases/download/${TAG}/${ASSET}"
+          # 安装包文件名由 electron-builder 生成（当前规则为 Setup.<version>.exe），
+          # 曾因硬编码 YingXia-Setup-<ver>-x64.exe 导致同步出去的下载链接 404。
+          # 改为直接从刚发布的 GitHub Release 读取真实资产链接，避免文件名变化失效。
+          LINKS=$(curl -sS -H "User-Agent: yingxia" \
+            "https://api.github.com/repos/mr-awei/yingxia-video-manager/releases/tags/${TAG}" \
+            | python -c "
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+          except Exception:
+              sys.exit(0)
+          for a in d.get('assets', []):
+              size = a.get('size', 0) or 0
+              mb = ' — %.1f MB' % (size / 1024 / 1024) if size else ''
+              print('- [%s](<%s>)%s' % (a.get('name', ''), a.get('browser_download_url', ''), mb))
+          " 2>/dev/null || echo "")
+          if [ -z "$LINKS" ]; then
+            LINKS="- [访问 GitHub 发布页下载](https://github.com/mr-awei/yingxia-video-manager/releases/tag/${TAG})"
+          fi
           BODY="自动构建（GitHub Actions）已生成安装包：${TAG}
 
           > Gitee 无 CI 服务，安装包由 GitHub Actions 构建并托管在 GitHub Release。Gitee 附件上限 100MB，以下载链接方式提供：
 
-          [⬇️ 下载 ${ASSET}](<${DOWNLOAD_URL}>)
+          ${LINKS}
 
           或访问发布页：https://github.com/mr-awei/yingxia-video-manager/releases/tag/${TAG}"
 
@@ -156,11 +173,13 @@ jobs:
           }
           open('.gitee_rel.json', 'w', encoding='utf-8').write(json.dumps(payload, ensure_ascii=False))
           "
+          OK=0
           # 创建；若 tag 已存在则 PATCH 更新正文
           OUT=$(curl -sS -X POST -H "User-Agent: yingxia" -H "Content-Type: application/json;charset=UTF-8" \
             -d @.gitee_rel.json "https://gitee.com/api/v5/repos/mr-awei/yingxia-video-manager/releases" || true)
           if echo "$OUT" | grep -q '"id"'; then
             echo "Gitee Release created for ${TAG}"
+            OK=1
           else
             echo "$OUT" | head -c 300
             echo ""
@@ -169,9 +188,22 @@ jobs:
               "https://gitee.com/api/v5/repos/mr-awei/yingxia-video-manager/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" \
               | python -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
             if [ -n "$RID" ]; then
-              curl -sS -X PATCH -H "User-Agent: yingxia" -H "Content-Type: application/json;charset=UTF-8" \
-                -d @.gitee_rel.json "https://gitee.com/api/v5/repos/mr-awei/yingxia-video-manager/releases/${RID}" || true
-              echo "Gitee Release ${TAG} updated"
+              PATCH_OUT=$(curl -sS -X PATCH -H "User-Agent: yingxia" -H "Content-Type: application/json;charset=UTF-8" \
+                -d @.gitee_rel.json "https://gitee.com/api/v5/repos/mr-awei/yingxia-video-manager/releases/${RID}" || true)
+              if echo "$PATCH_OUT" | grep -q '"id"'; then
+                echo "Gitee Release ${TAG} updated"
+                OK=1
+              else
+                echo "$PATCH_OUT" | head -c 300
+                echo ""
+                echo "::error::Gitee Release PATCH 更新失败"
+              fi
+            else
+              echo "::error::无法获取已存在 Gitee Release 的 ID，PATCH 跳过"
             fi
           fi
           rm -f .gitee_rel.json
+          if [ "$OK" != "1" ]; then
+            echo "::error::Gitee Release 同步失败（TAG=${TAG}）。请检查 GitHub Secrets 中的 GITEE_TOKEN 是否与 Gitee 私人令牌一致、权限是否包含 projects/notes。"
+            exit 1
+          fi

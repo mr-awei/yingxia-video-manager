@@ -1,4 +1,6 @@
-﻿# 影匣自定义 NSIS 逻辑
+﻿!include "FileFunc.nsh"
+
+# 影匣自定义 NSIS 逻辑
 # 安装器侧：把安装语言写入注册表，供卸载器与应用首次启动读取。
 # 卸载器侧：卸载欢迎页之后新增「保留用户数据」复选框页面（默认勾选 = 保留）：
 #           取消勾选并二次确认后，卸载流程尝试删除 %APPDATA%\local-video-manager。
@@ -34,6 +36,30 @@ InitEnd:
   # 删除确认页 leave 回调里还有一次兜底复制。
   InitPluginsDir
   CopyFiles /SILENT "$INSTDIR\resources\yingxia-uninstall-guard.ps1" "$PLUGINSDIR\yingxia-uninstall-guard.ps1"
+
+  # 解析应用内卸载入口传来的参数（/YXKEEPDATA 或 /YXDELDATA）。
+  # 不带参数时（系统「应用和功能」卸载）保留原行为：显示数据页由用户选择。
+  # ${GetParameters}/${GetOptions} 由 electron-builder 已包含的 FileFunc.nsh 提供。
+  StrCpy $yxSkipDataPage "0"
+  StrCpy $yxDelConfirmed "0"
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/YXDELDATA" $R1
+  ${IfNot} ${Errors}
+    StrCpy $yxDelConfirmed "1"
+    StrCpy $yxSkipDataPage "1"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/YXKEEPDATA" $R1
+  ${IfNot} ${Errors}
+    StrCpy $yxDelConfirmed "0"
+    StrCpy $yxSkipDataPage "1"
+  ${EndIf}
+
+  # 语言回退（数据页被跳过时仍需用于后续提示）
+  StrCmp $LANGUAGE "2052" 0 +3
+  StrCpy $yxLang "zh-CN"
+  Goto +2
+  StrCpy $yxLang "en-US"
 !macroend
 
 # electron-builder 卸载欢迎页钩子：保留标准卸载欢迎页，紧接其后
@@ -43,14 +69,28 @@ InitEnd:
   Var /GLOBAL yxKeepChk
   Var /GLOBAL yxDelConfirmed
   Var /GLOBAL yxLang
+  Var /GLOBAL yxSkipDataPage
 
+  # 应用内卸载入口已做出「保留/删除用户数据」决定时，跳过标准欢迎页与数据页，
+  # 直接进入进度页（/YXKEEPDATA、/YXDELDATA 由 customUnInit 解析并设置 yxSkipDataPage）
+  # 注：MUI_UNPAGE_WELCOME 会自动消费并 !undef MUI_PAGE_CUSTOMFUNCTION_PRE，无需手动 undef。
+  !define MUI_PAGE_CUSTOMFUNCTION_PRE un.yxPreWelcome
   !insertmacro MUI_UNPAGE_WELCOME
 
   PageEx un.custom
     PageCallbacks un.yxDataPageCreate un.yxDataPageLeave
   PageExEnd
 
+  Function un.yxPreWelcome
+    StrCmp $yxSkipDataPage "1" 0 +2
+    Abort
+  FunctionEnd
+
   Function un.yxDataPageCreate
+    # 应用内已决定数据去留：直接跳过本页（决定沿用 yxDelConfirmed）
+    StrCmp $yxSkipDataPage "1" 0 +2
+    Abort
+
     # 语言：优先安装时写入的注册表；缺省按 MUI 语言 ID 回退
     ReadRegStr $R9 HKCU "Software\YingXia" "InstallerLanguage"
     StrCmp $R9 "" 0 langReady
@@ -148,6 +188,7 @@ InitEnd:
   StrCmp $0 0 yxDataDone
   StrCmp $0 9 yxDataOverlap
   StrCmp $0 8 yxDataParseFailed
+  StrCmp $0 1 yxDataDeleteFailed
 
   StrCmp $yxLang "zh-CN" 0 +3
   MessageBox MB_OK|MB_ICONEXCLAMATION "无法完成用户数据清理，用户数据已保留。"
@@ -167,6 +208,13 @@ InitEnd:
   MessageBox MB_OK|MB_ICONEXCLAMATION "无法解析用户数据文件，为保证安全已跳过删除。"
   Goto yxDataDone
   MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to parse the user data file. Deletion skipped for safety."
+  Goto yxDataDone
+
+  yxDataDeleteFailed:
+  StrCmp $yxLang "zh-CN" 0 +3
+  MessageBox MB_OK|MB_ICONEXCLAMATION "无法完成用户数据清理（可能应用仍在运行或数据目录被占用），用户数据已保留。"
+  Goto yxDataDone
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to clean up user data (the app may still be running or the folder is in use). Your user data has been kept."
   Goto yxDataDone
 
   yxDataDone:

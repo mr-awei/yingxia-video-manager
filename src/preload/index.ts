@@ -39,7 +39,7 @@ const api: AppApi = {
   proxyTest: (settings) => ipcRenderer.invoke(IPC.proxyTest, settings),
   cacheClear: () => ipcRenderer.invoke(IPC.cacheClear),
   ffmpegStatus: () => ipcRenderer.invoke(IPC.ffmpegStatus),
-  appUninstall: () => ipcRenderer.invoke(IPC.appUninstall),
+  appUninstall: (keepUser: boolean) => ipcRenderer.invoke(IPC.appUninstall, keepUser),
   onJavdbFetched: (cb) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: unknown) => cb(payload as never)
     ipcRenderer.on(IPC.javdbFetched, handler)

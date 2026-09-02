@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.6.7 (2026-09-02)
+
+**In-app uninstall flow consolidation + uninstaller robustness fixes**
+
+- **In-app uninstall confirmation merged with "keep / delete user data" into one flow**: Clicking "Uninstall YingXia" in Settings now opens an in-app confirm modal (`UninstallConfirmModal`) where you decide "keep data" or "delete data" in a single step. The choice is passed to the NSIS uninstaller via `/YXKEEPDATA` / `/YXDELDATA`, which skips the standard welcome page and the separate "keep user data" checkbox page. Previously these were two separate flows with multiple dialogs.
+- **Fixed NSIS build failure (warning 6155 treated as error)**: In `build/installer.nsh`, `MUI_UNPAGE_WELCOME` already consumes and `!undef`s `MUI_PAGE_CUSTOMFUNCTION_PRE`; the redundant manual `!undef` referenced an undefined macro and raised `!undef: "MUI_PAGE_CUSTOMFUNCTION_PRE" not defined!`. Removed the redundant line; packaging passes again.
+- **Fixed "Unable to clean up user data, data kept" during deletion**: The guard script `build/yingxia-uninstall-guard.ps1` was saved as UTF-8 without BOM. On Chinese Windows (default GBK codepage) PowerShell parsed it as GB2312, misreading Chinese bytes as extra line breaks / symbols, so the script failed to parse and exited 1, causing NSIS to keep the data as a fallback. Now saved as UTF-8 **with BOM**.
+- **Guard script now accepts the NSIS-passed argument**: The script previously had no `param()` block, so the `-DataDirOverride` argument passed by NSIS could not bind and errored out. Added `param([string]$DataDirOverride)` and prioritize that value.
+- **Force-kill lingering processes before deletion to release file locks**: Before removing `%APPDATA%\local-video-manager`, the script now `Stop-Process` the still-running `local-video-manager` / `影匣` processes to release Electron cache / Storage locks, preventing `Remove-Item` from failing on a lock.
+- **More robust deletion retries**: Retry count 3 → 5, per-retry wait 800ms → 1.2s; the `DELETE_FAILED` message now adds "the app may still be running or the folder is in use" as the reason.
+
 ## v2.6.6 (2026-09-02)
 
 **Tag-layer fix + screenshot-failure details + Excel sheet wizard alignment + metadata cleanup**
@@ -133,7 +144,8 @@ pm run dev made it work afterwards: the dev process is named electron.exe, not �
 
 **Thoroughly prevent stale UI after upgrade (two-layer safety)**
 
-- **Main process kills old process on upgrade**: On startup compare .last-version to pp.getVersion(). If they differ, run 	askkill /F /IM "影匣.exe" /T before acquiring equestSingleInstanceLock, so no stale process survives and the AppData folder no longer needs to be cleared.
+- **Main process kills old process on upgrade**: On startup compare .last-version to pp.getVersion(). If they differ, run 	askkill /F /IM "影匣.exe" /T before acquiring 
+equestSingleInstanceLock, so no stale process survives and the AppData folder no longer needs to be cleared.
 - **NSIS installer kills old process before overwrite**: Added uild/installer.nsh and referenced it from electron-builder.yml. The installer calls 	askkill + FindWindow before replacing files, providing a second layer of protection.
 # Changelog
 
@@ -141,7 +153,8 @@ pm run dev made it work afterwards: the dev process is named electron.exe, not �
 
 **Upgrade shows old UI / stale app (P0 root-cause fix) + eliminate out/ chunk clutter**
 
-- **Fixed upgrade-after-overwrite showing old UI**: If the user overwrites-installs a new version while the old one is still running, the old process still holds equestSingleInstanceLock. The new exe then immediately pp.quit()s because it cannot acquire the lock — the user is stuck on the old window. Fix: write a .last-version marker into %APPDATA%\local-video-manager\.last-version after a successful start. On the next launch, compare pp.getVersion() to the marker; a mismatch means "this is an upgrade run" and we skip the single-instance lock so the new process can start normally. The old process keeps running briefly (its window is buried under the new BrowserWindow) and is cleared on next reboot.
+- **Fixed upgrade-after-overwrite showing old UI**: If the user overwrites-installs a new version while the old one is still running, the old process still holds 
+equestSingleInstanceLock. The new exe then immediately pp.quit()s because it cannot acquire the lock — the user is stuck on the old window. Fix: write a .last-version marker into %APPDATA%\local-video-manager\.last-version after a successful start. On the next launch, compare pp.getVersion() to the marker; a mismatch means "this is an upgrade run" and we skip the single-instance lock so the new process can start normally. The old process keeps running briefly (its window is buried under the new BrowserWindow) and is cleared on next reboot.
 - **Out-renderer/assets no longer accumulates stale chunks**: electron.vite.config.ts had emptyOutDir: false on all three builds. Since Vite uses content-hashed renderer chunks, every build left old hashed files behind — out/renderer/assets/ had 30+ leftover files from 8/30 ~ 9/1, all of which got bundled into pp.asar by electron-builder. Switched all three to emptyOutDir: true so each build produces clean output.
 - **New AppData marker file**: %APPDATA%\local-video-manager\.last-version (one-line version text), used purely for upgrade detection — no user data migration touches.
 # Changelog
@@ -150,7 +163,9 @@ pm run dev made it work afterwards: the dev process is named electron.exe, not �
 
 **Scan library progress fires only once + GitHub README defaults to English**
 
-- **Fixed scan progress firing twice**: Clicking the "Scan Library" button used to invoke two separate IPCs (ideoScan → libraryReconcile via finally), each pushing its own round of emitProgress. The UI saw two progress bars pop up. Added a merged IPC.libraryScanAndReconcile handle in the main process that runs scanLibrary then econcileLibrary as a single call, suppressing econcile's regular progress pushes while still forwarding introError / etchEvent events. The renderer now sees one continuous progress bar.
+- **Fixed scan progress firing twice**: Clicking the "Scan Library" button used to invoke two separate IPCs (ideoScan → libraryReconcile via finally), each pushing its own round of emitProgress. The UI saw two progress bars pop up. Added a merged IPC.libraryScanAndReconcile handle in the main process that runs scanLibrary then 
+econcileLibrary as a single call, suppressing 
+econcile's regular progress pushes while still forwarding introError / etchEvent events. The renderer now sees one continuous progress bar.
 - **README defaults to English on GitHub**: README.md is now the English version (GitHub home page always renders this file), and the former Chinese copy is README.zh-CN.md. Both files have an English · 中文 language switcher at the top.
 
 # Changelog

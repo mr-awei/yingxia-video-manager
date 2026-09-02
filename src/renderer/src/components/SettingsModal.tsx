@@ -3,6 +3,7 @@ import type { Settings, ProxyMode, SortKey } from '../../../shared/types'
 import type { UpdateCheckResult } from '../../../shared/api-types'
 import { api } from '../lib/api'
 import Icon from './Icon'
+import UninstallConfirmModal from './UninstallConfirmModal'
 import { t, setLocale, SUPPORTED_LOCALES, type Locale } from '../../../shared/i18n'
 import type { IconName } from './Icon'
 interface Props {
@@ -453,6 +454,8 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
   const [lockMsg, setLockMsg] = useState('')
   const [updateRes, setUpdateRes] = useState<UpdateCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
+  const [showUninstall, setShowUninstall] = useState(false)
+  const [uninstallBusy, setUninstallBusy] = useState(false)
   useEffect(() => {
     if (open) setUpdateRes(null)
   }, [open])
@@ -1473,14 +1476,7 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
                     </div>
                     <button
                       className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 text-xs font-medium ring-1 ring-red-500/30 transition-colors cursor-pointer shrink-0"
-                      onClick={async () => {
-                        if (!window.confirm(t('settings.confirmUninstallFirst'))) return
-                        if (!window.confirm(t('settings.confirmUninstallSecond'))) return
-                        const r = await api.appUninstall()
-                        if (!r.ok) {
-                          window.alert(r.error ?? t('settings.uninstallFailed'))
-                        }
-                      }}
+                      onClick={() => setShowUninstall(true)}
                     >
                       <span className="flex items-center gap-1.5">
                         <Icon name="trash" size={14} />
@@ -1492,6 +1488,21 @@ export default function SettingsModal({ open, settings, onClose, onSave, onSaved
               </section>
             )}
           </div>
+
+          <UninstallConfirmModal
+            open={showUninstall}
+            busy={uninstallBusy}
+            onCancel={() => setShowUninstall(false)}
+            onConfirm={async (keepUser) => {
+              setUninstallBusy(true)
+              const r = await api.appUninstall(keepUser)
+              setUninstallBusy(false)
+              setShowUninstall(false)
+              if (!r.ok) {
+                window.alert(r.error ?? t('settings.uninstallFailed'))
+              }
+            }}
+          />
           {/* ---------------- footer ---------------- */}
           <div className="flex justify-end gap-2 px-6 py-4 border-t border-white/5 bg-ink-850/20">
             <button

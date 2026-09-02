@@ -1,5 +1,16 @@
 # 更新日志（Changelog）
 
+## v2.6.7（2026-09-02）
+
+**应用内卸载流程整合 + 卸载器健壮性修复**
+
+- **应用内卸载确认与「保留/删除用户数据」合并为单条流程**：设置页点击「卸载影匣」后，先弹出应用内卸载确认弹窗（`UninstallConfirmModal`），一步决定「保留数据」或「删除数据」；决定通过 `/YXKEEPDATA` / `/YXDELDATA` 参数传给 NSIS 卸载器，直接跳过标准欢迎页与独立的「保留用户数据」复选框页。原流程是「卸载确认」与「是否保留数据」两个独立流程、多个弹窗。
+- **修复 NSIS 构建失败（warning 6155 被当作错误处理）**：`build/installer.nsh` 中 `MUI_UNPAGE_WELCOME` 已自动消费并 `!undef` 掉 `MUI_PAGE_CUSTOMFUNCTION_PRE`，多余的手动 `!undef` 引用了未定义宏，触发 `!undef: "MUI_PAGE_CUSTOMFUNCTION_PRE" not defined!`。已移除该冗余行，打包恢复通过。
+- **修复卸载删除阶段报错「无法完成用户数据清理，用户数据已保留」**：保护脚本 `build/yingxia-uninstall-guard.ps1` 以 UTF-8 无 BOM 保存，在中文 Windows（默认 GBK 代码页）下被 PowerShell 当作 GB2312 解析，中文字节被错读为额外的换行/符号，脚本直接解析失败退出 1，NSIS 兜底保留数据。现已改为 UTF-8 带 BOM 保存。
+- **保护脚本正确接收 NSIS 传入参数**：脚本此前未声明 `param()` 块，NSIS 调用时带的 `-DataDirOverride` 参数无法绑定，直接报错退出。新增 `param([string]$DataDirOverride)` 并优先使用该值。
+- **删除前强制结束残留进程释放文件锁**：脚本在删除 `%APPDATA%\local-video-manager` 前，先 `Stop-Process` 结束仍在运行的 `local-video-manager` / `影匣` 进程，释放 Electron 缓存/Storage 文件锁，避免 `Remove-Item` 因锁失败。
+- **删除重试更稳健**：重试次数 3 → 5 次，单次等待 800ms → 1.2s；`DELETE_FAILED` 提示文案补充「可能应用仍在运行或数据目录被占用」原因。
+
 ## v2.6.6（2026-09-02）
 
 **标签分层修复 + 截图失败详情 + Excel 片单向导对齐 + 元数据清洗**
