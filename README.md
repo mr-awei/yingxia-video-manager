@@ -37,12 +37,12 @@ YingXia is a Windows desktop app that turns a local video folder into a beautifu
 - Choose "flat view" or "grouped by category" as the default in Settings
 
 ### 🔍 Smart Metadata Fetch
-- Auto-identifies video codes and fetches metadata from configurable sources (JavDB, JavBus, JavLibrary, Javapi, Javinfo) with automatic fallback
+- Auto-identifies video codes and fetches metadata from configurable sourceswith automatic fallback
 - Drag-to-reorder sources, pause/resume/stop the batch, per-video failure reasons shown both as a toast and inline in the detail page
 - Manual code input after failed backfill
 
 ### 🎬 Series Episodes & Frame Extraction
-- Multiple files for the same code (e.g. `SONE-560_1.mp4`, `SONE-560_2.mp4`) show as one card; the detail page lists episodes and lets you switch
+- Multiple files for the same code  show as one card; the detail page lists episodes and lets you switch
 - When no source cover is available, ffmpeg extracts 12–22 candidate frames and automatically rejects black, white, blurry, or monotonous frames
 - Auto-framing and manual "Re-frame" share the same multi-frame pipeline
 
