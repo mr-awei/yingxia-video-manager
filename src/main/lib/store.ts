@@ -310,25 +310,27 @@ async function runWrite(): Promise<void> {
   } finally {
     writeInFlight = false
     lastWriteAt = Date.now()
-    if (failed && writeFailCount < MAX_WRITE_FAIL) {
-      // 失败退避重试：数据仍在内存（cache），置 dirty 稍后落盘。指数退避封顶 30s，
-      // 避免磁盘满/权限丢失时每秒级全量 stringify + 写盘的失败循环。不 settleWaiters（等真正落盘）。
+    if (failed) {
+      // 数据仍在内存 cache，置 dirty 让后台继续重试落盘（指数退避封顶 30s，避免磁盘满/权限丢失时
+      // 每秒级全量 stringify + 写盘的失败循环）
       dirty = true
-      const backoff = Math.min(1000 * 2 ** (writeFailCount - 1), 30000)
-      if (saveTimer) clearTimeout(saveTimer)
-      saveTimer = setTimeout(() => {
-        saveTimer = null
-        void runWrite()
-      }, backoff)
-    } else {
-      if (failed) {
-        // 连续失败达上限：放弃本轮自动重试并唤醒等待者（防对账/批量操作卡死），
-        // 数据保留在内存，保持 dirty，待下一次 scheduleSave（用户新改动）再重试。
+      if (writeFailCount < MAX_WRITE_FAIL) {
+        const backoff = Math.min(1000 * 2 ** (writeFailCount - 1), 30000)
+        if (saveTimer) clearTimeout(saveTimer)
+        saveTimer = setTimeout(() => {
+          saveTimer = null
+          void runWrite()
+        }, backoff)
+      } else {
+        // 连续失败达上限：放弃自动重试，保持 dirty，待下一次 scheduleSave（用户新改动）再重试
         console.error(`[store] 落盘连续失败 ${writeFailCount} 次，放弃自动重试；数据保留内存，将在下次改动时重试`)
-        dirty = true
       }
-      settleWaiters()
     }
+    // 关键：**无论成功失败都立即唤醒等待者**，不让调用方跟着退避一起等。
+    // 若等到重试成功才 resolve，磁盘持续故障时 await saveDB() 会阻塞累计 ~31s
+    //（1+2+4+8+16 退避），对账/批量操作表现为「一直转圈」——这是历史踩过的坑。
+    // 数据在内存且后台仍在重试，放行调用方不丢数据（退出前 flushSave 还会兜底落盘）。
+    settleWaiters()
   }
 }
 

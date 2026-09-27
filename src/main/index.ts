@@ -204,11 +204,18 @@ function registerLocalMedia(): void {
       }
       const data = await fs.readFile(real)
       return new Response(data, {
-        // P1-7：原 no-store 让 Chromium 缓存完全失效，虚拟墙滚动/hover/重渲染都重走协议 → 主进程
-        // 反复 fs.readFile（13501 张海报滚动 IO 放大）。渲染端 URL 已带 ?v=coverVersion，封面被
-        // 「设为封面」覆盖时 coverVersion 递增 → URL 变化 → 缓存键变化 → 必然重新拉取，
-        // 因此 max-age 缓存是安全的（缓存键天然含版本号），不会读到旧封面。
-        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'private, max-age=3600' }
+        // no-store：封面文件可能被手动设为封面覆盖（路径不变内容变），禁止 Chromium 缓存，
+        // 配合渲染端 lm:// URL 的 ?v= 版本号，保证封面立即生效
+        //
+        // ⚠ 曾尝试改 `private, max-age=3600`（优化滚动时重复读盘），已回滚，原因（实测代码证据）：
+        // coverVersion 只在渲染端内存递增（App.tsx javdbFetched / detailFetched 两处），
+        // 且 shared/types.ts 明确标注「仅渲染进程内存使用，不落盘」。
+        // 因此「从数据源获取封面」等流程返回的 video 里 coverVersion 仍是 undefined → URL 不变，
+        // 若封面在同路径被覆盖就会命中 Chromium 缓存、1 小时内（磁盘缓存甚至跨重启）显示旧图。
+        // 正确性优先于这点读盘开销：保留 no-store。
+        // 若要安全地取回收益，应改为 ETag(mtime+size) + no-cache 协商缓存（304 时跳过 readFile），
+        // 由 mtime 保证永不陈旧——属于可另开的可测改动，本次不在无 GUI 验证条件下引入。
+        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
       })
     } catch (e) {
       // v2.2.5 修复：ENOENT 是高频场景（poster/预览帧常被清理、data.json 残留旧路径），

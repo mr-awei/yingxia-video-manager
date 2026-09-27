@@ -176,10 +176,12 @@ export const PREVIEW_COUNT = 15
 
 // P1-2：截帧候选数与整部整体超时。
 // 原封面 12 候选 + 预览 22 候选 = 34 次 spawnFrameAt，加 analyzeFrameQuality 再翻倍 → 单部最多 68 个
-// ffmpeg 进程，与注释承诺的 16 个严重不符（历史「CPU 风暴」残留）。收敛到 8 + 16 = 24 次截帧（质量仍够用），
-// 并加整部整体 deadline，超时后不再起新进程、用已截到的最好结果兜底。
+// ffmpeg 进程，与注释承诺的 16 个严重不符（历史「CPU 风暴」残留）。
+// 封面收敛到 8（只需挑出 1 张好图，12 明显过剩）；预览保留 20——质量过滤后需凑满 PREVIEW_COUNT=15
+// 张，候选太少会让 hover 预览画廊少图，那是主推功能，不为此省进程。
+// 治 CPU 风暴的关键其实是下面的整部 deadline：超时后不再起新进程、用已截到的最好结果兜底。
 const COVER_CANDIDATES = 8
-const PREVIEW_CANDIDATES = 16
+const PREVIEW_CANDIDATES = 20
 const PREVIEW_SET_DEADLINE_MS = 120_000
 
 function previewPathFor(video: Video, i: number): string {

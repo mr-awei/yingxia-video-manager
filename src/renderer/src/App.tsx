@@ -144,6 +144,21 @@ export default function App() {
   const [fetchLogs, setFetchLogs] = useState<
     Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
   >([])
+  // P0-2：抓取日志合批缓冲（组件级——清空时必须连同缓冲区一起丢，否则 200ms 定时器会把已清掉的
+  // 旧日志又追加回来，表现为「浮层清了又冒出来」）
+  const fetchLogBufRef = useRef<
+    Array<{ code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }>
+  >([])
+  const fetchLogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 统一清空抓取日志：清 state + 丢弃未刷出的缓冲 + 撤销待触发的合批定时器 */
+  const clearFetchLogs = useCallback(() => {
+    fetchLogBufRef.current.length = 0
+    if (fetchLogTimerRef.current) {
+      clearTimeout(fetchLogTimerRef.current)
+      fetchLogTimerRef.current = null
+    }
+    setFetchLogs([])
+  }, [])
   // v2.2.14：批量抓取失败明细弹窗（居中显示失败影片标题 + 原因）
   const [batchFailures, setBatchFailures] = useState<Array<{ id: string; title: string; reason: string }> | null>(null)
   const [batchFailuresVisible, setBatchFailuresVisible] = useState(true)
@@ -302,10 +317,9 @@ export default function App() {
     // P0-2：抓取日志合批——批量补齐每部最多 5 条 fetchEvent，原版逐条 setFetchLogs 触发 App 顶层
     // 重渲染（含全部 facet useMemo）。缓冲 200ms 合批追加（保留最近 60 条），数千条事件从数千轮渲染降到 ~每秒 5 轮。
     type FetchEvt = { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }
-    const feBuffer: FetchEvt[] = []
-    let feTimer: ReturnType<typeof setTimeout> | null = null
+    const feBuffer = fetchLogBufRef.current
     const flushFetchLogs = () => {
-      feTimer = null
+      fetchLogTimerRef.current = null
       if (feBuffer.length === 0) return
       const batch = feBuffer.splice(0, feBuffer.length)
       setFetchLogs((prev) => [...prev, ...batch].slice(-60))
@@ -317,7 +331,7 @@ export default function App() {
       const fe = (p as { fetchEvent?: FetchEvt }).fetchEvent
       if (fe) {
         feBuffer.push(fe)
-        if (!feTimer) feTimer = setTimeout(flushFetchLogs, 200)
+        if (!fetchLogTimerRef.current) fetchLogTimerRef.current = setTimeout(flushFetchLogs, 200)
       }
       // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
       // v2.3.13：kind==='not-configured' → 优先弹向导（suppressIntroExcelNotice 时静默）；
@@ -351,7 +365,7 @@ export default function App() {
       }
     })
     return () => {
-      if (feTimer) clearTimeout(feTimer)
+      if (fetchLogTimerRef.current) clearTimeout(fetchLogTimerRef.current)
       off()
     }
   }, [])
@@ -365,13 +379,13 @@ export default function App() {
         setProgress(null)
         setFetchPaused(false)
         // v2.2.10：批量补齐结束 → 抓取过程浮层自动收起
-        setFetchLogs([])
+        clearFetchLogs()
       }, 2500)
     }
     return () => {
       if (clearTimer.current) window.clearTimeout(clearTimer.current)
     }
-  }, [progress])
+  }, [progress, clearFetchLogs])
 
 
 
@@ -1381,11 +1395,11 @@ export default function App() {
       // 批量补齐结束后再保留进度条 1 秒，让用户看到「完成」
       setTimeout(() => setProgress(null), 1000)
       // 抓取过程浮层立即收起
-      setFetchLogs([])
+      clearFetchLogs()
       setScanning(false)
     }
     // P3-2：补依赖 settings.customSourceOrder / showBatchToast（原闭包捕获陈旧值，改源顺序后 toast 显示旧的）
-  }, [libraryId, runReconcile, settings.customSourceOrder, showBatchToast])
+  }, [libraryId, runReconcile, settings.customSourceOrder, showBatchToast, clearFetchLogs])
 
   /** 对失败明细弹窗中的项目逐个重试补齐（单点抓取，顺序执行降风控） */
   const handleRetryFailures = useCallback(async (failures: Array<{ id: string; title: string; reason: string }>) => {
@@ -1394,7 +1408,7 @@ export default function App() {
     setRetryingFailures(true)
     setScanning(true)
     setProgress({ total: failures.length, done: 0 })
-    setFetchLogs([])
+    clearFetchLogs()
     let ok = 0
     const stillFailed: Array<{ id: string; title: string; reason: string }> = []
     try {
@@ -1453,11 +1467,11 @@ export default function App() {
       })
     } finally {
       setTimeout(() => setProgress(null), 1000)
-      setFetchLogs([])
+      clearFetchLogs()
       setRetryingFailures(false)
       setScanning(false)
     }
-  }, [libraryId, runReconcile])
+  }, [libraryId, runReconcile, clearFetchLogs])
 
   // v2.3.7 批量补齐时长：对当前库所有缺时长视频 ffprobe 读时长写 techInfo
   const handleBatchProbe = useCallback(async () => {
@@ -2235,7 +2249,7 @@ export default function App() {
       />
 
       {/* v2.2.10：实时抓取日志浮层（右下角）。批量补齐期间滚动显示"javdb 失败 → 降级 javbus"，结束自动收起 */}
-      <FetchLogOverlay logs={fetchLogs} onDismiss={() => setFetchLogs([])} />
+      <FetchLogOverlay logs={fetchLogs} onDismiss={clearFetchLogs} />
 
       {/* v2.4.1：进度面板（可拖拽、暂停/继续/停止） */}
       <ProgressPanel
