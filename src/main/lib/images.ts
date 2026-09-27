@@ -42,15 +42,19 @@ export async function findSidecar(videoPath: string): Promise<string | null> {
   const folder = path.basename(dir)
   // 候选名：视频同名、外文件夹同名、通用封面名
   const candidates: string[] = [base, folder, ...GENERIC_POSTER_NAMES]
+  // P1-4：一次 readdir + 内存 Map 匹配，替代 7候选×5扩展 至多 35 次串行 fs.access
+  //（扫描/对账每个新文件都触发，4494 部 ≈ 15.7 万次串行磁盘 syscall；同目录多视频还会重复探测）。
+  // Windows 文件系统大小写不敏感：建 小写→真实名 映射，命中后返回磁盘真实文件名。
+  let byLower: Map<string, string>
+  try {
+    byLower = new Map((await fs.readdir(dir)).map((n) => [n.toLowerCase(), n]))
+  } catch {
+    return null // 目录不可读
+  }
   for (const name of candidates) {
     for (const ext of POSTER_EXTS) {
-      const candidate = path.join(dir, name + ext)
-      try {
-        await fs.access(candidate)
-        return candidate
-      } catch {
-        // 继续尝试
-      }
+      const real = byLower.get((name + ext).toLowerCase())
+      if (real) return path.join(dir, real)
     }
   }
   return null
@@ -83,21 +87,17 @@ async function generateFrame(video: Video, settings: Settings): Promise<string |
     '-q:v', '2',
     out
   ]
-  return new Promise<string | null>((resolve) => {
-    const p = spawn(exe, baseArgs, { windowsHide: true })
-    // 超时兜底：thumbnail 全片分析较慢，30s 未结束强制 kill
-    const timer = setTimeout(() => {
-      try { p.kill('SIGKILL') } catch {}
-      resolve(null)
-    }, FRAME_TIMEOUT_MS)
-    p.on('error', () => { clearTimeout(timer); resolve(null) })
-    p.on('close', async (code) => {
-      clearTimeout(timer)
-      if (code === 0) {
-        try { await fs.access(out); resolve(out) } catch { resolve(null) }
-      } else resolve(null)
-    })
-  })
+  // P1-11：改用 spawnWithTimeout（消费 stdout/stderr + 超时）。原版只监听 error/close、不消费 stderr——
+  // 损坏视频会让 ffmpeg 疯狂刷错误输出，管道缓冲区写满后子进程阻塞在 write 上永不退出，
+  // 每张懒加载卡片最坏白等到 30s kill（滚墙并发时排队放大）。spawnWithTimeout 为函数声明，已提升可在此调用。
+  const r = await spawnWithTimeout(exe, baseArgs, FRAME_TIMEOUT_MS, 'generateFrame')
+  if (!r.ok) return null
+  try {
+    await fs.access(out)
+    return out
+  } catch {
+    return null
+  }
 }
 
 export interface ResolvedPoster {
@@ -173,6 +173,14 @@ export async function resolvePoster(
 
 /** 横屏预览图数量（随机截帧） */
 export const PREVIEW_COUNT = 15
+
+// P1-2：截帧候选数与整部整体超时。
+// 原封面 12 候选 + 预览 22 候选 = 34 次 spawnFrameAt，加 analyzeFrameQuality 再翻倍 → 单部最多 68 个
+// ffmpeg 进程，与注释承诺的 16 个严重不符（历史「CPU 风暴」残留）。收敛到 8 + 16 = 24 次截帧（质量仍够用），
+// 并加整部整体 deadline，超时后不再起新进程、用已截到的最好结果兜底。
+const COVER_CANDIDATES = 8
+const PREVIEW_CANDIDATES = 16
+const PREVIEW_SET_DEADLINE_MS = 120_000
 
 function previewPathFor(video: Video, i: number): string {
   return path.join(postersCacheDir(), `${video.id}_preview_${i}.jpg`)
@@ -329,12 +337,13 @@ async function analyzeFrameQuality(
   })
 }
 
-/** 截一组候选帧并分析质量，返回按质量排序的候选路径 */
+/** 截一组候选帧并分析质量，返回按质量排序的候选路径。deadline 之后不再起新进程（用已截到的兜底）。 */
 async function captureAndRankCandidates(
   exe: string,
   video: Video,
   count: number,
-  tmpPrefix: string
+  tmpPrefix: string,
+  deadline: number
 ): Promise<{ path: string; mean: number; variance: number }[]> {
   const dur = video.durationSec ?? video.techInfo?.durationSec ?? 600
   const seconds = generateRandomSeconds(dur, count)
@@ -342,12 +351,16 @@ async function captureAndRankCandidates(
   const captured = await mapLimit(
     seconds.map((sec, i) => ({ sec, out: tmpPaths[i] })),
     4,
-    async (it) => ({ ...it, ok: await spawnFrameAt(exe, video.path, it.sec, it.out) })
+    async (it) =>
+      Date.now() > deadline
+        ? { ...it, ok: false }
+        : { ...it, ok: await spawnFrameAt(exe, video.path, it.sec, it.out) }
   )
   const analyzed = await mapLimit(
     captured.filter((c) => c.ok).map((c) => c.out),
     4,
     async (p) => {
+      if (Date.now() > deadline) return { p, q: null }
       const q = await analyzeFrameQuality(exe, p)
       return { p, q }
     }
@@ -378,9 +391,10 @@ export async function generatePreviewSet(
   }
   await fs.mkdir(postersCacheDir(), { recursive: true })
   const coverPath = frameCachePath(video)
+  const deadline = Date.now() + PREVIEW_SET_DEADLINE_MS
 
-  // 封面：截 12 张随机候选，评估后选质量最高的一张
-  const coverRanked = await captureAndRankCandidates(exe, video, 12, 'cover_cand')
+  // 封面：截 COVER_CANDIDATES 张随机候选，评估后选质量最高的一张
+  const coverRanked = await captureAndRankCandidates(exe, video, COVER_CANDIDATES, 'cover_cand', deadline)
   let finalCover: string | undefined
   if (coverRanked.length > 0) {
     try {
@@ -392,8 +406,8 @@ export async function generatePreviewSet(
     }
   }
 
-  // 预览图：截 22 张随机候选，评估后取前 PREVIEW_COUNT 张
-  const previewRanked = await captureAndRankCandidates(exe, video, 22, 'preview_cand')
+  // 预览图：截 PREVIEW_CANDIDATES 张随机候选，评估后取前 PREVIEW_COUNT 张
+  const previewRanked = await captureAndRankCandidates(exe, video, PREVIEW_CANDIDATES, 'preview_cand', deadline)
   const previewPaths: string[] = []
   const take = Math.min(PREVIEW_COUNT, previewRanked.length)
   for (let i = 0; i < take; i++) {
@@ -412,15 +426,16 @@ export async function generatePreviewSet(
     } catch {}
   }
 
-  // 清理临时候选文件
+  // 清理临时候选文件（数量与候选常量一致）
   const allTmp = [
-    ...Array.from({ length: 12 }, (_, i) => path.join(postersCacheDir(), `${video.id}_cover_cand_${i}.jpg`)),
-    ...Array.from({ length: 22 }, (_, i) => path.join(postersCacheDir(), `${video.id}_preview_cand_${i}.jpg`))
+    ...Array.from({ length: COVER_CANDIDATES }, (_, i) => path.join(postersCacheDir(), `${video.id}_cover_cand_${i}.jpg`)),
+    ...Array.from({ length: PREVIEW_CANDIDATES }, (_, i) => path.join(postersCacheDir(), `${video.id}_preview_cand_${i}.jpg`))
   ]
   await Promise.all(allTmp.map((p) => fs.unlink(p).catch(() => {})))
 
-  void frameLog(`[generatePreviewSet] result id=${video.id} cover=${finalCover ?? 'none'} previews=${previewPaths.length}`)
-  return { coverPath: finalCover, previewPaths, timedOut: false }
+  const timedOut = Date.now() > deadline
+  void frameLog(`[generatePreviewSet] result id=${video.id} cover=${finalCover ?? 'none'} previews=${previewPaths.length} timedOut=${timedOut}`)
+  return { coverPath: finalCover, previewPaths, timedOut }
 }
 
 export { postersCacheDir, frameCachePath, generateFrame, frameLog }

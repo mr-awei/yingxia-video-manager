@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Library, ScanProgress, Settings, Video } from '../../shared/types'
-import { findVideoByPath, listLibraries, applyVideoChanges, type VideoChange } from './repo'
+import { findVideoByPath, listLibraries, listVideos, applyVideoChanges, buildPathIndex, type VideoChange } from './repo'
 import { resolvePoster, postersCacheDir, generatePreviewSet } from './images'
 import { isDomestic } from '../../shared/code'
 
@@ -78,10 +78,12 @@ export async function scanLibrary(
   // v2.2.10-fix7：批量写盘——创建阶段收集变更，最后一次 applyVideoChanges 落盘
   //（原来逐条 upsertVideo 全量写 data.json，大库扫描会因过慢被中断，只建了部分记录）
   const createdChanges: VideoChange[] = []
+  // P0-1：一次性建 path→Video 索引，循环里 O(1) 查重（原逐文件线性 find 是 O(n²)——4494²≈2000 万次字符串比较）
+  const pathIndex = buildPathIndex(await listVideos({}))
   for (const filePath of allFiles) {
     done++
     onProgress?.({ libraryId: library.id, total, done, current: path.basename(filePath) })
-    const existing = await findVideoByPath(filePath)
+    const existing = await findVideoByPath(filePath, pathIndex)
     if (existing) {
       created.push(existing)
       continue

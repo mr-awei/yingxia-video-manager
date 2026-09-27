@@ -80,8 +80,19 @@ export async function removeVideo(id: string): Promise<void> {
   })
 }
 
-/** 按路径查重，避免重复扫描 */
-export async function findVideoByPath(p: string): Promise<Video | null> {
+/** 构建 path→Video 索引（扫描/对账批量查找用，避免逐文件 O(n) 线性 find 凑成 O(n²)）。
+ *  快照语义：反映构建时刻的视频集合；期间通过 changes 收集、尚未 applyVideoChanges 落盘的
+ *  新 video 不在索引内——这与 findVideoByPath 直接读 db.videos 的行为一致（扫描/对账循环里
+ *  每个文件路径只查一次、且查找的都是落盘前的既有记录），因此快照索引是安全的。 */
+export function buildPathIndex(videos: Video[]): Map<string, Video> {
+  const m = new Map<string, Video>()
+  for (const v of videos) if (!m.has(v.path)) m.set(v.path, v)
+  return m
+}
+
+/** 按路径查重，避免重复扫描。批量场景传预建索引（O(1)）；否则回退线性查找（小批量调用足够）。 */
+export async function findVideoByPath(p: string, pathIndex?: Map<string, Video>): Promise<Video | null> {
+  if (pathIndex) return pathIndex.get(p) ?? null
   const db = await getDB()
   return db.videos.find((v) => v.path === p) ?? null
 }

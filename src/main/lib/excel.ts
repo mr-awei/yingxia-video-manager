@@ -43,7 +43,26 @@ function toScore(v: unknown): number | undefined {
  * （mjs 版 v0.18.5 的 readFileSync 对非 ASCII 路径处理不当，会抛 "Cannot access file"）。
  * 改成读 buffer 再喂 XLSX.read —— 经过实测 `E:\新建文件夹\收藏整理_2026.xlsx` 成功解析。
  */
+// P1-5：按 (path, mtimeMs) 缓存解析结果——reconcile/切库/启动每次都会全量重解析数千行 Excel
+//（xlsx 解析是主进程同步 CPU 重活），同一文件未变更时直接复用。片单文件通常很少，缓存膨胀有界。
+const parseCache = new Map<string, { mtimeMs: number; doc: IntroDoc | null }>()
+
 export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null> {
+  let mtimeMs = 0
+  try {
+    mtimeMs = (await fs.stat(filePath)).mtimeMs
+    const hit = parseCache.get(filePath)
+    if (hit && hit.mtimeMs === mtimeMs) return hit.doc
+  } catch { /* stat 失败：交给下层 readFile 走「读取失败」路径 */ }
+  const doc = await parseIntroExcelUncached(filePath)
+  if (mtimeMs > 0) {
+    if (parseCache.size > 32) parseCache.clear() // 简易 LRU 兜底
+    parseCache.set(filePath, { mtimeMs, doc })
+  }
+  return doc
+}
+
+async function parseIntroExcelUncached(filePath: string): Promise<IntroDoc | null> {
   let wb: XLSX.WorkBook
   try {
     // 先 readFile 拿 buffer，再喂给 XLSX.read —— 绕开 xlsx mjs readFileSync 中文路径 bug
@@ -56,33 +75,34 @@ export async function parseIntroExcel(filePath: string): Promise<IntroDoc | null
   // 兼容不同 sheet 名（片单 / 收藏 / Sheet1 ...）：取第一个有「品番」列的
   // 2026-08-30 修复：原版只看 B 列 (rows[0]?.[1])，用户把品番放 D 列、F 列时直接报"未找到含品番列"。
   // 改成扫描整个首行（含表头 fallback 至 B 列，若全部工作表都没品番就放弃）
+  // P1-5 修复：探测循环已 sheet_to_json 一遍，命中后复用该 rows——原版在下方又对目标 sheet
+  // 二次 sheet_to_json（数千行大 sheet 解析两遍，xlsx 解析是主进程同步 CPU 重活）。
   const sheetNames = wb.SheetNames
-  let ws: XLSX.WorkSheet | undefined
   let sheetName = ''
   let codeColIdx = -1  // 本 sheet 中品番列所在位置
+  let rows: unknown[][] | null = null  // 命中 sheet 的解析结果（复用，避免二次解析）
   for (const name of sheetNames) {
     const candidate = wb.Sheets[name]
     if (!candidate) continue
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(candidate, { header: 1 })
-    if (rows.length === 0) continue
-    const header = (rows[0] ?? []) as unknown[]
+    const r = XLSX.utils.sheet_to_json<unknown[]>(candidate, { header: 1 }) as unknown[][]
+    if (r.length === 0) continue
+    const header = (r[0] ?? []) as unknown[]
     // 优先整行扫「品番」
     let idx = header.findIndex((h) => String(h ?? '').trim() === '品番')
     // 兼容部分老 sheet：B 列就是品番但表头没文字
     if (idx < 0) idx = String(header[1] ?? '').trim() === '' ? -1 : 1
     if (idx >= 0) {
-      ws = candidate
       sheetName = name
       codeColIdx = idx
+      rows = r
       break
     }
   }
-  if (!ws || codeColIdx < 0) {
+  if (!rows || codeColIdx < 0) {
     console.error(`[excel] ${filePath} 未找到含「品番」列的工作表（sheets=${sheetNames.join(',')}）`)
     return null
   }
 
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 }) as unknown[][]
   const header = (rows[0] ?? []) as unknown[]
   if (rows.length < 2) return null
 

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Menu, protocol, Tray, nativeImage, type NativeImage } from 'electron'
 import path from 'node:path'
 import { promises as fs, appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { execSync } from 'node:child_process'
+import { execSync, execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { registerIpc, runUpdateCheck } from './lib/ipc'
 import { runtime, applyRuntimeSettings } from './lib/runtime'
 import { tMain, setLocale as setMainLocale, subscribeLocale, type Locale } from '../shared/i18n'
@@ -50,11 +51,16 @@ if (lastVersion && lastVersion !== app.getVersion()) {
   killOldProcess()
 }
 
+// P2-2：reg 查询/删除改异步 execFile（原 execSync 每次启动都同步阻塞主进程数十至上百 ms）。
+// taskkill 仍用 execSync——它只在升级安装时跑一次，且在 app ready 前的模块顶层同步上下文，
+// 改异步会影响单实例锁时序，一次性阻塞可接受。
+const execFileAsync = promisify(execFile)
+
 /** v2.5.1：读取 NSIS 安装器写入注册表的语言选择，仅首次安装时使用一次。 */
-function readInstallerLanguage(): Locale | null {
+async function readInstallerLanguage(): Promise<Locale | null> {
   try {
-    const out = execSync('reg query HKCU\\Software\\YingXia /v InstallerLanguage', { encoding: 'utf8' })
-    const match = out.match(/InstallerLanguage\s+REG_SZ\s+(\S+)/)
+    const { stdout } = await execFileAsync('reg', ['query', 'HKCU\\Software\\YingXia', '/v', 'InstallerLanguage'], { encoding: 'utf8' })
+    const match = stdout.match(/InstallerLanguage\s+REG_SZ\s+(\S+)/)
     if (match && (match[1] === 'zh-CN' || match[1] === 'en-US')) return match[1] as Locale
   } catch {
     // 注册表不存在或读取失败，正常
@@ -62,9 +68,9 @@ function readInstallerLanguage(): Locale | null {
   return null
 }
 
-function clearInstallerLanguage(): void {
+async function clearInstallerLanguage(): Promise<void> {
   try {
-    execSync('reg delete HKCU\\Software\\YingXia /v InstallerLanguage /f', { stdio: 'ignore' })
+    await execFileAsync('reg', ['delete', 'HKCU\\Software\\YingXia', '/v', 'InstallerLanguage', '/f'])
   } catch {
     // 忽略删除失败
   }
@@ -127,6 +133,26 @@ function attachRendererLog(win: BrowserWindow): void {
  * main 自己的 console.log 要劫持 console 对象写入。
  */
 let mainLogFile = ''
+// P0-2：日志异步缓冲——原版每条 console.* 都同步 appendFileSync 落盘。扫描/补齐期间 emitProgress
+// 等高频日志每文件一条（4494 部一轮 ≈ 9000 次同步磁盘 IO），把主进程拖住、UI 掉帧。
+// 改为内存队列 + 500ms 批量 flush（异步 appendFile，失败静默——日志绝不能拖垮业务）。
+let mainLogQueue: string[] = []
+let mainLogTimer: ReturnType<typeof setTimeout> | null = null
+
+function queueMainLog(line: string): void {
+  if (!mainLogFile) return
+  mainLogQueue.push(line)
+  if (!mainLogTimer) {
+    mainLogTimer = setTimeout(() => {
+      mainLogTimer = null
+      if (!mainLogFile || mainLogQueue.length === 0) return
+      const chunk = mainLogQueue.join('')
+      mainLogQueue = []
+      void fs.appendFile(mainLogFile, chunk).catch(() => {})
+    }, 500)
+  }
+}
+
 function attachMainLog(): void {
   try {
     const logDir = path.join(app.getPath('userData'), 'logs')
@@ -140,12 +166,27 @@ function attachMainLog(): void {
     const line = args
       .map((a) => (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a) } catch { return String(a) } })()))
       .join(' ')
-    try { appendFileSync(mainLogFile, `[${new Date().toISOString()}] ${line}\n`) } catch { /* 忽略 */ }
+    queueMainLog(`[${new Date().toISOString()}] ${line}\n`)
     orig.apply(console, args)
   }
   console.log = writeAndCall(console.log) as typeof console.log
   console.error = writeAndCall(console.error) as typeof console.error
   console.warn = writeAndCall(console.warn) as typeof console.warn
+  // 进程退出前把缓冲日志 flush 出去（同步兜底，避免丢失）
+  app.on('before-quit', () => {
+    if (mainLogTimer) {
+      clearTimeout(mainLogTimer)
+      mainLogTimer = null
+    }
+    if (mainLogFile && mainLogQueue.length > 0) {
+      try {
+        appendFileSync(mainLogFile, mainLogQueue.join(''))
+      } catch {
+        /* 忽略 */
+      }
+      mainLogQueue = []
+    }
+  })
 }
 
 
@@ -163,9 +204,11 @@ function registerLocalMedia(): void {
       }
       const data = await fs.readFile(real)
       return new Response(data, {
-        // no-store：封面文件可能被手动设为封面覆盖（路径不变内容变），禁止 Chromium 缓存，
-        // 配合渲染端 lm:// URL 的 ?v= 版本号，保证封面立即生效
-        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }
+        // P1-7：原 no-store 让 Chromium 缓存完全失效，虚拟墙滚动/hover/重渲染都重走协议 → 主进程
+        // 反复 fs.readFile（13501 张海报滚动 IO 放大）。渲染端 URL 已带 ?v=coverVersion，封面被
+        // 「设为封面」覆盖时 coverVersion 递增 → URL 变化 → 缓存键变化 → 必然重新拉取，
+        // 因此 max-age 缓存是安全的（缓存键天然含版本号），不会读到旧封面。
+        headers: { 'Content-Type': POSTER_MIME[ext], 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'private, max-age=3600' }
       })
     } catch (e) {
       // v2.2.5 修复：ENOENT 是高频场景（poster/预览帧常被清理、data.json 残留旧路径），
@@ -295,7 +338,7 @@ app.whenReady().then(() => {
   // 启动时应用界面语言：安装器首次安装的语言选择 > settings.language > 默认中文
   void (async () => {
     try {
-      const installerLang = readInstallerLanguage()
+      const installerLang = await readInstallerLanguage()
       const { getSettings, saveSettings } = await import('./lib/repo')
       const s = await getSettings()
       const lang = installerLang ?? s.language ?? 'zh-CN'
@@ -303,7 +346,7 @@ app.whenReady().then(() => {
       // 把安装器选择的语言持久化到 settings，并清理一次性注册表标记
       if (installerLang) {
         await saveSettings({ language: installerLang })
-        clearInstallerLanguage()
+        await clearInstallerLanguage()
       }
     } catch {
       /* 静默：保持默认中文 */

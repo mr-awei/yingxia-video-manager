@@ -1,4 +1,4 @@
-﻿import { memo, useState } from 'react'
+﻿import { memo, useState, type CSSProperties } from 'react'
 import type { DisplayEntry, Video } from '../../../shared/types'
 import { entryPrimaryTags, hasDocTags } from '../../../shared/types'
 import { posterUrl, placeholderGradient, titleInitial, formatDuration, formatSize } from '../lib/util'
@@ -17,6 +17,14 @@ interface Props {
   onPickTag?: (tag: string) => void
   /** full = 缩略图列表；filename = 纯文件名列表 */
   mode?: 'full' | 'filename'
+}
+
+// P1-9：大库列表虚拟化。4494 行全量渲染 DOM 会卡首屏、占内存。不用手卷窗口（行高/滚动/选区易出回归），
+// 改用 Chromium 原生 content-visibility: auto——浏览器自动跳过屏外行的布局与绘制，
+// containIntrinsicSize 预留行高保持滚动条稳定。零滚动行为改动，渲染开销从 O(全量) 降到 O(可视)。
+const ROW_VIRTUAL: Record<'full' | 'filename', CSSProperties> = {
+  full: { contentVisibility: 'auto', containIntrinsicSize: 'auto 72px' } as CSSProperties,
+  filename: { contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' } as CSSProperties
 }
 
 function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, onPickTag, mode = 'full' }: Props) {
@@ -64,6 +72,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
               <div
                 key={v?.id ?? e.code}
                 className="cv-list-item group flex items-center gap-3 px-3 py-2 rounded-lg bg-ink-800/40 hover:bg-ink-700/60 ring-1 ring-white/5 transition-colors cursor-pointer"
+                style={ROW_VIRTUAL.filename}
                 onClick={() => (isMissing ? onOpenMissing(e) : onOpen(e))}
               >
                 {/* 文件名 */}
@@ -185,6 +194,7 @@ function ListViewInner({ entries, onOpen, onEdit, onOpenMissing, onToggleFlag, o
               className={`cv-list-item group flex items-center gap-3 px-2.5 py-2 rounded-xl bg-ink-800/50 hover:bg-ink-700/70 ring-1 ring-white/5 transition-colors cursor-pointer ${
                 isMissing ? 'opacity-80' : ''
               }`}
+              style={ROW_VIRTUAL.full}
               onClick={() => (isMissing ? onOpenMissing(e) : onOpen(e))}
             >
               {/* 缩略图：无封面时 ffmpeg 截帧兜底，右上角「帧」标识 */}

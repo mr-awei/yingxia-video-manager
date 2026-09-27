@@ -10,7 +10,7 @@ import type {
   Video
 } from '../../shared/types'
 import { parseIntroExcel } from './excel'
-import { applyVideoChanges, findVideoByPath, listVideos, type VideoChange } from './repo'
+import { applyVideoChanges, findVideoByPath, listVideos, buildPathIndex, type VideoChange } from './repo'
 import { resolvePoster } from './images'
 import { walk, VIDEO_EXTS, idForPath } from './scanner'
 import { extractBaseCode, isDomestic, normalizeCode } from '../../shared/code'
@@ -225,11 +225,12 @@ async function ensureVideo(
     /** Excel 片单「分类」列的单值，独立于 tagCategories */
     introCategory?: string
   },
-  changes: VideoChange[]
+  changes: VideoChange[],
+  pathIndex?: Map<string, Video>
 ): Promise<Video> {
   const folderName = path.basename(path.dirname(filePath))
   const domestic = isDomestic(folderName, path.basename(filePath))
-  const existing = await findVideoByPath(filePath)
+  const existing = await findVideoByPath(filePath, pathIndex)
   if (existing) {
     // Excel 为权威来源：简介/标签/评分/tagCategories 以 Excel 为准（仅在变化时记录一次 update，不逐条写盘）
     const nextTags = [...meta.tags]
@@ -323,6 +324,9 @@ export async function reconcileLibrary(
   for await (const f of walk(library.folderPath, minSizeBytes)) allFiles.push(f)
   const fileEntries = collectFiles(allFiles)
   const used = new Set<string>()
+  // P0-1：一次性建 path→Video 索引，ensureVideo / 未收录循环 O(1) 查重
+  //（原逐文件 findVideoByPath 线性 find 是 O(n²)——4494²≈2000 万次字符串比较，大库对账/启动慢的主因）
+  const pathIndex = buildPathIndex(await listVideos({}))
 
   const entries: DisplayEntry[] = []
   const changes: VideoChange[] = []
@@ -374,10 +378,10 @@ export async function reconcileLibrary(
             score: item.score,
             introCategory: item.category
           }
-          const video = await ensureVideo(files[0], library, settings, metaForVideo, changes)
+          const video = await ensureVideo(files[0], library, settings, metaForVideo, changes, pathIndex)
           const siblingVideos: Video[] = []
           for (let i = 1; i < files.length; i++) {
-            const sib = await ensureVideo(files[i], library, settings, metaForVideo, changes)
+            const sib = await ensureVideo(files[i], library, settings, metaForVideo, changes, pathIndex)
             siblingVideos.push(sib)
           }
           entries.push({
@@ -443,7 +447,8 @@ export async function reconcileLibrary(
         library,
         settings,
         { code: titleNoExt, description: '', tags: [] },
-        changes
+        changes,
+        pathIndex
       )
       if (!video.domestic && !video.javdbDetail) {
         needFetchAfter.push(video)
@@ -559,7 +564,7 @@ export async function reconcileLibrary(
   // 把未收录文件也展示出来（否则导入后列表/首页找不到），统一放到「未收录」分类
   const UNLISTED_ORDER = 9999
   for (const u of unlistedAll) {
-    const existing = await findVideoByPath(u.path)
+    const existing = await findVideoByPath(u.path, pathIndex)
     const video =
       existing ??
       (await ensureVideo(
@@ -567,7 +572,8 @@ export async function reconcileLibrary(
         library,
         settings,
         { code: u.fileName, description: '', tags: [] },
-        changes
+        changes,
+        pathIndex
       ))
     const titleNoExt = path.basename(u.fileName, path.extname(u.fileName))
     entries.push({
@@ -583,6 +589,19 @@ export async function reconcileLibrary(
   }
 
   entries.sort((a, b) => a.order - b.order || a.code.localeCompare(b.code, 'zh'))
+
+  // v2.2.5 修复：清理 dead previewPaths —— 上一次升级/installer 可能清掉了 posters 目录里的旧 .jpg，
+  // 但 data.json 里的 video.previewPaths 仍指向这些不存在的文件 → hover/详情页 lm:// ENOENT 刷屏。
+  // v2.2.10-fix3：大库（数千部）下全量清理 = 遍历全部视频 + 数千次 existsSync 磁盘 IO，
+  // 且与当前库无关（切一个库也清全库）→ 打开/切库明显变慢。previewPaths 只在升级/清缓存后
+  // 才失效，平时不会变，改为每 6 小时最多清理一次。
+  // P1-1 修复：移到 applyVideoChanges **之前**——cleanupDeadPreviewPaths 把变更 push 进 changes，
+  // 原位置在落盘之后才执行，清理结果永远不会被持久化（每 6 小时白跑一轮，重启后死引用照旧）。
+  const previewCleanupDue = Date.now() - lastPreviewCleanupAt > PREVIEW_CLEANUP_INTERVAL
+  if (previewCleanupDue) {
+    lastPreviewCleanupAt = Date.now()
+    await cleanupDeadPreviewPaths(changes)
+  }
 
   // 一次性批量落盘（避免逐条全量写 JSON）
   await applyVideoChanges(changes)
@@ -601,17 +620,6 @@ export async function reconcileLibrary(
   }
 
   onProgress?.({ libraryId: library.id, total: mdCount + allFiles.length, done: mdCount + allFiles.length })
-
-  // v2.2.5 修复：清理 dead previewPaths —— 上一次升级/installer 可能清掉了 posters 目录里的旧 .jpg，
-  // 但 data.json 里的 video.previewPaths 仍指向这些不存在的文件 → hover/详情页 lm:// ENOENT 刷屏。
-  // v2.2.10-fix3：大库（数千部）下全量清理 = 遍历全部视频 + 数千次 existsSync 磁盘 IO，
-  // 且与当前库无关（切一个库也清全库）→ 打开/切库明显变慢。previewPaths 只在升级/清缓存后
-  // 才失效，平时不会变，改为每 6 小时最多清理一次。
-  const previewCleanupDue = Date.now() - lastPreviewCleanupAt > PREVIEW_CLEANUP_INTERVAL
-  if (previewCleanupDue) {
-    lastPreviewCleanupAt = Date.now()
-    await cleanupDeadPreviewPaths(changes)
-  }
 
   return {
     libraryId: library.id,

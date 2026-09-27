@@ -14,7 +14,7 @@ import { resolvePoster, generatePreviewSet, frameLog } from './images'
 import { postersCacheDir } from './images'
 import { cacheRemoteImage } from './javdb'
 import { extractBaseCode, extractCode } from '../../shared/code'
-import { testProxyConnectivity } from './proxy'
+import { testProxyConnectivity, getDispatcher } from './proxy'
 import { detectFfmpeg } from './ffmpegEnv'
 import { applyRuntimeSettings } from './runtime'
 import { findAndParseTorrents } from './torrent'
@@ -374,17 +374,64 @@ async function fetchMovieDetail(
   return await fetchDetailSmart(code, settings, state, onEvent, manual)
 }
 
-function emitProgress(p: ScanProgress): void {
+// P0-2：进度事件节流——扫描/富集 4494 部 = 每文件一条进度，原版逐条 webContents.send +
+// 逐条 console.log（经 attachMainLog 同步写盘），渲染端每条 setState 触发全树重渲染，UI 掉帧。
+// 策略：纯进度（无 fetchEvent/introError）按 100ms 合并、只保留最新（done/total 计数本就只看最新）；
+// fetchEvent（数据源逐条日志，不能丢）、introError（必须即时）、done===total（完成帧）立即透传。
+let progressPending: ScanProgress | null = null
+let progressTimer: ReturnType<typeof setTimeout> | null = null
+
+function sendProgressNow(p: ScanProgress): void {
   // 只给主窗口发 — BrowserWindow.getAllWindows() 会把 DevTools 也返回
   // DevTools URL 是 devtools://devtools/... 开头, 据此过滤
   const wins = BrowserWindow.getAllWindows()
-  console.log(`[emitProgress] windows=${wins.length} payload=${p.current ?? '-'}`)
   for (const w of wins) {
     if (w.isDestroyed()) continue
     const url = w.webContents.getURL()
     if (url.startsWith('devtools://')) continue
     w.webContents.send(IPC.scanProgress, p)
   }
+}
+
+function emitProgress(p: ScanProgress): void {
+  const immediate = p.introError !== undefined || p.fetchEvent !== undefined || p.done === p.total
+  if (immediate) {
+    // 立即透传前先把攒着的纯进度冲掉，保证时序（先发缓存进度，再发这条）
+    if (progressTimer) {
+      clearTimeout(progressTimer)
+      progressTimer = null
+    }
+    if (progressPending) {
+      sendProgressNow(progressPending)
+      progressPending = null
+    }
+    sendProgressNow(p)
+    return
+  }
+  // 纯进度：100ms 合并，只保留最新
+  progressPending = p
+  if (!progressTimer) {
+    progressTimer = setTimeout(() => {
+      progressTimer = null
+      if (progressPending) {
+        sendProgressNow(progressPending)
+        progressPending = null
+      }
+    }, 100)
+  }
+}
+
+/** P2-5：清洗渲染端传来的 patch。剥离原型污染键（__proto__/constructor/prototype——
+ * 直接 out['__proto__']=v 会触发原型 setter 污染对象）与不应经 patch 改的身份字段（如 Video.id/libraryId），
+ * 防 Object.assign 被恶意/异常 patch 覆盖关键字段。用「剥离危险键」而非严格白名单，避免漏列合法字段误伤功能。 */
+function sanitizePatch<T>(patch: T, blockKeys: string[] = []): T {
+  const blocked = new Set(['__proto__', 'constructor', 'prototype', ...blockKeys])
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries((patch ?? {}) as Record<string, unknown>)) {
+    if (blocked.has(k)) continue
+    out[k] = v
+  }
+  return out as T
 }
 
 function defaultLibrary(): Library {
@@ -449,7 +496,10 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
           },
           // 大陆网络下 GitHub API TCP/TLS 能通但 HTTP 层不响应，
           // 无超时则 undici 默认 fetch 会一直挂死导致 UI 永远转圈。
-          signal: AbortSignal.timeout(20000)
+          signal: AbortSignal.timeout(20000),
+          // P2-3：更新检查走代理——设置了代理的用户在 GitHub/Gitee 不可达网络下，原 fetch 不带
+          // dispatcher 会直连失败/超时 20s。复用数据源同款 getDispatcher（含缓存）。
+          dispatcher: getDispatcher(s)
         }
       )
       if (!r.ok) throw new Error(`${source === 'gitee' ? 'Gitee' : 'GitHub'} API ${r.status}`)
@@ -576,7 +626,7 @@ export async function runUpdateCheck(): Promise<UpdateCheckResult> {
 }
 
 let ipcRegistered = false
-/** 无封面兜底截帧的单轮上限：每部视频最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴 */
+/** 无封面兜底截帧的单轮上限：每部视频 8 封面候选 + 16 预览候选（含质量分析，120s 整体超时），放开会让大库 CPU 风暴 */
 const FRAME_FALLBACK_LIMIT = 200
 
 /** v2.3.11：截帧失败冷却期（7 天）。损坏文件若每次都重试，批量补齐会被反复拖住 */
@@ -666,7 +716,9 @@ export function registerIpc(): void {
   // ---------- 视频 ----------
   ipcMain.handle(IPC.videoList, (_e, filter: any) => repo.listVideos(filter ?? {}))
   ipcMain.handle(IPC.videoGet, (_e, id: string) => repo.getVideo(id))
-  ipcMain.handle(IPC.videoUpdate, (_e, id: string, patch: any) => repo.updateVideo(id, patch))
+  ipcMain.handle(IPC.videoUpdate, (_e, id: string, patch: any) =>
+    repo.updateVideo(id, sanitizePatch(patch, ['id', 'libraryId', 'addedAt']))
+  )
   ipcMain.handle(IPC.videoScan, async (_e, libraryId: string) => {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) throw new Error('媒体库不存在')
@@ -966,8 +1018,11 @@ export function registerIpc(): void {
         const fetchCodeRaw = v.title || v.folderName || v.fileName || ''
         const raw = extractCode(fetchCodeRaw)
         const base = extractBaseCode(raw) || raw
-        // 同系列已在本次抓取过 → 直接复用，不重复请求
-        const seriesHit = base && base !== raw.toUpperCase() ? seriesCache.get(base) : undefined
+        // 同系列/同番号已在本次抓取过 → 直接复用，不重复请求。
+        // P3-4：原条件 `base !== raw.toUpperCase()` 只对「带分集后缀」的番号查缓存，
+        // 同番号多文件（不同目录两份 SONE-560，base===raw）会重复请求。放宽为 base 非空即查缓存——
+        // 同 code 必然同 detail，缓存命中即省一次请求。
+        const seriesHit = base ? seriesCache.get(base) : undefined
         if (seriesHit) {
           applyPatch(v, { javdbDetail: seriesHit, ...backfillFromDetail(v, seriesHit) })
           ok++
@@ -1045,7 +1100,7 @@ export function registerIpc(): void {
             // v2.3.11：跳过刚截帧失败过的损坏文件（否则每轮都在同一个坏文件上卡超时）
             !frameFailedRecently(v)
         )
-        // 批次上限：单轮补齐最多后台截 200 部（每部最多 16 个 ffmpeg 进程，放开会让大库 CPU 风暴）
+        // 批次上限：单轮补齐最多后台截 200 部（每部 8 封面候选 + 16 预览候选，120s 整体超时，放开会让大库 CPU 风暴）
         const noPoster = noPosterAll.slice(0, FRAME_FALLBACK_LIMIT)
         if (noPoster.length === 0) return
         console.log(
@@ -1099,7 +1154,7 @@ export function registerIpc(): void {
         if (frameChanges.length > 0) {
           await repo.applyVideoChanges(frameChanges)
         }
-        console.log(`[ipc] 无封面兜底截帧完成：产出 ${frameChanges.length}/\${noPoster.length} 部`)
+        console.log(`[ipc] 无封面兜底截帧完成：产出 ${frameChanges.length}/${noPoster.length} 部`)
       } catch {
         /* 静默 */
       }
@@ -1140,7 +1195,7 @@ export function registerIpc(): void {
   // ---------- 设置 ----------
   ipcMain.handle(IPC.settingsGet, () => repo.getSettings())
   ipcMain.handle(IPC.settingsSet, async (_e, patch: any) => {
-    const saved = await repo.saveSettings(patch)
+    const saved = await repo.saveSettings(sanitizePatch(patch))
     // 运行时设置即时生效：开机自启 / 最小化到托盘
     const s = await repo.getSettings()
     applyRuntimeSettings(s)
@@ -1224,9 +1279,9 @@ export function registerIpc(): void {
   })
 
   // ---------- 仅扫描媒体库番号清单（不弹保存对话框、不写文件，供向导打开时自动加载） ----------
-  ipcMain.handle(IPC.libraryGetCodes, async (_e, libraryId: string) => {
-    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
-    if (!lib) return { count: 0, codes: [] }
+  // P3-3：抽取「遍历库文件 → 去扩展名 → 小写去重 → 中文排序」公共逻辑
+  //（libraryGetCodes / libraryExportCodes 原本各有一份完全重复的 walk+dedupe+sort）
+  const collectLibraryCodes = async (lib: Library): Promise<string[]> => {
     const files: string[] = []
     for await (const f of walk(lib.folderPath)) files.push(f)
     const seen = new Set<string>()
@@ -1242,6 +1297,13 @@ export function registerIpc(): void {
       codes.push(name)
     }
     codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    return codes
+  }
+
+  ipcMain.handle(IPC.libraryGetCodes, async (_e, libraryId: string) => {
+    const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
+    if (!lib) return { count: 0, codes: [] }
+    const codes = await collectLibraryCodes(lib)
     return { count: codes.length, codes }
   })
 
@@ -1249,22 +1311,7 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.libraryExportCodes, async (_e, libraryId: string, format: 'txt' | 'xlsx') => {
     const lib = (await repo.listLibraries()).find((l) => l.id === libraryId)
     if (!lib) return { ok: false, error: 'library-not-found' }
-    // 复用上面的 walk + 提取番号逻辑
-    const files: string[] = []
-    for await (const f of walk(lib.folderPath)) files.push(f)
-    const seen = new Set<string>()
-    const codes: string[] = []
-    for (const f of files) {
-      const base = path.basename(f)
-      const ext = path.extname(f)
-      const name = base.slice(0, base.length - ext.length)
-      if (!name) continue
-      const key = name.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      codes.push(name)
-    }
-    codes.sort((a, b) => a.localeCompare(b, 'zh'))
+    const codes = await collectLibraryCodes(lib)
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: format === 'xlsx' ? '导出番号清单 (Excel)' : '导出番号清单 (txt)',
       defaultPath: `番号清单_${lib.name}.${format}`,
@@ -1641,9 +1688,11 @@ export function registerIpc(): void {
     if (!lib) throw new Error('媒体库不存在')
     const settings = await repo.getSettings()
     const ignoredSet = new Set(settings.ignoredUnlistedPaths ?? [])
+    // P0-1 延伸：previewRenames 会逐文件回调「该路径是否已入库」，逐文件线性 find 是 O(n²)，先建索引
+    const pathIndex = repo.buildPathIndex(await repo.listVideos({}))
     return previewRenames(
       lib.folderPath,
-      async (p) => (await repo.findVideoByPath(p)) !== null,
+      async (p) => (await repo.findVideoByPath(p, pathIndex)) !== null,
       (p) => ignoredSet.has(p)
     )
   })
@@ -1655,8 +1704,10 @@ export function registerIpc(): void {
       if (!lib) throw new Error('媒体库不存在')
       const result = await applyRenames(items)
       // 改名成功的文件若已有 video 记录（同路径变更），清理旧记录，下次对账重建
+      // P0-1 延伸：逐条线性 find 改索引查找（改名条目可能上百）
+      const pathIndex = repo.buildPathIndex(await repo.listVideos({}))
       for (const item of items) {
-        const v = await repo.findVideoByPath(item.path)
+        const v = await repo.findVideoByPath(item.path, pathIndex)
         if (v) await repo.removeVideo(v.id)
       }
       return result

@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { promises as fs, mkdirSync, writeFileSync, existsSync, unlinkSync, renameSync } from 'node:fs'
+import { promises as fs, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, type Library, type Settings, type Video } from '../../shared/types'
 import type { JavdbDetail } from '../../shared/types'
@@ -52,6 +52,10 @@ let dirty = false
 let writeInFlight = false
 /** 最近一次落盘完成时间：用于防饥饿（距上次写入过久就不再等 debounce） */
 let lastWriteAt = 0
+/** 连续落盘失败次数（退避重试用，成功后清零） */
+let writeFailCount = 0
+/** 连续失败重试上限：超过则放弃本轮自动重试并唤醒等待者（避免对账/操作卡死），数据保留内存待下次改动重试 */
+const MAX_WRITE_FAIL = 5
 
 function resolveDbPath(): string {
   const userData = app.getPath('userData')
@@ -99,8 +103,38 @@ async function ensureLoaded(): Promise<DBShape> {
     const st = await fs.stat(dbPath).catch(() => null)
     lastLoadMs = st?.mtimeMs ?? 0
     lastSelfWriteMs = 0
-  } catch {
-    // 文件不存在或解析失败 -> 用默认值（新 schema）
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code
+    // 仅「文件不存在」（新装/被删）才直接上空库；其余（JSON 解析失败、权限等，code 可能是 undefined）
+    // 都属于「疑似损坏」——绝不能静默用空库覆盖 4494 部数据，先保留现场再尝试从 .bak 恢复。
+    if (code !== 'ENOENT') {
+      console.error('[store] data.json 读取/解析失败，疑似损坏，尝试从备份恢复：', (e as Error)?.message || e)
+      try {
+        const corruptPath = `${dbPath}.corrupt-${Date.now()}`
+        await fs.copyFile(dbPath, corruptPath)
+        console.error(`[store] 损坏文件已备份：${corruptPath}`)
+      } catch { /* 保留现场失败也继续尝试恢复 */ }
+      try {
+        const bakRaw = await fs.readFile(`${dbPath}.bak`, 'utf-8')
+        const parsed = JSON.parse(bakRaw) as Partial<DBShape> & { schemaVersion?: number }
+        const recovered: DBShape = {
+          schemaVersion: parsed.schemaVersion,
+          libraries: parsed.libraries ?? [],
+          videos: parsed.videos ?? [],
+          settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) }
+        }
+        migrateInPlace(recovered)
+        cache = recovered
+        console.log(`[store] 已从 data.json.bak 恢复（${recovered.videos.length} 部视频）`)
+        const st = await fs.stat(dbPath).catch(() => null)
+        lastLoadMs = st?.mtimeMs ?? 0
+        lastSelfWriteMs = 0
+        return cache
+      } catch {
+        console.error('[store] data.json.bak 备份也不可用，回退为空库')
+      }
+    }
+    // 文件不存在或备份也失败 -> 用默认值（新 schema）
     cache = structuredClone(DEFAULT_DB)
     cache.schemaVersion = SCHEMA_VERSION
     lastLoadMs = 0
@@ -235,8 +269,14 @@ async function writeNow(): Promise<void> {
   await fs.mkdir(dir, { recursive: true })
   // v2.2.13 原子写盘：先写临时文件再 rename 覆盖，避免写盘中途崩溃/断电导致
   // data.json 截断损坏（4.7MB 全量序列化窗口内风险）。rename 是同目录原子操作。
+  // v2.7.x：去掉 pretty-print（null,2）——data.json 非人读场景，紧凑序列化体积更小、stringify 更快。
   const tmp = `${dbPath}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
+  await fs.writeFile(tmp, JSON.stringify(data), 'utf-8')
+  // v2.7.x 滚动备份：覆盖前把现有 data.json 复制为 .bak（上一代好状态），
+  // 配合 ensureLoaded 的损坏恢复，防 data.json 损坏后无据可恢。失败不阻塞主写入。
+  try {
+    if (existsSync(dbPath)) await fs.copyFile(dbPath, `${dbPath}.bak`)
+  } catch { /* 备份失败不阻塞主写入 */ }
   await fs.rename(tmp, dbPath)
   // 记录自己写盘后的 mtime：外部修改检测以此为基准区分"自己写的"和"别人改的"
   const st = await fs.stat(dbPath).catch(() => null)
@@ -257,22 +297,45 @@ async function runWrite(): Promise<void> {
   writeInFlight = true
   dirty = false
   const t0 = Date.now()
+  let failed = false
   try {
     await writeNow()
+    writeFailCount = 0
     const cost = Date.now() - t0
     if (cost > 1000) console.log(`[store] 落盘耗时 ${cost}ms（大库全量序列化，可观察指标）`)
   } catch (e) {
-    console.error('[store] 落盘失败:', (e as Error)?.message || e)
+    failed = true
+    writeFailCount++
+    console.error(`[store] 落盘失败（第 ${writeFailCount} 次）:`, (e as Error)?.message || e)
   } finally {
     writeInFlight = false
     lastWriteAt = Date.now()
-    if (dirty) void runWrite()
-    else settleWaiters()
+    if (failed && writeFailCount < MAX_WRITE_FAIL) {
+      // 失败退避重试：数据仍在内存（cache），置 dirty 稍后落盘。指数退避封顶 30s，
+      // 避免磁盘满/权限丢失时每秒级全量 stringify + 写盘的失败循环。不 settleWaiters（等真正落盘）。
+      dirty = true
+      const backoff = Math.min(1000 * 2 ** (writeFailCount - 1), 30000)
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => {
+        saveTimer = null
+        void runWrite()
+      }, backoff)
+    } else {
+      if (failed) {
+        // 连续失败达上限：放弃本轮自动重试并唤醒等待者（防对账/批量操作卡死），
+        // 数据保留在内存，保持 dirty，待下一次 scheduleSave（用户新改动）再重试。
+        console.error(`[store] 落盘连续失败 ${writeFailCount} 次，放弃自动重试；数据保留内存，将在下次改动时重试`)
+        dirty = true
+      }
+      settleWaiters()
+    }
   }
 }
 
 /** 触发一次防抖写盘；返回的 Promise 在「本次改动已落盘」后 resolve（保证会 resolve，不挂起） */
 export function scheduleSave(): Promise<void> {
+  // 新的显式改动到来：重置失败计数，给新一轮重试预算（上次放弃后用户又操作了，值得重新认真尝试）
+  writeFailCount = 0
   dirty = true
   if (saveTimer) {
     clearTimeout(saveTimer)
@@ -331,14 +394,18 @@ app.on('before-quit', () => {
     try {
       mkdirSync(path.dirname(dbPath), { recursive: true })
       const tmp = `${dbPath}.tmp`
-      writeFileSync(tmp, JSON.stringify(cache, null, 2), 'utf-8')
+      writeFileSync(tmp, JSON.stringify(cache), 'utf-8')
       try {
+        // 退出前同样保留上一代备份（与 writeNow 的滚动 .bak 一致）
+        try {
+          if (existsSync(dbPath)) writeFileSync(`${dbPath}.bak`, readFileSync(dbPath))
+        } catch { /* 备份失败不阻塞退出落盘 */ }
         // renameSync 在 Windows 上目标存在时会抛 EEXIST/EPERM，先删旧再 rename
         if (existsSync(dbPath)) unlinkSync(dbPath)
         renameSync(tmp, dbPath)
       } catch {
         // 跨设备或权限失败：退化为直接写（尽力而为，不因清理失败丢数据）
-        writeFileSync(dbPath, JSON.stringify(cache, null, 2), 'utf-8')
+        writeFileSync(dbPath, JSON.stringify(cache), 'utf-8')
       }
     } catch (e) {
       console.error('[store] 退出前落盘失败:', (e as Error)?.message || e)

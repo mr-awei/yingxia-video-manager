@@ -10,8 +10,45 @@
  *  正常序号误拆为系列。
  *  尾部字母仅限「明确的单字母版本标签」（A-D / U / C），如 HUNTA-468A、IPX-219-C。
  *  SONE-560X、KSJK-013V 等非常规尾字母不剥（保留原值给 hasSeriesSuffix 判断）。
+ *
+ *  P3-8 已知取舍（行为已被 check-code 固化，勿轻动）：无连字符尾字母分支 `(?:[A-DUC])` 无前缀边界，
+ *  会把 `ABC-12D` 这类「恰好以 D 结尾的正常番号」也剥成 `ABC-12`。之所以接受：以 A-D/U/C 单字母结尾的
+ *  番号绝大多数是「版本/无码/中字」标签（HUNTA-468C、SSIS-419U），误判为分集共享元数据收益 > 极少数
+ *  真以这些字母结尾的独立番号被合并的损失。改这里前必须先跑 scripts/check-code.mjs 全绿。
  */
 const SERIES_SUFFIX_RE = /^([A-Z]{2,}-\d+)(?:(?:-?(?:CD|PART|DISC|VOL)\d+)|(?:[_\s-]\d+)|(?:-[A-DUC])|(?:[A-DUC]))$/i
+
+/**
+ * P1-6：纯函数结果 LRU 缓存。normalizeCode / extractBaseCode / extractCode 在扫描与对账的
+ * keyMatches（O(codes×files)，大库约 18M 次调用、每次 4 个正则）里被反复以相同短字符串调用，
+ * 缓存后绝大多数 O(1) 命中（唯一输入只有 ~万级：文件 key + 番号 code）。纯函数输入→输出确定，缓存安全。
+ * 注意缓存值可能是 ''（空串也是合法结果），用 `!== undefined` 区分「未缓存」。
+ */
+function makeLru(max: number): { get: (k: string) => string | undefined; set: (k: string, v: string) => void } {
+  const map = new Map<string, string>()
+  return {
+    get: (k) => {
+      const v = map.get(k)
+      if (v !== undefined) {
+        // LRU：命中后移到末尾（标记为最近使用）
+        map.delete(k)
+        map.set(k, v)
+      }
+      return v
+    },
+    set: (k, v) => {
+      if (map.has(k)) map.delete(k)
+      map.set(k, v)
+      if (map.size > max) {
+        const oldest = map.keys().next().value
+        if (oldest !== undefined) map.delete(oldest)
+      }
+    }
+  }
+}
+const normalizeCache = makeLru(20000)
+const baseCodeCache = makeLru(20000)
+const extractCodeCache = makeLru(20000)
 
 /**
  * 番号归一化：转大写、去空格/下划线/点（保留连字符，连字符是番号结构的一部分）。
@@ -20,7 +57,11 @@ const SERIES_SUFFIX_RE = /^([A-Z]{2,}-\d+)(?:(?:-?(?:CD|PART|DISC|VOL)\d+)|(?:[_
  * 2026-08-30 v2.2.3 抽到 shared 层：reconcile.ts + excel.ts 共用。
  */
 export function normalizeCode(s: string): string {
-  return s.toUpperCase().replace(/[\s._]+/g, '')
+  const hit = normalizeCache.get(s)
+  if (hit !== undefined) return hit
+  const r = s.toUpperCase().replace(/[\s._]+/g, '')
+  normalizeCache.set(s, r)
+  return r
 }
 
 /**
@@ -32,8 +73,12 @@ export function normalizeCode(s: string): string {
 export function extractBaseCode(code: string): string {
   const c = (code ?? '').trim().toUpperCase()
   if (!c) return c
+  const hit = baseCodeCache.get(c)
+  if (hit !== undefined) return hit
   const m = c.match(SERIES_SUFFIX_RE)
-  return m ? m[1] : c
+  const r = m ? m[1] : c
+  baseCodeCache.set(c, r)
+  return r
 }
 
 /** 该番号是否带常见分集后缀（即能剥出更短的 base code） */
@@ -161,6 +206,16 @@ const NOT_CODE_PREFIX = new Set([
 export function extractCode(input: string): string {
   const t = (input ?? '').trim()
   if (!t) return ''
+  // P1-6：纯函数结果缓存（isDomestic 对同文件夹下每个文件重复调用、批量抓取逐视频调用）
+  const hit = extractCodeCache.get(t)
+  if (hit !== undefined) return hit
+  const r = extractCodeUncached(t)
+  extractCodeCache.set(t, r)
+  return r
+}
+
+/** extractCode 的实际实现（结果被外层 extractCode 缓存）。t 已 trim 且非空。 */
+function extractCodeUncached(t: string): string {
   // 0) v2.3.12：FC2 番号优先（FC2-PPV-1510788 / fc2ppv_1523314 / fc2-ppv 2725031 …）
   //    旧逻辑会把 FC2- 前缀丢掉只留 PPV-1510788（dashed 正则要「≥2 字母 + 分隔符」，
   //    而 FC2 后面跟的是数字，匹配不上）——数据源按残缺番号搜不到。

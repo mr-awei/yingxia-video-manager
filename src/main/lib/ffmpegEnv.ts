@@ -118,26 +118,39 @@ async function tryRemoveBundled(): Promise<boolean> {
   }
 }
 
-/** 运行时可执行路径解析：custom > PATH > bundled（供 images/ffprobe 使用） */
+// P1-3：resolveFfmpegExe/resolveFfprobeExe 原版每次调用都 spawn 一次 `-version` 探测
+//（批量补齐时长 4494 部 = 4494 次 ffprobe -version 短命子进程）。解析结果（PATH/捆绑是否存在、
+// custom 是否可用）在一次运行期内基本不变，按 settings.ffmpegPath 为 key 缓存；设置变更（key 变化）自动失效。
+// 注意缓存 null 也用「key 存在」区分（Map.has），与「未缓存」（undefined）分开。
+const ffmpegExeCache = new Map<string, string | null>()
+const ffprobeExeCache = new Map<string, string | null>()
+
+/** 运行时可执行路径解析：custom > PATH > bundled（供 images/ffprobe 使用）。结果按 ffmpegPath 缓存。 */
 export async function resolveFfmpegExe(settings: Settings): Promise<string | null> {
-  const custom = settings.ffmpegPath?.trim()
-  if (custom && (await isUsable(custom))) return custom
-  if (await probeExecutable('ffmpeg')) return 'ffmpeg'
-  if (await isUsable(bundledFfmpegPath())) return bundledFfmpegPath()
-  return null
+  const key = settings.ffmpegPath?.trim() ?? ''
+  if (ffmpegExeCache.has(key)) return ffmpegExeCache.get(key)!
+  let r: string | null = null
+  if (key && (await isUsable(key))) r = key
+  else if (await probeExecutable('ffmpeg')) r = 'ffmpeg'
+  else if (await isUsable(bundledFfmpegPath())) r = bundledFfmpegPath()
+  ffmpegExeCache.set(key, r)
+  return r
 }
 
-/** 运行时可执行路径解析：优先 ffmpeg 同目录 ffprobe，其次系统，其次捆绑 */
+/** 运行时可执行路径解析：优先 ffmpeg 同目录 ffprobe，其次系统，其次捆绑。结果按 ffmpegPath 缓存。 */
 export async function resolveFfprobeExe(settings: Settings): Promise<string | null> {
-  const custom = settings.ffmpegPath?.trim()
-  if (custom) {
+  const key = settings.ffmpegPath?.trim() ?? ''
+  if (ffprobeExeCache.has(key)) return ffprobeExeCache.get(key)!
+  let r: string | null = null
+  if (key) {
     const cand = path.join(
-      path.dirname(custom),
+      path.dirname(key),
       process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
     )
-    if (await isUsable(cand)) return cand
+    if (await isUsable(cand)) r = cand
   }
-  if (await probeExecutable('ffprobe')) return 'ffprobe'
-  if (await isUsable(bundledFfprobePath())) return bundledFfprobePath()
-  return null
+  if (!r && (await probeExecutable('ffprobe'))) r = 'ffprobe'
+  if (!r && (await isUsable(bundledFfprobePath()))) r = bundledFfprobePath()
+  ffprobeExeCache.set(key, r)
+  return r
 }

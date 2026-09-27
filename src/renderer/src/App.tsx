@@ -251,7 +251,11 @@ export default function App() {
   // 后台轻量刷新设置：让「自动检查更新」写入的 pendingUpdate / lastUpdateCheck 自动回流到 UI（徽标、设置页横幅）
   useEffect(() => {
     const t = setInterval(() => {
-      void api.settingsGet().then(setSettings).catch(() => {})
+      void api.settingsGet().then((s) => {
+        // P2-4：轮询回流时内容未变则复用旧引用——原每次 setSettings 都产生新对象，
+        // 触发 App 顶层 state 变化 → 全子树重渲染（含全部 facet useMemo 重算），每分钟一次。
+        setSettings((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s))
+      }).catch(() => {})
     }, 60000)
     return () => clearInterval(t)
   }, [])
@@ -295,13 +299,25 @@ export default function App() {
 
   // 扫描进度（主进程推送）
   useEffect(() => {
-    return api.onScanProgress((p) => {
+    // P0-2：抓取日志合批——批量补齐每部最多 5 条 fetchEvent，原版逐条 setFetchLogs 触发 App 顶层
+    // 重渲染（含全部 facet useMemo）。缓冲 200ms 合批追加（保留最近 60 条），数千条事件从数千轮渲染降到 ~每秒 5 轮。
+    type FetchEvt = { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string }
+    const feBuffer: FetchEvt[] = []
+    let feTimer: ReturnType<typeof setTimeout> | null = null
+    const flushFetchLogs = () => {
+      feTimer = null
+      if (feBuffer.length === 0) return
+      const batch = feBuffer.splice(0, feBuffer.length)
+      setFetchLogs((prev) => [...prev, ...batch].slice(-60))
+    }
+    const off = api.onScanProgress((p) => {
       setProgress(p.total ? { total: p.total, done: p.done, current: p.current } : null)
       if (p.total && p.done === 0) setFetchPaused(false)
       // v2.2.10：实时抓取事件 → 追加到右下角抓取日志浮层（保留最近 60 条）
-      const fe = (p as { fetchEvent?: { code: string; src: string; status: 'trying' | 'hit' | 'skipped' | 'no-result' | 'network-failed'; detail?: string } }).fetchEvent
+      const fe = (p as { fetchEvent?: FetchEvt }).fetchEvent
       if (fe) {
-        setFetchLogs((prev) => [...prev.slice(-59), fe])
+        feBuffer.push(fe)
+        if (!feTimer) feTimer = setTimeout(flushFetchLogs, 200)
       }
       // v2.2.4 硬性要求：片单加载失败必须告知用户，不能藏起问题
       // v2.3.13：kind==='not-configured' → 优先弹向导（suppressIntroExcelNotice 时静默）；
@@ -334,6 +350,10 @@ export default function App() {
         }
       }
     })
+    return () => {
+      if (feTimer) clearTimeout(feTimer)
+      off()
+    }
   }, [])
 
   // 进度条卡死保险：done===total 时 2.5s 后自动清空（处理 runReconcile 收尾时不再推事件的边界情况）
@@ -401,33 +421,51 @@ export default function App() {
     }
   }, [view, libraries, libraryId])
 
-  // JavDB 批量抓取：每抓到一张实时刷新该卡片的封面
+  // JavDB 批量抓取：每抓到一张实时刷新该卡片的封面。
+  // P1-8：批量补齐期间每张海报都 setReconcile(entries.map)（4494 次 O(n) 重建 → filtered/sections
+  // 全量重算 → VirtualizedWall 整墙重平铺，4494 张海报 = 4494 轮全量更新，UI 卡顿掉帧）。
+  // 改为按 videoId 累积进 Map、300ms 合批一次 setReconcile——4494 张海报降到 ~每秒 3 轮全量更新。
   useEffect(() => {
-    return api.onJavdbFetched(
+    const pending = new Map<string, { posterPath: string; posterSource?: string }>()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const flush = () => {
+      timer = null
+      if (pending.size === 0) return
+      const batch = new Map(pending)
+      pending.clear()
+      setReconcile((prev) =>
+        prev
+          ? {
+              ...prev,
+              entries: prev.entries.map((e) => {
+                if (!e.video) return e
+                const u = batch.get(e.video.id)
+                if (!u) return e
+                return {
+                  ...e,
+                  video: {
+                    ...e.video,
+                    posterPath: u.posterPath,
+                    posterSource: (u.posterSource ?? 'javdb') as ImageSource,
+                    // 文件内容可能已覆盖，自增版本强制列表端刷新
+                    coverVersion: (e.video.coverVersion ?? 0) + 1
+                  }
+                }
+              })
+            }
+          : prev
+      )
+    }
+    const off = api.onJavdbFetched(
       ({ videoId, posterPath, posterSource }: { videoId: string; posterPath: string; posterSource?: string }) => {
-        setReconcile((prev) =>
-          prev
-            ? {
-                ...prev,
-                entries: prev.entries.map((e) =>
-                  e.video && e.video.id === videoId
-                    ? {
-                        ...e,
-                        video: {
-                          ...e.video,
-                          posterPath,
-                          posterSource: (posterSource ?? 'javdb') as ImageSource,
-                          // 同上：文件内容可能已覆盖，自增版本强制列表端刷新
-                          coverVersion: (e.video.coverVersion ?? 0) + 1
-                        }
-                      }
-                    : e
-                )
-              }
-            : prev
-        )
+        pending.set(videoId, { posterPath, posterSource })
+        if (!timer) timer = setTimeout(flush, 300)
       }
     )
+    return () => {
+      if (timer) clearTimeout(timer)
+      off()
+    }
   }, [])
 
   // 搜索防抖：输入停止 200ms 后才真正触发过滤（大库避免每敲一个字符全量过滤+重排）
@@ -466,8 +504,9 @@ export default function App() {
   const applyTagsOnly = useMemo(() => {
     let list = [...(reconcile?.entries ?? [])]
     const q = filter.search.trim().toLowerCase()
-    // 搜 hunta-468-cd2 时提取 base code 'hunta-468'，同时匹配同系列其他分集
-    const qBase = extractBaseCode(q).toLowerCase()
+    // 搜 hunta-468-cd2 时提取 base code 'hunta-468'，同时匹配同系列其他分集。
+    // P3-7：番号必含数字——纯自然语言查询词（无数字）跳过 extractBaseCode 正则，微优化。
+    const qBase = /\d/.test(q) ? extractBaseCode(q).toLowerCase() : q
     if (q) {
       list = list.filter((e) => {
         const codeLower = e.code.toLowerCase()
@@ -738,7 +777,7 @@ export default function App() {
         const ob = map.get(b.title)?.order ?? 0
         return oa - ob
       })
-  }, [filtered, filter.sort, filter.groupMode, filter.category])
+  }, [filtered, filter.groupMode, filter.category])
 
   // 我的清单 / 待处理 计数（侧栏徽标）
   const flagCounts = useMemo(() => {
@@ -1089,7 +1128,8 @@ export default function App() {
     } finally {
       setDeleting(false)
     }
-  }, [deletePreview, deleting, libraryId])
+    // P3-2：补依赖 settings.lockHash / runReconcile（原闭包捕获陈旧值，改锁开关后删除校验用旧状态）
+  }, [deletePreview, deleting, libraryId, settings.lockHash, runReconcile])
 
   const handleDetailFetched = useCallback((videoId: string, detail: Video['javdbDetail']) => {
     setReconcile((prev) =>
@@ -1187,7 +1227,8 @@ export default function App() {
     setReconcile(null)
     const rest = libraries.filter((l) => l.id !== currentLibrary.id)
     setLibraryId(rest[0]?.id ?? '')
-  }, [currentLibrary, libraries])
+    // P3-2：补依赖 settings.lockHash（原闭包捕获陈旧值，改锁开关后删库校验用旧状态）
+  }, [currentLibrary, libraries, settings.lockHash])
 
   const handleSaveMeta = useCallback(async (id: string, patch: Partial<Video>) => {
     const updated = await api.videoUpdate(id, patch)
@@ -1236,7 +1277,7 @@ export default function App() {
     /** v2.3.11：补充提示（如「仍有 N 部无封面，可再跑一轮」） */
     hint?: string
   }
-  const showBatchToast = (data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
+  const showBatchToast = useCallback((data: Omit<BatchToastData, 'tone'> & { tone?: 'ok' | 'warn' | 'err' }) => {
     // 自动推断 tone：err（异常）> 停止 > 部分失败 > 全成功
     const tone: 'ok' | 'warn' | 'err' = data.tone ?? (data.stopped || data.failed > 0 ? 'warn' : 'ok')
     const total = data.ok + data.failed
@@ -1286,7 +1327,7 @@ export default function App() {
       </div>
     )
     toast({ title, text: subtitle, tone, detail, duration: 9000 })
-  }
+  }, [t, toast])
 
   const handleBatchJavdb = useCallback(async (force = false) => {
     if (!libraryId) return
@@ -1343,7 +1384,8 @@ export default function App() {
       setFetchLogs([])
       setScanning(false)
     }
-  }, [libraryId, runReconcile])
+    // P3-2：补依赖 settings.customSourceOrder / showBatchToast（原闭包捕获陈旧值，改源顺序后 toast 显示旧的）
+  }, [libraryId, runReconcile, settings.customSourceOrder, showBatchToast])
 
   /** 对失败明细弹窗中的项目逐个重试补齐（单点抓取，顺序执行降风控） */
   const handleRetryFailures = useCallback(async (failures: Array<{ id: string; title: string; reason: string }>) => {

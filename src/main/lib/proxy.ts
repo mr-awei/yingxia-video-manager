@@ -111,8 +111,8 @@ export function applyProxyToSession(settings: Settings): void {
       session.defaultSession.setProxy({ proxyRules: url })
       return
     }
-    // socks4 / socks5：Chromium 只支持 socks5，把 socks4 也映射过去
-    const socksProto = mode === 'socks5' ? 'socks5' : 'socks5'
+    // socks4 / socks5：Chromium 只支持 socks5，socks4 也统一映射为 socks5（三元两边相同，直接写死）
+    const socksProto = 'socks5'
     let auth = ''
     if (settings.proxyUser) {
       auth = `${encodeURIComponent(settings.proxyUser)}:${encodeURIComponent(settings.proxyPass)}@`
